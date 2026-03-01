@@ -37,6 +37,7 @@ export function CalendarGrid({ year, month, classes }: Props) {
   // Pad to full weeks
   while (cells.length % 7 !== 0) cells.push(null);
 
+  const today = new Date();
   const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
   return (
@@ -52,7 +53,6 @@ export function CalendarGrid({ year, month, classes }: Props) {
         }
         const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const dayClasses = byDate.get(dateStr) ?? [];
-        const today = new Date();
         const isToday =
           today.getFullYear() === year &&
           today.getMonth() === month &&
@@ -65,8 +65,8 @@ export function CalendarGrid({ year, month, classes }: Props) {
             }`}>
               {day}
             </div>
-            {dayClasses.map((cls, j) => (
-              <EventChip key={`${dateStr}-${j}`} cls={cls} />
+            {dayClasses.map(cls => (
+              <EventChip key={`${cls.date}-${cls.startTime}-${cls.studioName}`} cls={cls} />
             ))}
           </div>
         );
