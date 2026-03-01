@@ -46,18 +46,18 @@ describe("extractClasses", () => {
   it("warns on unknown studio", () => {
     const events = parseCalendarEvents(icsData);
     const { warnings } = extractClasses(events, knownStudios);
-    expect(warnings.some((w) => w.includes("Unknown Studio"))).toBe(true);
+    expect(warnings.some((w) => w.code === 'UNKNOWN_STUDIO' && w.event.includes("Unknown Studio"))).toBe(true);
   });
 
   it("warns on missing separator", () => {
     const events = parseCalendarEvents(icsData);
     const { warnings } = extractClasses(events, knownStudios);
-    expect(warnings.some((w) => w.includes('no "/" separator'))).toBe(true);
+    expect(warnings.some((w) => w.code === 'NO_SEPARATOR')).toBe(true);
   });
 
   it("warns on missing student count", () => {
     const events = parseCalendarEvents(icsData);
     const { warnings } = extractClasses(events, knownStudios);
-    expect(warnings.some((w) => w.includes("Missing student count"))).toBe(true);
+    expect(warnings.some((w) => w.code === 'MISSING_STUDENT_COUNT')).toBe(true);
   });
 });

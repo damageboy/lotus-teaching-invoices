@@ -1,9 +1,9 @@
-import { ParsedClass, Invoice, InvoiceLineItem, InvoicePeriod, StudioConfig } from "../types.js";
+import { ParsedClass, Invoice, InvoiceLineItem, InvoicePeriod, StudioConfig, ParseWarning } from "../types.js";
 import { findRate } from "./calculator.js";
 
 export interface GenerateResult {
   invoice: Invoice;
-  warnings: string[];
+  warnings: ParseWarning[];
 }
 
 export function generateInvoice(
@@ -13,11 +13,11 @@ export function generateInvoice(
   period: InvoicePeriod,
 ): GenerateResult {
   const lineItems: InvoiceLineItem[] = [];
-  const warnings: string[] = [];
+  const warnings: ParseWarning[] = [];
 
   for (const cls of classes) {
     if (cls.studentCount === 0) {
-      warnings.push(`Skipping "${cls.classType}" on ${cls.date}: student count is 0`);
+      warnings.push({ code: 'ZERO_STUDENTS', event: `${cls.studioName} / ${cls.classType}`, date: cls.date });
       continue;
     }
 

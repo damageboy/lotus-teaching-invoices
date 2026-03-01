@@ -86,6 +86,6 @@ describe("generateInvoice", () => {
 
     expect(invoice.totalClasses).toBe(1);
     expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain("student count is 0");
+    expect(warnings[0].code).toBe('ZERO_STUDENTS');
   });
 });
