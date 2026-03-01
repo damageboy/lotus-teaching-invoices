@@ -4,12 +4,27 @@ export interface RateTier {
   rate: number;
 }
 
+export interface BankDetails {
+  accountOwner: string;
+  iban: string;
+  bic: string;
+}
+
+export interface TeacherInfo {
+  name: string;
+  address: string;     // free-form, newlines allowed
+  taxNumber: string;
+  bankDetails: BankDetails;
+}
+
 export interface StudioConfig {
+  fullName: string;    // display name for PDF; key is still the calendar match string
+  address: string;
   rateTiers: RateTier[];
 }
 
 export interface AppConfig {
-  teacherName: string;
+  teacher: TeacherInfo;
   calendarUrl: string;
   outputDir: string;
   studios: Record<string, StudioConfig>;
