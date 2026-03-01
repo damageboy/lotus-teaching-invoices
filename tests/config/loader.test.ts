@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { join } from "node:path";
-import { loadConfig } from "../../src/config/loader.js";
-import { validateConfig, validateRateTiers } from "../../src/config/schema.js";
+import { loadConfig } from "../../src/lib/config/loader.js";
+import { validateConfig, validateRateTiers } from "../../src/lib/config/schema.js";
 
 const fixturesDir = join(import.meta.dirname, "..", "fixtures");
 

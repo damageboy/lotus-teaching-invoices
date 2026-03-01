@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { groupByStudio, filterByDateRange, filterByStudio } from "../../src/invoice/grouper.js";
-import { ParsedClass } from "../../src/types.js";
+import { groupByStudio, filterByDateRange, filterByStudio } from "../../src/lib/invoice/grouper.js";
+import { ParsedClass } from "../../src/lib/types.js";
 
 const classes: ParsedClass[] = [
   { studioName: "Zen Yoga", classType: "Vinyasa", date: "2026-01-05", startTime: "09:00", endTime: "10:15", studentCount: 8 },

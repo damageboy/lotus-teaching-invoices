@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { generateInvoice } from "../../src/invoice/generator.js";
-import { ParsedClass, StudioConfig } from "../../src/types.js";
+import { generateInvoice } from "../../src/lib/invoice/generator.js";
+import { ParsedClass, StudioConfig } from "../../src/lib/types.js";
 
 const studioConfig: StudioConfig = {
   rateTiers: [
