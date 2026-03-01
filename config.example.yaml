@@ -1,4 +1,6 @@
+teacherName: "Your Name"
 calendarUrl: "https://calendar.google.com/calendar/ical/YOUR_CALENDAR_ID/basic.ics"
+outputDir: ""
 studios:
   "Zen Yoga":
     rateTiers:

@@ -9,7 +9,9 @@ export interface StudioConfig {
 }
 
 export interface AppConfig {
+  teacherName: string;
   calendarUrl: string;
+  outputDir: string;
   studios: Record<string, StudioConfig>;
 }
 

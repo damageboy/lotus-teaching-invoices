@@ -73,6 +73,9 @@ export function validateConfig(raw: unknown): AppConfig {
     throw new AppError("Config must have a non-empty calendarUrl string", "INVALID_CONFIG");
   }
 
+  const teacherName = typeof obj.teacherName === 'string' ? obj.teacherName : '';
+  const outputDir = typeof obj.outputDir === 'string' ? obj.outputDir : '';
+
   if (typeof obj.studios !== "object" || obj.studios === null || Array.isArray(obj.studios)) {
     throw new AppError("Config must have a studios object", "INVALID_CONFIG");
   }
@@ -83,7 +86,9 @@ export function validateConfig(raw: unknown): AppConfig {
   }
 
   const config: AppConfig = {
+    teacherName,
     calendarUrl: obj.calendarUrl,
+    outputDir,
     studios: {},
   };
 
