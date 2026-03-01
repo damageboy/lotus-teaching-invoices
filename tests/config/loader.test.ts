@@ -9,7 +9,9 @@ describe("loadConfig", () => {
   it("loads and validates the test fixture config", () => {
     const config = loadConfig(join(fixturesDir, "config.yaml"));
     expect(config.calendarUrl).toBe("https://calendar.google.com/calendar/ical/example/basic.ics");
-    expect(config.teacherName).toBe('');
+    expect(config.teacher.name).toBe('');
+    expect(config.teacher.taxNumber).toBe('');
+    expect(config.teacher.bankDetails.iban).toBe('');
     expect(config.outputDir).toBe('');
     expect(Object.keys(config.studios)).toEqual(["Zen Yoga", "Power House"]);
     expect(config.studios["Zen Yoga"].rateTiers).toHaveLength(3);

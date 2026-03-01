@@ -1,0 +1,16 @@
+calendarUrl: "https://calendar.google.com/calendar/ical/example/basic.ics"
+studios:
+  "Zen Yoga":
+    fullName: "Zen Yoga Center"
+    address: "789 Peace St\nHamburg"
+    rateTiers:
+      - { minStudents: 1, maxStudents: 5, rate: 80 }
+      - { minStudents: 6, maxStudents: 10, rate: 100 }
+      - { minStudents: 11, maxStudents: null, rate: 120 }
+  "Power House":
+    fullName: "Power House Gym"
+    address: "101 Fitness Ave\nBerlin"
+    rateTiers:
+      - { minStudents: 1, maxStudents: 3, rate: 60 }
+      - { minStudents: 4, maxStudents: 8, rate: 90 }
+      - { minStudents: 9, maxStudents: null, rate: 110 }
