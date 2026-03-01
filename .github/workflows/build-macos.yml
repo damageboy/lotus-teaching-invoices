@@ -12,11 +12,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
+      - name: Set up bun
+        uses: oven-sh/setup-bun@v2
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -28,11 +25,11 @@ jobs:
         with:
           workspaces: src-tauri
 
-      - name: Install Node dependencies
-        run: npm ci
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
 
       - name: Build Tauri app (universal binary)
-        run: npm run build -- --target universal-apple-darwin
+        run: bun run build -- --target universal-apple-darwin
         env:
           # Disable code signing for CI builds.
           # To enable signing, add Apple certificate secrets and set:
