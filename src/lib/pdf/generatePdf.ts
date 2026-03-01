@@ -1,7 +1,7 @@
 import React from 'react';
 import { pdf, type DocumentProps } from '@react-pdf/renderer';
 import { writeFile } from '@tauri-apps/plugin-fs';
-import { open } from '@tauri-apps/plugin-shell';
+import { invoke } from '@tauri-apps/api/core';
 import { Invoice, AppConfig } from '../types';
 import { InvoiceDocument } from './InvoiceDocument';
 
@@ -20,5 +20,5 @@ export async function generateAndOpenPdf(invoice: Invoice, config: AppConfig): P
   const blob = await pdf(element).toBlob();
   const arrayBuffer = await blob.arrayBuffer();
   await writeFile(outputPath, new Uint8Array(arrayBuffer));
-  await open(outputPath);
+  await invoke('open_file', { path: outputPath });
 }

@@ -14,8 +14,11 @@ const MONTH_NAMES = ['January','February','March','April','May','June',
 
 export function CalendarTab({ classes, studios = {} }: Props) {
   const now = new Date();
-  const [year, setYear] = useState(now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth());
+  const defaultInPrevMonth = now.getDate() <= 15;
+  const defaultMonth = defaultInPrevMonth ? (now.getMonth() === 0 ? 11 : now.getMonth() - 1) : now.getMonth();
+  const defaultYear = defaultInPrevMonth && now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+  const [year, setYear] = useState(defaultYear);
+  const [month, setMonth] = useState(defaultMonth);
 
   const monthClasses = classes.filter(cls => {
     const prefix = `${year}-${String(month + 1).padStart(2, '0')}`;

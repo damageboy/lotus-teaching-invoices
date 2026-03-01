@@ -37,7 +37,7 @@ export function InvoiceDocument({ invoice, config }: Props) {
     <Document>
       <Page size="A4" style={s.page}>
 
-        {/* Two-column header */}
+        {/* Header */}
         <View style={s.headerRow}>
           <View style={s.addressBlock}>
             <Text style={s.title}>{teacher.name || 'Invoice'}</Text>
@@ -47,12 +47,34 @@ export function InvoiceDocument({ invoice, config }: Props) {
             {teacher.taxNumber ? (
               <Text style={s.addressText}>Tax no.: {teacher.taxNumber}</Text>
             ) : null}
-          </View>
-          <View style={[s.addressBlock, { alignItems: 'flex-end' }]}>
-            <Text style={{ fontSize: 11, fontWeight: 'bold', marginBottom: 4 }}>{studioDisplay}</Text>
-            {studioAddress ? (
-              <Text style={[s.addressText, { textAlign: 'right' }]}>{studioAddress}</Text>
+            {(teacher.bankDetails.accountOwner || teacher.bankDetails.iban || teacher.bankDetails.bic) ? (
+              <View style={[s.footerRow, { marginTop: 8 }]}>
+                {teacher.bankDetails.accountOwner ? (
+                  <View>
+                    <Text style={s.footerLabel}>Account owner</Text>
+                    <Text style={s.footerValue}>{teacher.bankDetails.accountOwner}</Text>
+                  </View>
+                ) : null}
+                {teacher.bankDetails.iban ? (
+                  <View>
+                    <Text style={s.footerLabel}>IBAN</Text>
+                    <Text style={s.footerValue}>{teacher.bankDetails.iban}</Text>
+                  </View>
+                ) : null}
+                {teacher.bankDetails.bic ? (
+                  <View>
+                    <Text style={s.footerLabel}>BIC</Text>
+                    <Text style={s.footerValue}>{teacher.bankDetails.bic}</Text>
+                  </View>
+                ) : null}
+              </View>
             ) : null}
+            <View style={{ marginTop: 12 }}>
+              <Text style={{ fontSize: 11, fontWeight: 'bold', marginBottom: 2 }}>{studioDisplay}</Text>
+              {studioAddress ? (
+                <Text style={s.addressText}>{studioAddress}</Text>
+              ) : null}
+            </View>
           </View>
         </View>
 
@@ -86,34 +108,9 @@ export function InvoiceDocument({ invoice, config }: Props) {
 
         {/* Total */}
         <View style={s.total}>
-          <Text>Total: €{invoice.totalAmount}</Text>
+          <Text>Total: € {invoice.totalAmount}</Text>
         </View>
 
-        {/* Bank details footer — only shown if IBAN or BIC is set */}
-        {(teacher.bankDetails.iban || teacher.bankDetails.bic) ? (
-          <View style={s.footer}>
-            <View style={s.footerRow}>
-              {teacher.bankDetails.accountOwner ? (
-                <View>
-                  <Text style={s.footerLabel}>Account owner</Text>
-                  <Text style={s.footerValue}>{teacher.bankDetails.accountOwner}</Text>
-                </View>
-              ) : null}
-              {teacher.bankDetails.iban ? (
-                <View>
-                  <Text style={s.footerLabel}>IBAN</Text>
-                  <Text style={s.footerValue}>{teacher.bankDetails.iban}</Text>
-                </View>
-              ) : null}
-              {teacher.bankDetails.bic ? (
-                <View>
-                  <Text style={s.footerLabel}>BIC</Text>
-                  <Text style={s.footerValue}>{teacher.bankDetails.bic}</Text>
-                </View>
-              ) : null}
-            </View>
-          </View>
-        ) : null}
 
       </Page>
     </Document>
