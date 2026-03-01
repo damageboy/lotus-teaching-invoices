@@ -1,5 +1,5 @@
 import { ParsedClass, Invoice, InvoiceLineItem, InvoicePeriod, StudioConfig, ParseWarning } from "../types.js";
-import { findRate } from "./calculator.js";
+import { findRate, computeStudioStats } from "./calculator.js";
 
 export interface GenerateResult {
   invoice: Invoice;
@@ -33,7 +33,7 @@ export function generateInvoice(
     });
   }
 
-  const totalAmount = lineItems.reduce((sum, item) => sum + item.lineTotal, 0);
+  const { totalAmount, classCount } = computeStudioStats(classes, studioConfig.rateTiers);
 
   return {
     invoice: {
@@ -41,7 +41,7 @@ export function generateInvoice(
       invoicePeriod: period,
       generatedAt: new Date().toISOString(),
       classes: lineItems,
-      totalClasses: lineItems.length,
+      totalClasses: classCount,
       totalAmount,
     },
     warnings,
