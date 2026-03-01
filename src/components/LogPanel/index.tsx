@@ -3,15 +3,15 @@ import { subscribeLog, clearLog, LogEntry, LogLevel } from '../../lib/logger';
 
 const LEVEL_COLOR: Record<LogLevel, string> = {
   error: 'text-red-400',
-  warn:  'text-amber-300',
-  info:  'text-gray-400',
+  warn: 'text-amber-300',
+  info: 'text-gray-400',
   debug: 'text-gray-600',
 };
 
 const LEVEL_ROW: Record<LogLevel, string> = {
   error: 'text-red-300',
-  warn:  'text-amber-200',
-  info:  'text-gray-300',
+  warn: 'text-amber-200',
+  info: 'text-gray-300',
   debug: 'text-gray-500',
 };
 
@@ -27,8 +27,8 @@ export function LogPanel() {
     if (open) bottomRef.current?.scrollIntoView({ behavior: 'instant' });
   }, [open, entries.length]);
 
-  const errorCount = entries.filter(e => e.level === 'error').length;
-  const warnCount  = entries.filter(e => e.level === 'warn').length;
+  const errorCount = entries.filter((e) => e.level === 'error').length;
+  const warnCount = entries.filter((e) => e.level === 'warn').length;
   const last = entries[entries.length - 1];
 
   return (
@@ -39,12 +39,14 @@ export function LogPanel() {
           {entries.length === 0 ? (
             <span className="text-gray-600 italic">No entries yet.</span>
           ) : (
-            entries.map(e => (
+            entries.map((e) => (
               <div key={e.id} className="flex gap-2 items-baseline leading-5">
                 <span className="text-gray-600 shrink-0 tabular-nums">
                   {e.ts.toLocaleTimeString('en-GB', { hour12: false })}
                 </span>
-                <span className={`uppercase text-[10px] font-bold w-10 shrink-0 ${LEVEL_COLOR[e.level]}`}>
+                <span
+                  className={`uppercase text-[10px] font-bold w-10 shrink-0 ${LEVEL_COLOR[e.level]}`}
+                >
                   {e.level}
                 </span>
                 <span className={LEVEL_ROW[e.level]}>{e.msg}</span>
@@ -58,7 +60,7 @@ export function LogPanel() {
       {/* Footer toggle bar */}
       <div className="flex items-center bg-gray-50 text-xs text-gray-500 h-7">
         <button
-          onClick={() => setOpen(o => !o)}
+          onClick={() => setOpen((o) => !o)}
           className="flex items-center gap-2 px-3 h-full flex-1 hover:bg-gray-100 transition-colors text-left"
         >
           {errorCount > 0 && (
@@ -72,9 +74,7 @@ export function LogPanel() {
             </span>
           )}
           {!errorCount && !warnCount && <span className="text-gray-400">Logs</span>}
-          {last && (
-            <span className="flex-1 truncate text-gray-400">{last.msg}</span>
-          )}
+          {last && <span className="flex-1 truncate text-gray-400">{last.msg}</span>}
           <span className="ml-auto pl-2">{open ? '▼' : '▲'}</span>
         </button>
         {entries.length > 0 && (

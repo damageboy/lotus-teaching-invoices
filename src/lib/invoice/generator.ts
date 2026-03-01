@@ -1,5 +1,12 @@
-import { ParsedClass, Invoice, InvoiceLineItem, InvoicePeriod, StudioConfig, ParseWarning } from "../types.js";
-import { findRate } from "./calculator.js";
+import {
+  ParsedClass,
+  Invoice,
+  InvoiceLineItem,
+  InvoicePeriod,
+  StudioConfig,
+  ParseWarning,
+} from '../types.js';
+import { findRate } from './calculator.js';
 
 export interface GenerateResult {
   invoice: Invoice;
@@ -10,14 +17,18 @@ export function generateInvoice(
   studioName: string,
   classes: ParsedClass[],
   studioConfig: StudioConfig,
-  period: InvoicePeriod,
+  period: InvoicePeriod
 ): GenerateResult {
   const lineItems: InvoiceLineItem[] = [];
   const warnings: ParseWarning[] = [];
 
   for (const cls of classes) {
     if (cls.studentCount === 0) {
-      warnings.push({ code: 'ZERO_STUDENTS', event: `${cls.studioName} / ${cls.classType}`, date: cls.date });
+      warnings.push({
+        code: 'ZERO_STUDENTS',
+        event: `${cls.studioName} / ${cls.classType}`,
+        date: cls.date,
+      });
       continue;
     }
 

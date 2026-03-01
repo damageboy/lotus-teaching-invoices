@@ -14,13 +14,25 @@ interface Props {
 interface InvoiceRow {
   studioName: string;
   monthKey: string; // "YYYY-MM"
-  label: string;    // "February 2026"
+  label: string; // "February 2026"
   classCount: number;
   classes: ParsedClass[];
 }
 
-const MONTH_NAMES = ['January','February','March','April','May','June',
-  'July','August','September','October','November','December'];
+const MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
 
 function buildRows(classes: ParsedClass[]): InvoiceRow[] {
   const map = new Map<string, ParsedClass[]>();
@@ -42,7 +54,9 @@ function buildRows(classes: ParsedClass[]): InvoiceRow[] {
         classes: clsList,
       };
     })
-    .sort((a, b) => b.monthKey.localeCompare(a.monthKey) || a.studioName.localeCompare(b.studioName));
+    .sort(
+      (a, b) => b.monthKey.localeCompare(a.monthKey) || a.studioName.localeCompare(b.studioName)
+    );
 }
 
 function periodForMonthKey(monthKey: string): InvoicePeriod {
@@ -66,9 +80,16 @@ export function InvoicesTab({ classes, config, onSaveConfig }: Props) {
       const studioConfig = config.studios[row.studioName];
       if (!studioConfig) continue;
       try {
-        const { invoice } = generateInvoice(row.studioName, row.classes, studioConfig, periodForMonthKey(row.monthKey));
+        const { invoice } = generateInvoice(
+          row.studioName,
+          row.classes,
+          studioConfig,
+          periodForMonthKey(row.monthKey)
+        );
         map.set(`${row.studioName}__${row.monthKey}`, invoice.totalAmount);
-      } catch { /* no matching tier */ }
+      } catch {
+        /* no matching tier */
+      }
     }
     return map;
   }, [rows, config.studios]);
@@ -134,9 +155,13 @@ export function InvoicesTab({ classes, config, onSaveConfig }: Props) {
         </thead>
         <tbody>
           {rows.length === 0 && (
-            <tr><td colSpan={5} className="py-8 text-center text-gray-400">No classes loaded</td></tr>
+            <tr>
+              <td colSpan={5} className="py-8 text-center text-gray-400">
+                No classes loaded
+              </td>
+            </tr>
           )}
-          {rows.map(row => {
+          {rows.map((row) => {
             const rowKey = `${row.studioName}__${row.monthKey}`;
             const studioConfig = config.studios[row.studioName];
             const total = rowTotals.get(rowKey);
@@ -146,7 +171,11 @@ export function InvoicesTab({ classes, config, onSaveConfig }: Props) {
                 <td className="py-2 pr-4">{row.label}</td>
                 <td className="py-2 pr-4 text-right">{row.classCount}</td>
                 <td className="py-2 pr-4 text-right font-mono">
-                  {total !== undefined ? `€${total.toFixed(2)}` : <span className="text-gray-400">—</span>}
+                  {total !== undefined ? (
+                    `€${total.toFixed(2)}`
+                  ) : (
+                    <span className="text-gray-400">—</span>
+                  )}
                 </td>
                 <td className="py-2 text-right">
                   <button

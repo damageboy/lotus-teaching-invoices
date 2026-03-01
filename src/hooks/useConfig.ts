@@ -38,10 +38,14 @@ export function useConfig() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const configRef = useRef(config);
-  useEffect(() => { configRef.current = config; }, [config]);
+  useEffect(() => {
+    configRef.current = config;
+  }, [config]);
 
   const updateConfig = useCallback((next: AppConfig) => {
     setConfig(next);
