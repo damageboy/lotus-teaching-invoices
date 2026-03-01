@@ -1,4 +1,4 @@
-import { AppConfig, RateTier, AppError } from "../types.js";
+import { AppConfig, RateTier, TeacherInfo, BankDetails, AppError } from "../types.js";
 
 export function validateRateTiers(studioName: string, tiers: RateTier[]): void {
   if (!tiers || tiers.length === 0) {
@@ -73,7 +73,25 @@ export function validateConfig(raw: unknown): AppConfig {
     throw new AppError("Config must have a non-empty calendarUrl string", "INVALID_CONFIG");
   }
 
-  const teacherName = typeof obj.teacherName === 'string' ? obj.teacherName : '';
+  // Parse teacher object (all fields optional, fall back to empty string)
+  const teacherRaw = (typeof obj.teacher === 'object' && obj.teacher !== null)
+    ? obj.teacher as Record<string, unknown>
+    : {};
+  const bankRaw = (typeof teacherRaw.bankDetails === 'object' && teacherRaw.bankDetails !== null)
+    ? teacherRaw.bankDetails as Record<string, unknown>
+    : {};
+
+  const teacher: TeacherInfo = {
+    name:       typeof teacherRaw.name      === 'string' ? teacherRaw.name      : '',
+    address:    typeof teacherRaw.address   === 'string' ? teacherRaw.address   : '',
+    taxNumber:  typeof teacherRaw.taxNumber === 'string' ? teacherRaw.taxNumber : '',
+    bankDetails: {
+      accountOwner: typeof bankRaw.accountOwner === 'string' ? bankRaw.accountOwner : '',
+      iban:         typeof bankRaw.iban         === 'string' ? bankRaw.iban         : '',
+      bic:          typeof bankRaw.bic          === 'string' ? bankRaw.bic          : '',
+    },
+  };
+
   const outputDir = typeof obj.outputDir === 'string' ? obj.outputDir : '';
 
   if (typeof obj.studios !== "object" || obj.studios === null || Array.isArray(obj.studios)) {
@@ -86,7 +104,7 @@ export function validateConfig(raw: unknown): AppConfig {
   }
 
   const config: AppConfig = {
-    teacherName,
+    teacher,
     calendarUrl: obj.calendarUrl,
     outputDir,
     studios: {},
@@ -120,6 +138,8 @@ export function validateConfig(raw: unknown): AppConfig {
 
     // Store sorted tiers
     config.studios[name] = {
+      fullName: typeof studio.fullName === 'string' ? studio.fullName : '',
+      address:  typeof studio.address  === 'string' ? studio.address  : '',
       rateTiers: tiers.sort((a, b) => a.minStudents - b.minStudents),
     };
   }
