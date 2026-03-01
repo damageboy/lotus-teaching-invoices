@@ -1,16 +1,17 @@
 import { useState } from 'react';
-import { ParsedClass } from '../../lib/types';
+import { ParsedClass, StudioConfig } from '../../lib/types';
 import { CalendarGrid } from './CalendarGrid';
 import { studioColor } from '../../lib/studioColors';
 
 interface Props {
   classes: ParsedClass[];
+  studios?: Record<string, StudioConfig>;
 }
 
 const MONTH_NAMES = ['January','February','March','April','May','June',
   'July','August','September','October','November','December'];
 
-export function CalendarTab({ classes }: Props) {
+export function CalendarTab({ classes, studios = {} }: Props) {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());

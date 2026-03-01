@@ -73,7 +73,7 @@ export default function App() {
 
       {/* Tab content */}
       <div className="flex-1 overflow-auto min-h-0">
-        {activeTab === 'calendar' && <CalendarTab classes={classes} />}
+        {activeTab === 'calendar' && <CalendarTab classes={classes} studios={config.studios} />}
         {activeTab === 'invoices' && (
           <InvoicesTab classes={classes} config={config} onSaveConfig={save} />
         )}
