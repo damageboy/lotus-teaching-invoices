@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { readTextFile, writeTextFile, exists, BaseDirectory } from '@tauri-apps/plugin-fs';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { AppConfig } from '../lib/types';
@@ -20,9 +20,8 @@ export function useConfig() {
     try {
       const fileExists = await exists(CONFIG_FILE, { baseDir: BASE_DIR });
       if (!fileExists) {
-        // First launch — write defaults
-        await writeTextFile(CONFIG_FILE, stringifyYaml(DEFAULT_CONFIG), { baseDir: BASE_DIR });
         setConfig(DEFAULT_CONFIG);
+        // Don't write the file — user must configure and save explicitly
       } else {
         const raw = await readTextFile(CONFIG_FILE, { baseDir: BASE_DIR });
         const parsed = parseYaml(raw);
@@ -38,17 +37,25 @@ export function useConfig() {
 
   useEffect(() => { load(); }, [load]);
 
+  const configRef = useRef(config);
+  useEffect(() => { configRef.current = config; }, [config]);
+
   const updateConfig = useCallback((next: AppConfig) => {
     setConfig(next);
     setIsDirty(true);
   }, []);
 
   const save = useCallback(async (next?: AppConfig) => {
-    const toSave = next ?? config;
-    await writeTextFile(CONFIG_FILE, stringifyYaml(toSave), { baseDir: BASE_DIR });
-    setConfig(toSave);
-    setIsDirty(false);
-  }, [config]);
+    const toSave = next ?? configRef.current;
+    setError(null);
+    try {
+      await writeTextFile(CONFIG_FILE, stringifyYaml(toSave), { baseDir: BASE_DIR });
+      setConfig(toSave);
+      setIsDirty(false);
+    } catch (e) {
+      setError(String(e));
+    }
+  }, []);  // stable — no longer depends on config
 
   return { config, isDirty, isLoading, error, updateConfig, save, reload: load };
 }
