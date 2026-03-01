@@ -1,7 +1,6 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { ParsedClass, AppConfig, InvoicePeriod } from '../../lib/types';
-import { filterByDateRange } from '../../lib/invoice/grouper';
 import { generateInvoice } from '../../lib/invoice/generator';
 import { generateAndOpenPdf } from '../../lib/pdf/generatePdf';
 
@@ -16,7 +15,6 @@ interface InvoiceRow {
   monthKey: string; // "YYYY-MM"
   label: string;    // "February 2026"
   classCount: number;
-  total: number;
   classes: ParsedClass[];
 }
 
@@ -40,18 +38,39 @@ function buildRows(classes: ParsedClass[]): InvoiceRow[] {
         monthKey,
         label: `${MONTH_NAMES[parseInt(m) - 1]} ${y}`,
         classCount: clsList.length,
-        total: clsList.reduce((sum, c) => sum + c.studentCount, 0), // placeholder — real total from invoice
         classes: clsList,
       };
     })
     .sort((a, b) => b.monthKey.localeCompare(a.monthKey) || a.studioName.localeCompare(b.studioName));
 }
 
+function periodForMonthKey(monthKey: string): InvoicePeriod {
+  const [year, month] = monthKey.split('-');
+  const from = `${year}-${month}-01`;
+  const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate();
+  const to = `${year}-${month}-${String(lastDay).padStart(2, '0')}`;
+  return { from, to };
+}
+
 export function InvoicesTab({ classes, config, onSaveConfig }: Props) {
   const [generating, setGenerating] = useState<string | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
 
-  const rows = buildRows(classes);
+  const rows = useMemo(() => buildRows(classes), [classes]);
+
+  // Compute totals once per rows+config change, not on every render
+  const rowTotals = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const row of rows) {
+      const studioConfig = config.studios[row.studioName];
+      if (!studioConfig) continue;
+      try {
+        const { invoice } = generateInvoice(row.studioName, row.classes, studioConfig, periodForMonthKey(row.monthKey));
+        map.set(`${row.studioName}__${row.monthKey}`, invoice.totalAmount);
+      } catch { /* no matching tier */ }
+    }
+    return map;
+  }, [rows, config.studios]);
 
   async function chooseOutputFolder() {
     const selected = await openDialog({ directory: true, title: 'Choose invoice output folder' });
@@ -69,15 +88,10 @@ export function InvoicesTab({ classes, config, onSaveConfig }: Props) {
     setGenerating(rowKey);
     setRowError(null);
     try {
-      const [year, month] = row.monthKey.split('-');
-      const from = `${year}-${month}-01`;
-      const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate();
-      const to = `${year}-${month}-${String(lastDay).padStart(2, '0')}`;
-      const period: InvoicePeriod = { from, to };
       const studioConfig = config.studios[row.studioName];
       if (!studioConfig) throw new Error(`No config for studio "${row.studioName}"`);
-      const monthClasses = filterByDateRange(row.classes, from, to);
-      const { invoice } = generateInvoice(row.studioName, monthClasses, studioConfig, period);
+      const period = periodForMonthKey(row.monthKey);
+      const { invoice } = generateInvoice(row.studioName, row.classes, studioConfig, period);
       await generateAndOpenPdf(invoice, config);
     } catch (e) {
       setRowError(e instanceof Error ? e.message : String(e));
@@ -122,30 +136,19 @@ export function InvoicesTab({ classes, config, onSaveConfig }: Props) {
           {rows.map(row => {
             const rowKey = `${row.studioName}__${row.monthKey}`;
             const studioConfig = config.studios[row.studioName];
-            // Compute real total from invoice generator
-            let total = 0;
-            if (studioConfig) {
-              try {
-                const [year, month] = row.monthKey.split('-');
-                const from = `${year}-${month}-01`;
-                const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate();
-                const to = `${year}-${month}-${String(lastDay).padStart(2, '0')}`;
-                const { invoice } = generateInvoice(row.studioName, row.classes, studioConfig, { from, to });
-                total = invoice.totalAmount;
-              } catch { /* no matching tier */ }
-            }
+            const total = rowTotals.get(rowKey);
             return (
               <tr key={rowKey} className="border-b border-gray-100 hover:bg-gray-50">
                 <td className="py-2 pr-4">{row.studioName}</td>
                 <td className="py-2 pr-4">{row.label}</td>
                 <td className="py-2 pr-4 text-right">{row.classCount}</td>
                 <td className="py-2 pr-4 text-right font-mono">
-                  {studioConfig ? `€${total}` : <span className="text-gray-400">—</span>}
+                  {total !== undefined ? `€${total.toFixed(2)}` : <span className="text-gray-400">—</span>}
                 </td>
                 <td className="py-2 text-right">
                   <button
                     onClick={() => handleGenerate(row)}
-                    disabled={!studioConfig || generating === rowKey}
+                    disabled={!studioConfig || generating !== null}
                     className="text-xs px-3 py-1 rounded bg-indigo-50 text-indigo-700 hover:bg-indigo-100 disabled:opacity-40"
                   >
                     {generating === rowKey ? 'Generating…' : 'Generate Invoice…'}
