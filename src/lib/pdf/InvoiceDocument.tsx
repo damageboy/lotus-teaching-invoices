@@ -2,19 +2,24 @@ import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
 import { Invoice, AppConfig } from '../types';
 
 const s = StyleSheet.create({
-  page:      { padding: 48, fontFamily: 'Helvetica', fontSize: 10, color: '#111' },
-  header:    { marginBottom: 32 },
-  title:     { fontSize: 18, fontWeight: 'bold', marginBottom: 4 },
-  subtitle:  { fontSize: 11, color: '#555' },
-  section:   { marginBottom: 20 },
-  label:     { fontSize: 8, color: '#888', textTransform: 'uppercase', marginBottom: 2 },
-  value:     { fontSize: 10 },
-  table:     { marginTop: 16 },
-  tableHead: { flexDirection: 'row', borderBottomWidth: 1, borderColor: '#ddd', paddingBottom: 4, marginBottom: 4 },
-  tableRow:  { flexDirection: 'row', paddingVertical: 3, borderBottomWidth: 0.5, borderColor: '#eee' },
-  col:       { flex: 1, fontSize: 9 },
-  colRight:  { flex: 1, fontSize: 9, textAlign: 'right' },
-  total:     { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 12, fontSize: 11, fontWeight: 'bold' },
+  page:        { padding: 48, fontFamily: 'Helvetica', fontSize: 10, color: '#111' },
+  headerRow:   { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 32 },
+  addressBlock:{ flex: 1 },
+  title:       { fontSize: 18, fontWeight: 'bold', marginBottom: 4 },
+  addressText: { fontSize: 9, color: '#444', lineHeight: 1.5 },
+  section:     { marginBottom: 20 },
+  label:       { fontSize: 8, color: '#888', textTransform: 'uppercase', marginBottom: 2 },
+  value:       { fontSize: 10 },
+  table:       { marginTop: 16 },
+  tableHead:   { flexDirection: 'row', borderBottomWidth: 1, borderColor: '#ddd', paddingBottom: 4, marginBottom: 4 },
+  tableRow:    { flexDirection: 'row', paddingVertical: 3, borderBottomWidth: 0.5, borderColor: '#eee' },
+  col:         { flex: 1, fontSize: 9 },
+  colRight:    { flex: 1, fontSize: 9, textAlign: 'right' },
+  total:       { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 12, fontSize: 11, fontWeight: 'bold' },
+  footer:      { marginTop: 32, paddingTop: 12, borderTopWidth: 0.5, borderColor: '#ddd' },
+  footerLabel: { fontSize: 7, color: '#aaa', textTransform: 'uppercase', marginBottom: 1 },
+  footerValue: { fontSize: 8, color: '#555', marginBottom: 6 },
+  footerRow:   { flexDirection: 'row', gap: 32 },
 });
 
 interface Props {
@@ -23,19 +28,41 @@ interface Props {
 }
 
 export function InvoiceDocument({ invoice, config }: Props) {
+  const { teacher } = config;
+  const studio = config.studios[invoice.studioName];
+  const studioDisplay = studio?.fullName || invoice.studioName;
+  const studioAddress = studio?.address || '';
+
   return (
     <Document>
       <Page size="A4" style={s.page}>
-        <View style={s.header}>
-          <Text style={s.title}>{config.teacherName || 'Invoice'}</Text>
-          <Text style={s.subtitle}>{invoice.studioName}</Text>
+
+        {/* Two-column header */}
+        <View style={s.headerRow}>
+          <View style={s.addressBlock}>
+            <Text style={s.title}>{teacher.name || 'Invoice'}</Text>
+            {teacher.address ? (
+              <Text style={s.addressText}>{teacher.address}</Text>
+            ) : null}
+            {teacher.taxNumber ? (
+              <Text style={s.addressText}>Tax no.: {teacher.taxNumber}</Text>
+            ) : null}
+          </View>
+          <View style={[s.addressBlock, { alignItems: 'flex-end' }]}>
+            <Text style={{ fontSize: 11, fontWeight: 'bold', marginBottom: 4 }}>{studioDisplay}</Text>
+            {studioAddress ? (
+              <Text style={[s.addressText, { textAlign: 'right' }]}>{studioAddress}</Text>
+            ) : null}
+          </View>
         </View>
 
+        {/* Invoice period */}
         <View style={s.section}>
           <Text style={s.label}>Invoice period</Text>
           <Text style={s.value}>{invoice.invoicePeriod.from} — {invoice.invoicePeriod.to}</Text>
         </View>
 
+        {/* Class table */}
         <View style={s.table}>
           <View style={s.tableHead}>
             <Text style={s.col}>Date</Text>
@@ -57,9 +84,37 @@ export function InvoiceDocument({ invoice, config }: Props) {
           ))}
         </View>
 
+        {/* Total */}
         <View style={s.total}>
           <Text>Total: €{invoice.totalAmount}</Text>
         </View>
+
+        {/* Bank details footer — only shown if IBAN or BIC is set */}
+        {(teacher.bankDetails.iban || teacher.bankDetails.bic) ? (
+          <View style={s.footer}>
+            <View style={s.footerRow}>
+              {teacher.bankDetails.accountOwner ? (
+                <View>
+                  <Text style={s.footerLabel}>Account owner</Text>
+                  <Text style={s.footerValue}>{teacher.bankDetails.accountOwner}</Text>
+                </View>
+              ) : null}
+              {teacher.bankDetails.iban ? (
+                <View>
+                  <Text style={s.footerLabel}>IBAN</Text>
+                  <Text style={s.footerValue}>{teacher.bankDetails.iban}</Text>
+                </View>
+              ) : null}
+              {teacher.bankDetails.bic ? (
+                <View>
+                  <Text style={s.footerLabel}>BIC</Text>
+                  <Text style={s.footerValue}>{teacher.bankDetails.bic}</Text>
+                </View>
+              ) : null}
+            </View>
+          </View>
+        ) : null}
+
       </Page>
     </Document>
   );
