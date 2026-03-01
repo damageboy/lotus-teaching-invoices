@@ -5,10 +5,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-# Run in development (no build step needed)
-npm run dev -- --dry-run --from 2024-01-01 --to 2024-01-31
+# Run the Tauri desktop app (dev mode)
+npm run dev
 
-# Build to dist/
+# Run just the Vite frontend (no Tauri window, for fast UI iteration)
+npm run dev:vite
+
+# Run the CLI (original Node.js tool)
+npm run cli -- --from 2026-02-01 --to 2026-02-28 --dry-run
+
+# Build the desktop app
 npm run build
 
 # Run all tests
@@ -16,9 +22,6 @@ npm test
 
 # Run a single test file
 npx vitest run tests/invoice/calculator.test.ts
-
-# Watch mode
-npm run test:watch
 ```
 
 ## CLI Usage
