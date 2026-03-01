@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "description": "CLI tool to generate yoga teaching invoices from Google Calendar",
   "type": "module",
-  "main": "dist/index.js",
+  "main": "dist/cli/main.js",
   "bin": {
-    "lotus-invoices": "dist/index.js"
+    "lotus-invoices": "dist/cli/main.js"
   },
   "scripts": {
     "dev": "tauri dev",
