@@ -6,22 +6,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Run the Tauri desktop app (dev mode)
-npm run dev
+bun run dev
 
 # Run just the Vite frontend (no Tauri window, for fast UI iteration)
-npm run dev:vite
+bun run dev:vite
 
 # Run the CLI (original Node.js tool)
-npm run cli -- --from 2026-02-01 --to 2026-02-28 --dry-run
+bun run cli -- --from 2026-02-01 --to 2026-02-28 --dry-run
 
 # Build the desktop app
-npm run build
+bun run build
 
 # Run all tests
-npm test
+bun test
 
 # Run a single test file
-npx vitest run tests/invoice/calculator.test.ts
+bunx vitest run tests/invoice/calculator.test.ts
 ```
 
 ## CLI Usage
