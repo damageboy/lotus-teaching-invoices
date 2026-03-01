@@ -1,4 +1,4 @@
-npx lint-staged
-npx tsc --project tsconfig.app.json --noEmit
-npx tsc --project tsconfig.json --noEmit
-npm test
+bunx lint-staged
+bunx tsc --project tsconfig.app.json --noEmit
+bunx tsc --project tsconfig.json --noEmit
+bun run test
