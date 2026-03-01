@@ -6,7 +6,7 @@ import { Invoice, AppConfig } from '../types';
 import { InvoiceDocument } from './InvoiceDocument';
 
 export function invoiceFilename(invoice: Invoice): string {
-  const slug = invoice.studioName.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '');
+  const slug = invoice.studioName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   const [year, month] = invoice.invoicePeriod.from.split('-');
   return `${slug}-${year}-${month}.pdf`;
 }
@@ -18,7 +18,6 @@ export async function generateAndOpenPdf(invoice: Invoice, config: AppConfig): P
   const element = React.createElement(InvoiceDocument, { invoice, config }) as unknown as React.ReactElement<DocumentProps>;
 
   const blob = await pdf(element).toBlob();
-
   const arrayBuffer = await blob.arrayBuffer();
   await writeFile(outputPath, new Uint8Array(arrayBuffer));
   await open(outputPath);
