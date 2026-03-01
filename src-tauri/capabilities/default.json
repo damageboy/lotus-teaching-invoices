@@ -8,6 +8,7 @@
     "http:default",
     "fs:default",
     "fs:allow-app-write",
+    "fs:allow-write-all",
     "dialog:default",
     "shell:allow-open"
   ]
