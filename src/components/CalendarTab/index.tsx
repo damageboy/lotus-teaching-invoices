@@ -64,11 +64,14 @@ export function CalendarTab({ classes }: Props) {
           {unconfiguredStudios.length > 0 && configuredStudios.length > 0 && (
             <span className="text-gray-200">|</span>
           )}
-          {unconfiguredStudios.map(s => (
-            <span key={s} className="text-xs px-2 py-0.5 rounded border bg-gray-100 text-gray-400 border-gray-200" title="No rates configured">
-              ⚠ {s}
-            </span>
-          ))}
+          {unconfiguredStudios.map(s => {
+            const c = studioColor(s);
+            return (
+              <span key={s} className={`text-xs px-2 py-0.5 rounded border border-dashed opacity-70 ${c.bg} ${c.text} ${c.border}`} title="No rates configured">
+                ⚠ {s}
+              </span>
+            );
+          })}
         </div>
       )}
 
