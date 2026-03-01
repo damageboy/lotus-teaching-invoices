@@ -4,14 +4,25 @@ import { validateConfig } from '../../src/lib/config/schema.js';
 import { AppConfig } from '../../src/lib/types.js';
 
 const SAMPLE_CONFIG: AppConfig = {
-  teacherName: 'Test Teacher',
+  teacher: {
+    name: 'Test Teacher',
+    address: '123 Main St\nCity 12345',
+    taxNumber: 'DE123456789',
+    bankDetails: {
+      accountOwner: 'Test Teacher',
+      iban: 'DE89370400440532013000',
+      bic: 'COBADEFFXXX',
+    },
+  },
   calendarUrl: 'https://calendar.google.com/calendar/ical/example%40group.calendar.google.com/basic.ics',
   outputDir: '/tmp/invoices',
   studios: {
     Yogibar: {
+      fullName: 'Yogibar Yoga Studio GmbH',
+      address: '456 Yoga Lane\nMunich',
       rateTiers: [
-        { minStudents: 1, maxStudents: 5,  rate: 80  },
-        { minStudents: 6, maxStudents: 10, rate: 100 },
+        { minStudents: 1,  maxStudents: 5,    rate: 80  },
+        { minStudents: 6,  maxStudents: 10,   rate: 100 },
         { minStudents: 11, maxStudents: null, rate: 120 },
       ],
     },
@@ -26,7 +37,10 @@ describe('config serialization', () => {
   it('round-trips through yaml stringify→parse→validateConfig losslessly', () => {
     const yaml = stringifyYaml(SAMPLE_CONFIG);
     const reparsed = validateConfig(parseYaml(yaml));
-    expect(reparsed.teacherName).toBe(SAMPLE_CONFIG.teacherName);
+    expect(reparsed.teacher.name).toBe(SAMPLE_CONFIG.teacher.name);
+    expect(reparsed.teacher.bankDetails.iban).toBe(SAMPLE_CONFIG.teacher.bankDetails.iban);
+    expect(reparsed.studios.Yogibar.fullName).toBe('Yogibar Yoga Studio GmbH');
+    expect(reparsed.studios.Yogibar.address).toBe('456 Yoga Lane\nMunich');
     expect(reparsed.calendarUrl).toBe(SAMPLE_CONFIG.calendarUrl);
     expect(reparsed.outputDir).toBe(SAMPLE_CONFIG.outputDir);
     expect(Object.keys(reparsed.studios)).toEqual(Object.keys(SAMPLE_CONFIG.studios));
