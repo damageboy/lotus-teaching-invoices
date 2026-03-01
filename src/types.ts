@@ -54,6 +54,20 @@ export interface Invoice {
   totalAmount: number;
 }
 
+export type WarningCode =
+  | 'NO_SEPARATOR'
+  | 'MISSING_CLASS_TYPE'
+  | 'UNKNOWN_STUDIO'
+  | 'MISSING_STUDENT_COUNT'
+  | 'ZERO_STUDENTS';
+
+export interface ParseWarning {
+  code: WarningCode;
+  event: string;    // raw event summary
+  date?: string;    // YYYY-MM-DD if known
+  studio?: string;  // extracted studio name (for UNKNOWN_STUDIO)
+}
+
 export class AppError extends Error {
   constructor(
     message: string,

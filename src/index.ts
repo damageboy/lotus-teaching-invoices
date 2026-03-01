@@ -8,7 +8,8 @@ import { parseCalendarEvents, extractClasses } from "./calendar/parser.js";
 import { groupByStudio, filterByDateRange, filterByStudio } from "./invoice/grouper.js";
 import { generateInvoice } from "./invoice/generator.js";
 import { writeInvoice, printInvoice } from "./output/writer.js";
-import { AppError, InvoicePeriod } from "./types.js";
+import { printWarningReport } from "./output/reporter.js";
+import { AppError, InvoicePeriod, ParseWarning } from "./types.js";
 
 async function main(): Promise<void> {
   const opts = parseArgs(process.argv);
@@ -25,11 +26,7 @@ async function main(): Promise<void> {
   const events = parseCalendarEvents(icsData);
   const knownStudios = new Map(Object.keys(config.studios).map(name => [name.toLowerCase(), name]));
   const { classes, warnings } = extractClasses(events, knownStudios);
-
-  // Print warnings to stderr
-  for (const w of warnings) {
-    console.error(`[WARN] ${w}`);
-  }
+  const allWarnings: ParseWarning[] = [...warnings];
 
   // Filter by date range
   let filtered = filterByDateRange(classes, opts.from, opts.to);
@@ -59,10 +56,7 @@ async function main(): Promise<void> {
     if (!studioConfig) continue; // already filtered out unknown studios
 
     const { invoice, warnings: genWarnings } = generateInvoice(studioName, studioClasses, studioConfig, period);
-
-    for (const w of genWarnings) {
-      console.error(`[WARN] ${w}`);
-    }
+    allWarnings.push(...genWarnings);
 
     if (opts.dryRun) {
       printInvoice(invoice);
@@ -71,6 +65,8 @@ async function main(): Promise<void> {
       console.log(`Written: ${filePath}`);
     }
   }
+
+  printWarningReport(allWarnings);
 }
 
 main().catch((err) => {

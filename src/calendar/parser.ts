@@ -1,5 +1,5 @@
 import ical from "node-ical";
-import { CalendarEvent, ParsedClass } from "../types.js";
+import { CalendarEvent, ParsedClass, ParseWarning } from "../types.js";
 
 function formatDate(d: Date): string {
   const year = d.getFullYear();
@@ -46,15 +46,15 @@ export function parseCalendarEvents(icsData: string): CalendarEvent[] {
 export function extractClasses(
   events: CalendarEvent[],
   knownStudios: Map<string, string>,  // lowercase -> canonical name
-): { classes: ParsedClass[]; warnings: string[] } {
+): { classes: ParsedClass[]; warnings: ParseWarning[] } {
   const classes: ParsedClass[] = [];
-  const warnings: string[] = [];
+  const warnings: ParseWarning[] = [];
 
   for (const event of events) {
     // Expected format: "Studio Name / Class Type"
     const slashIndex = event.summary.indexOf("/");
     if (slashIndex === -1) {
-      warnings.push(`Skipping event "${event.summary}": no "/" separator found`);
+      warnings.push({ code: 'NO_SEPARATOR', event: event.summary });
       continue;
     }
 
@@ -62,19 +62,19 @@ export function extractClasses(
     const classType = event.summary.slice(slashIndex + 1).trim();
 
     if (!rawStudioName || !classType) {
-      warnings.push(`Skipping event "${event.summary}": empty studio or class type`);
+      warnings.push({ code: 'MISSING_CLASS_TYPE', event: event.summary });
       continue;
     }
 
     const studioName = knownStudios.get(rawStudioName.toLowerCase());
     if (!studioName) {
-      warnings.push(`Unknown studio "${rawStudioName}" in event "${event.summary}"`);
+      warnings.push({ code: 'UNKNOWN_STUDIO', event: event.summary, studio: rawStudioName });
       continue;
     }
 
     const studentCount = parseStudentCount(event.description);
     if (studentCount === null) {
-      warnings.push(`Missing student count for "${event.summary}" on ${formatDate(event.start)}, defaulting to 0`);
+      warnings.push({ code: 'MISSING_STUDENT_COUNT', event: event.summary, date: formatDate(event.start) });
     }
 
     classes.push({
