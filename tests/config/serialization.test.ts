@@ -67,6 +67,8 @@ describe('config serialization', () => {
       studios: {
         ...SAMPLE_CONFIG.studios,
         MySenses: {
+          fullName: '',
+          address: '',
           rateTiers: [{ minStudents: 1, maxStudents: null, rate: 60 }],
         },
       },
