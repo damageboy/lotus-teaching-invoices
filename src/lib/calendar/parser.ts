@@ -14,11 +14,12 @@ function formatTime(d: Date): string {
   return `${hours}:${minutes}`;
 }
 
-function parseStudentCount(description: string | undefined): number | null {
-  if (!description) return null;
-  // Description must contain a standalone integer for student count
-  const match = description.match(/(\d+)/);
-  return match ? parseInt(match[1], 10) : null;
+function parseStudentCount(description: string | undefined): { count: number | null, ambiguous: boolean } {
+  if (!description) return { count: null, ambiguous: false };
+  const matches = [...description.matchAll(/(\d+)/g)];
+  if (matches.length === 0) return { count: null, ambiguous: false };
+  if (matches.length === 1) return { count: parseInt(matches[0][1], 10), ambiguous: false };
+  return { count: null, ambiguous: true };
 }
 
 export function parseCalendarEvents(icsData: string): CalendarEvent[] {
@@ -71,7 +72,8 @@ export function extractClasses(
     }
 
     const studioName = knownStudios.get(rawStudioName.toLowerCase());
-    const studentCount = parseStudentCount(event.description);
+    const studentCountResult = parseStudentCount(event.description);
+    const studentCount = studentCountResult.count;
 
     if (!studioName) {
       // Unknown studio: include on calendar as unconfigured so user can see it
@@ -83,11 +85,14 @@ export function extractClasses(
         endTime: formatTime(event.end),
         studentCount: studentCount ?? 0,
         unconfigured: true,
+        ambiguousStudentCount: studentCountResult.ambiguous,
       });
       continue;
     }
 
-    if (studentCount === null) {
+    if (studentCountResult.ambiguous) {
+      warnings.push({ code: 'AMBIGUOUS_STUDENT_COUNT', event: event.summary, date: formatDate(event.start) });
+    } else if (studentCount === null) {
       warnings.push({ code: 'MISSING_STUDENT_COUNT', event: event.summary, date: formatDate(event.start) });
     }
 
@@ -98,6 +103,7 @@ export function extractClasses(
       startTime: formatTime(event.start),
       endTime: formatTime(event.end),
       studentCount: studentCount ?? 0,
+      ambiguousStudentCount: studentCountResult.ambiguous,
     });
   }
 

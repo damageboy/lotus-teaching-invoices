@@ -46,6 +46,7 @@ export interface ParsedClass {
   endTime: string;     // HH:mm
   studentCount: number;
   unconfigured?: boolean; // true when studio has no rate config
+  ambiguousStudentCount?: boolean;
 }
 
 export interface InvoiceLineItem {
@@ -77,6 +78,7 @@ export type WarningCode =
   | 'MISSING_CLASS_TYPE'
   | 'UNKNOWN_STUDIO'
   | 'MISSING_STUDENT_COUNT'
+  | 'AMBIGUOUS_STUDENT_COUNT'
   | 'ZERO_STUDENTS';
 
 export interface ParseWarning {

@@ -7,12 +7,13 @@ import { computeStudioStats, StudioMonthStats } from '../../lib/invoice/calculat
 interface Props {
   classes: ParsedClass[];
   studios?: Record<string, StudioConfig>;
+  onAddStudio?: (name: string) => void;
 }
 
-const MONTH_NAMES = ['January','February','March','April','May','June',
-  'July','August','September','October','November','December'];
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'];
 
-export function CalendarTab({ classes, studios = {} }: Props) {
+export function CalendarTab({ classes, studios = {}, onAddStudio }: Props) {
   const now = new Date();
   const defaultInPrevMonth = now.getDate() <= 15;
   const defaultMonth = defaultInPrevMonth ? (now.getMonth() === 0 ? 11 : now.getMonth() - 1) : now.getMonth();
@@ -82,8 +83,17 @@ export function CalendarTab({ classes, studios = {} }: Props) {
           {unconfiguredStudios.map(s => {
             const c = studioColor(s);
             return (
-              <span key={s} className={`text-xs px-2 py-0.5 rounded border border-dashed opacity-70 ${c.bg} ${c.text} ${c.border}`} title="No rates configured">
-                ⚠ {s}
+              <span key={s} className={`text-xs px-2 py-0.5 flex items-center gap-2 rounded border border-dashed opacity-70 ${c.bg} ${c.text} ${c.border}`} title="No rates configured">
+                <span>⚠ {s}</span>
+                {onAddStudio && (
+                  <button
+                    onClick={() => onAddStudio(s)}
+                    className="text-[10px] uppercase font-bold text-indigo-500 hover:text-indigo-700 hover:underline"
+                    title="Quick add studio config"
+                  >
+                    Configure
+                  </button>
+                )}
               </span>
             );
           })}

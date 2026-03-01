@@ -17,6 +17,16 @@ export function EventChip({ cls }: Props) {
       </div>
     );
   }
+  if (cls.ambiguousStudentCount) {
+    return (
+      <div
+        title={`${cls.studioName} — ambiguous student count`}
+        className="text-xs rounded px-1 py-0.5 mb-0.5 truncate border border-dashed border-red-400 bg-red-50 text-red-700 opacity-90 cursor-default"
+      >
+        ❓ {cls.startTime} {cls.classType}
+      </div>
+    );
+  }
   return (
     <div
       title={`${cls.studioName} — ${cls.studentCount} students`}
