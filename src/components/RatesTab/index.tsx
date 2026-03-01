@@ -4,6 +4,7 @@ import { AppConfig, RateTier, StudioConfig } from '../../lib/types';
 interface Props {
   config: AppConfig;
   isDirty: boolean;
+  saveError: string | null;
   onUpdate: (c: AppConfig) => void;
   onSave: () => Promise<void>;
 }
@@ -89,7 +90,7 @@ function StudioCard({ studioName, studio, onRename, onDelete, onUpdateTier, onAd
   );
 }
 
-export function RatesTab({ config, isDirty, onUpdate, onSave }: Props) {
+export function RatesTab({ config, isDirty, saveError, onUpdate, onSave }: Props) {
   function updateGlobal(key: 'teacherName' | 'calendarUrl', value: string) {
     onUpdate({ ...config, [key]: value });
   }
@@ -139,9 +140,10 @@ export function RatesTab({ config, isDirty, onUpdate, onSave }: Props) {
       <div className="flex items-center justify-between">
         <h2 className="text-base font-semibold">Rates &amp; Config</h2>
         <div className="flex items-center gap-3">
-          {isDirty && <span className="text-xs text-amber-500">Unsaved changes</span>}
+          {saveError && <span className="text-xs text-red-500" title={saveError}>Save failed</span>}
+          {!saveError && isDirty && <span className="text-xs text-amber-500">Unsaved changes</span>}
           <button
-            onClick={onSave}
+            onClick={() => onSave()}
             disabled={!isDirty}
             className="px-4 py-1.5 rounded bg-indigo-600 text-white text-sm disabled:opacity-40 hover:bg-indigo-700"
           >
