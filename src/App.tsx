@@ -15,6 +15,7 @@ export default function App() {
   // Fetch calendar once config is loaded and calendarUrl is set
   useEffect(() => {
     if (!configLoading && config.calendarUrl) refresh();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh is stable; including it would cause an infinite fetch loop
   }, [configLoading, config.calendarUrl]);
 
   if (configLoading) {
@@ -67,7 +68,7 @@ export default function App() {
           <InvoicesTab classes={classes} config={config} onSaveConfig={save} />
         )}
         {activeTab === 'rates' && (
-          <RatesTab config={config} isDirty={isDirty} onUpdate={updateConfig} onSave={() => save()} />
+          <RatesTab config={config} isDirty={isDirty} onUpdate={updateConfig} onSave={save} />
         )}
       </div>
     </div>
