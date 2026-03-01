@@ -43,10 +43,11 @@ describe("extractClasses", () => {
     expect(first!.endTime).toBe("10:15");
   });
 
-  it("warns on unknown studio", () => {
+  it("includes unknown studio as unconfigured class (not a warning)", () => {
     const events = parseCalendarEvents(icsData);
-    const { warnings } = extractClasses(events, knownStudios);
-    expect(warnings.some((w) => w.code === 'UNKNOWN_STUDIO' && w.event.includes("Unknown Studio"))).toBe(true);
+    const { classes, warnings } = extractClasses(events, knownStudios);
+    expect(warnings.some((w) => w.code === 'UNKNOWN_STUDIO')).toBe(false);
+    expect(classes.some(c => c.unconfigured && c.studioName === 'Unknown Studio')).toBe(true);
   });
 
   it("warns on missing separator", () => {

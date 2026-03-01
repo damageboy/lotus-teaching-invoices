@@ -30,6 +30,7 @@ export interface ParsedClass {
   startTime: string;   // HH:mm
   endTime: string;     // HH:mm
   studentCount: number;
+  unconfigured?: boolean; // true when studio has no rate config
 }
 
 export interface InvoiceLineItem {
