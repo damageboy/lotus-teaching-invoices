@@ -17,6 +17,8 @@ export function useCalendarData(config: AppConfig): CalendarData {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const studioKeys = Object.keys(config.studios).sort().join(',');
+
   const refresh = useCallback(async () => {
     if (!config.calendarUrl) {
       setError('No calendar URL configured. Set it in the Rates tab.');
@@ -35,11 +37,11 @@ export function useCalendarData(config: AppConfig): CalendarData {
       setClasses(parsed);
       setWarnings(warns);
     } catch (e) {
-      setError(`Failed to fetch calendar: ${e}`);
+      setError(`Failed to fetch calendar: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setIsLoading(false);
     }
-  }, [config.calendarUrl, config.studios]);
+  }, [config.calendarUrl, studioKeys]);
 
   return { classes, warnings, isLoading, error, refresh };
 }
