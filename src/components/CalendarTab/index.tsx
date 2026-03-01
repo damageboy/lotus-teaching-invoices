@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ParsedClass, StudioConfig } from '../../lib/types';
 import { CalendarGrid } from './CalendarGrid';
 import { studioColor } from '../../lib/studioColors';
+import { computeStudioStats, StudioMonthStats } from '../../lib/invoice/calculator';
 
 interface Props {
   classes: ParsedClass[];
@@ -20,6 +21,16 @@ export function CalendarTab({ classes, studios = {} }: Props) {
     const prefix = `${year}-${String(month + 1).padStart(2, '0')}`;
     return cls.date.startsWith(prefix);
   });
+
+  // Per-studio stats for the displayed month (configured studios only)
+  const studioStats = Object.entries(studios)
+    .map(([key, studioConfig]) => {
+      const studioClasses = monthClasses.filter(c => c.studioName === key && !c.unconfigured);
+      if (studioClasses.length === 0) return null;
+      const stats = computeStudioStats(studioClasses, studioConfig.rateTiers);
+      return { key, stats };
+    })
+    .filter((entry): entry is { key: string; stats: StudioMonthStats } => entry !== null);
 
   // Unique studios for legend — split configured vs unconfigured
   const configuredStudios = [...new Set(classes.filter(c => !c.unconfigured).map(c => c.studioName))].sort();
@@ -77,6 +88,26 @@ export function CalendarTab({ classes, studios = {} }: Props) {
       )}
 
       <CalendarGrid year={year} month={month} classes={monthClasses} />
+
+      {studioStats.length > 0 && (
+        <div className="flex gap-2 flex-wrap items-center pt-1">
+          {studioStats.map(({ key, stats }) => {
+            const c = studioColor(key);
+            return (
+              <span
+                key={key}
+                className={`text-xs px-3 py-1 rounded border ${c.bg} ${c.text} ${c.border}`}
+              >
+                {key}
+                <span className="mx-1.5 opacity-40">·</span>
+                €{stats.totalAmount.toFixed(2)}
+                <span className="mx-1.5 opacity-40">·</span>
+                avg €{stats.avgPerClass.toFixed(2)}
+              </span>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
