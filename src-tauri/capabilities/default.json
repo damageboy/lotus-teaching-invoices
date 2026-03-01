@@ -10,6 +10,7 @@
     "fs:allow-app-write",
     "fs:write-all",
     "fs:create-app-specific-dirs",
+    { "identifier": "fs:scope", "allow": [{ "path": "$HOME/**" }] },
     "dialog:default",
     "shell:allow-open",
     "log:default"
