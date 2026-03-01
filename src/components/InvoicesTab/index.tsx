@@ -3,6 +3,7 @@ import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { ParsedClass, AppConfig, InvoicePeriod } from '../../lib/types';
 import { generateInvoice } from '../../lib/invoice/generator';
 import { generateAndOpenPdf } from '../../lib/pdf/generatePdf';
+import { logError } from '../../lib/logger';
 
 interface Props {
   classes: ParsedClass[];
@@ -94,7 +95,9 @@ export function InvoicesTab({ classes, config, onSaveConfig }: Props) {
       const { invoice } = generateInvoice(row.studioName, row.classes, studioConfig, period);
       await generateAndOpenPdf(invoice, config);
     } catch (e) {
-      setRowError(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      logError(`PDF generation failed for ${row.studioName}: ${msg}`);
+      setRowError(msg);
     } finally {
       setGenerating(null);
     }

@@ -49,7 +49,7 @@ export function CalendarGrid({ year, month, classes }: Props) {
       ))}
       {cells.map((day, i) => {
         if (day === null) {
-          return <div key={`empty-${i}`} className="bg-gray-50 min-h-[80px]" />;
+          return <div key={`empty-${i}`} className="bg-gray-50 min-h-[240px]" />;
         }
         const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const dayClasses = byDate.get(dateStr) ?? [];
@@ -59,7 +59,7 @@ export function CalendarGrid({ year, month, classes }: Props) {
           today.getDate() === day;
 
         return (
-          <div key={dateStr} className="bg-white min-h-[80px] p-1">
+          <div key={dateStr} className="bg-white min-h-[240px] p-1">
             <div className={`text-xs font-medium mb-1 w-5 h-5 flex items-center justify-center rounded-full ${
               isToday ? 'bg-indigo-600 text-white' : 'text-gray-700'
             }`}>

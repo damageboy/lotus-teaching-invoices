@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Lotus Teaching Invoices",
   "version": "0.1.0",
-  "identifier": "com.tauri.dev",
+  "identifier": "com.houmus.teaching-invoices",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",

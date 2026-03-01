@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { fetch } from '@tauri-apps/plugin-http';
 import { parseCalendarEvents, extractClasses } from '../lib/calendar/parser';
 import { ParsedClass, ParseWarning, AppConfig } from '../lib/types';
+import { logInfo, logWarn, logError } from '../lib/logger';
 
 export interface CalendarData {
   classes: ParsedClass[];
@@ -26,6 +27,7 @@ export function useCalendarData(config: AppConfig): CalendarData {
     }
     setIsLoading(true);
     setError(null);
+    logInfo('Fetching calendar…');
     try {
       const response = await fetch(config.calendarUrl);
       const icsData = await response.text();
@@ -36,8 +38,12 @@ export function useCalendarData(config: AppConfig): CalendarData {
       const { classes: parsed, warnings: warns } = extractClasses(events, knownStudios);
       setClasses(parsed);
       setWarnings(warns);
+      logInfo(`Calendar loaded: ${parsed.length} classes, ${warns.length} warnings`);
+      warns.forEach(w => logWarn(`Unmatched event: ${w.event}`));
     } catch (e) {
-      setError(`Failed to fetch calendar: ${e instanceof Error ? e.message : String(e)}`);
+      const msg = `Failed to fetch calendar: ${e instanceof Error ? e.message : String(e)}`;
+      logError(msg);
+      setError(msg);
     } finally {
       setIsLoading(false);
     }

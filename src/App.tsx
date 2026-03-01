@@ -4,13 +4,23 @@ import { useCalendarData } from './hooks/useCalendarData';
 import { CalendarTab } from './components/CalendarTab';
 import { InvoicesTab } from './components/InvoicesTab';
 import { RatesTab } from './components/RatesTab';
+import { LogPanel } from './components/LogPanel';
+import { initRustLogListener, logInfo } from './lib/logger';
 
 type Tab = 'calendar' | 'invoices' | 'rates';
 
 export default function App() {
-  const { config, isDirty, isLoading: configLoading, updateConfig, save } = useConfig();
+  const { config, isDirty, isLoading: configLoading, error: configError, updateConfig, save } = useConfig();
   const { classes, isLoading: calLoading, error: calError, refresh } = useCalendarData(config);
   const [activeTab, setActiveTab] = useState<Tab>('calendar');
+
+  // Start listening to Rust log events
+  useEffect(() => {
+    logInfo('App started');
+    let unlisten: () => void = () => {};
+    initRustLogListener().then(fn => { unlisten = fn; });
+    return () => unlisten();
+  }, []);
 
   // Fetch calendar once config is loaded and calendarUrl is set
   useEffect(() => {
@@ -62,15 +72,16 @@ export default function App() {
       </div>
 
       {/* Tab content */}
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto min-h-0">
         {activeTab === 'calendar' && <CalendarTab classes={classes} />}
         {activeTab === 'invoices' && (
           <InvoicesTab classes={classes} config={config} onSaveConfig={save} />
         )}
         {activeTab === 'rates' && (
-          <RatesTab config={config} isDirty={isDirty} onUpdate={updateConfig} onSave={save} />
+          <RatesTab config={config} isDirty={isDirty} saveError={configError} onUpdate={updateConfig} onSave={save} />
         )}
       </div>
+      <LogPanel />
     </div>
   );
 }
