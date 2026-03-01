@@ -5,10 +5,10 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
-    "http:default",
+    { "identifier": "http:default", "allow": [{ "url": "https://calendar.google.com/**" }] },
     "fs:default",
     "fs:allow-app-write",
-    "fs:allow-write-all",
+    "fs:write-all",
     "dialog:default",
     "shell:allow-open"
   ]
