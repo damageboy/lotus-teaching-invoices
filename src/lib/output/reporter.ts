@@ -1,11 +1,11 @@
-import { ParseWarning, WarningCode } from "../types.js";
+import { ParseWarning, WarningCode } from '../types.js';
 
 const LABELS: Record<WarningCode, string> = {
-  NO_SEPARATOR:          'Events missing "/" separator',
-  MISSING_CLASS_TYPE:    'Events with missing class type',
-  UNKNOWN_STUDIO:        'Unknown studios (not in config)',
+  NO_SEPARATOR: 'Events missing "/" separator',
+  MISSING_CLASS_TYPE: 'Events with missing class type',
+  UNKNOWN_STUDIO: 'Unknown studios (not in config)',
   MISSING_STUDENT_COUNT: 'Events missing student count (defaulted to 0)',
-  ZERO_STUDENTS:         'Classes skipped due to zero students',
+  ZERO_STUDENTS: 'Classes skipped due to zero students',
 };
 
 export function printWarningReport(warnings: ParseWarning[]): void {

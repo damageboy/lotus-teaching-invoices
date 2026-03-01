@@ -1,4 +1,4 @@
-import { ParsedClass } from "../types.js";
+import { ParsedClass } from '../types.js';
 
 export function groupByStudio(classes: ParsedClass[]): Map<string, ParsedClass[]> {
   const groups = new Map<string, ParsedClass[]>();
@@ -24,17 +24,10 @@ export function groupByStudio(classes: ParsedClass[]): Map<string, ParsedClass[]
   return groups;
 }
 
-export function filterByDateRange(
-  classes: ParsedClass[],
-  from: string,
-  to: string,
-): ParsedClass[] {
+export function filterByDateRange(classes: ParsedClass[], from: string, to: string): ParsedClass[] {
   return classes.filter((cls) => cls.date >= from && cls.date <= to);
 }
 
-export function filterByStudio(
-  classes: ParsedClass[],
-  studioName: string,
-): ParsedClass[] {
+export function filterByStudio(classes: ParsedClass[], studioName: string): ParsedClass[] {
   return classes.filter((cls) => cls.studioName === studioName);
 }

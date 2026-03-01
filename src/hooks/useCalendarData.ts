@@ -33,14 +33,16 @@ export function useCalendarData(config: AppConfig): CalendarData {
       const icsData = await response.text();
       const events = parseCalendarEvents(icsData);
       const knownStudios = new Map(
-        Object.keys(config.studios).map(name => [name.toLowerCase(), name])
+        Object.keys(config.studios).map((name) => [name.toLowerCase(), name])
       );
       const { classes: parsed, warnings: warns } = extractClasses(events, knownStudios);
       setClasses(parsed);
       setWarnings(warns);
-      const unconfiguredCount = parsed.filter(c => c.unconfigured).length;
-      logInfo(`Calendar loaded: ${parsed.length - unconfiguredCount} classes, ${unconfiguredCount} unconfigured, ${warns.length} warnings`);
-      warns.forEach(w => logWarn(`Unmatched event: ${w.event}`));
+      const unconfiguredCount = parsed.filter((c) => c.unconfigured).length;
+      logInfo(
+        `Calendar loaded: ${parsed.length - unconfiguredCount} classes, ${unconfiguredCount} unconfigured, ${warns.length} warnings`
+      );
+      warns.forEach((w) => logWarn(`Unmatched event: ${w.event}`));
     } catch (e) {
       const msg = `Failed to fetch calendar: ${e instanceof Error ? e.message : String(e)}`;
       logError(msg);

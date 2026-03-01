@@ -12,13 +12,13 @@ export interface BankDetails {
 
 export interface TeacherInfo {
   name: string;
-  address: string;     // free-form, newlines allowed
+  address: string; // free-form, newlines allowed
   taxNumber: string;
   bankDetails: BankDetails;
 }
 
 export interface StudioConfig {
-  fullName: string;    // display name for PDF; key is still the calendar match string
+  fullName: string; // display name for PDF; key is still the calendar match string
   address: string;
   rateTiers: RateTier[];
 }
@@ -41,9 +41,9 @@ export interface CalendarEvent {
 export interface ParsedClass {
   studioName: string;
   classType: string;
-  date: string;        // YYYY-MM-DD
-  startTime: string;   // HH:mm
-  endTime: string;     // HH:mm
+  date: string; // YYYY-MM-DD
+  startTime: string; // HH:mm
+  endTime: string; // HH:mm
   studentCount: number;
   unconfigured?: boolean; // true when studio has no rate config
   ambiguousStudentCount?: boolean;
@@ -60,14 +60,14 @@ export interface InvoiceLineItem {
 }
 
 export interface InvoicePeriod {
-  from: string;  // YYYY-MM-DD
-  to: string;    // YYYY-MM-DD
+  from: string; // YYYY-MM-DD
+  to: string; // YYYY-MM-DD
 }
 
 export interface Invoice {
   studioName: string;
   invoicePeriod: InvoicePeriod;
-  generatedAt: string;  // ISO 8601
+  generatedAt: string; // ISO 8601
   classes: InvoiceLineItem[];
   totalClasses: number;
   totalAmount: number;
@@ -83,17 +83,17 @@ export type WarningCode =
 
 export interface ParseWarning {
   code: WarningCode;
-  event: string;    // raw event summary
-  date?: string;    // YYYY-MM-DD if known
-  studio?: string;  // extracted studio name (for UNKNOWN_STUDIO)
+  event: string; // raw event summary
+  date?: string; // YYYY-MM-DD if known
+  studio?: string; // extracted studio name (for UNKNOWN_STUDIO)
 }
 
 export class AppError extends Error {
   constructor(
     message: string,
-    public code: string,
+    public code: string
   ) {
     super(message);
-    this.name = "AppError";
+    this.name = 'AppError';
   }
 }

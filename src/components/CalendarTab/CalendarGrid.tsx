@@ -42,7 +42,7 @@ export function CalendarGrid({ year, month, classes }: Props) {
 
   return (
     <div className="grid grid-cols-7 gap-px bg-gray-200 border border-gray-200 rounded">
-      {DAY_LABELS.map(d => (
+      {DAY_LABELS.map((d) => (
         <div key={d} className="bg-gray-50 text-center text-xs font-medium text-gray-500 py-1">
           {d}
         </div>
@@ -54,18 +54,18 @@ export function CalendarGrid({ year, month, classes }: Props) {
         const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const dayClasses = byDate.get(dateStr) ?? [];
         const isToday =
-          today.getFullYear() === year &&
-          today.getMonth() === month &&
-          today.getDate() === day;
+          today.getFullYear() === year && today.getMonth() === month && today.getDate() === day;
 
         return (
           <div key={dateStr} className="bg-white min-h-[240px] p-1">
-            <div className={`text-xs font-medium mb-1 w-5 h-5 flex items-center justify-center rounded-full ${
-              isToday ? 'bg-indigo-600 text-white' : 'text-gray-700'
-            }`}>
+            <div
+              className={`text-xs font-medium mb-1 w-5 h-5 flex items-center justify-center rounded-full ${
+                isToday ? 'bg-indigo-600 text-white' : 'text-gray-700'
+              }`}
+            >
               {day}
             </div>
-            {dayClasses.map(cls => (
+            {dayClasses.map((cls) => (
               <EventChip key={`${cls.date}-${cls.startTime}-${cls.studioName}`} cls={cls} />
             ))}
           </div>

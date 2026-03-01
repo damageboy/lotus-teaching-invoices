@@ -14,7 +14,10 @@ function formatTime(d: Date): string {
   return `${hours}:${minutes}`;
 }
 
-function parseStudentCount(description: string | undefined): { count: number | null, ambiguous: boolean } {
+function parseStudentCount(description: string | undefined): {
+  count: number | null;
+  ambiguous: boolean;
+} {
   if (!description) return { count: null, ambiguous: false };
   const matches = [...description.matchAll(/(\d+)/g)];
   if (matches.length === 0) return { count: null, ambiguous: false };
@@ -51,7 +54,7 @@ export function parseCalendarEvents(icsData: string): CalendarEvent[] {
 
 export function extractClasses(
   events: CalendarEvent[],
-  knownStudios: Map<string, string>,
+  knownStudios: Map<string, string>
 ): { classes: ParsedClass[]; warnings: ParseWarning[] } {
   const classes: ParsedClass[] = [];
   const warnings: ParseWarning[] = [];
@@ -91,9 +94,17 @@ export function extractClasses(
     }
 
     if (studentCountResult.ambiguous) {
-      warnings.push({ code: 'AMBIGUOUS_STUDENT_COUNT', event: event.summary, date: formatDate(event.start) });
+      warnings.push({
+        code: 'AMBIGUOUS_STUDENT_COUNT',
+        event: event.summary,
+        date: formatDate(event.start),
+      });
     } else if (studentCount === null) {
-      warnings.push({ code: 'MISSING_STUDENT_COUNT', event: event.summary, date: formatDate(event.start) });
+      warnings.push({
+        code: 'MISSING_STUDENT_COUNT',
+        event: event.summary,
+        date: formatDate(event.start),
+      });
     }
 
     classes.push({

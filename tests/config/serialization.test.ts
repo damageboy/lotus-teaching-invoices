@@ -14,15 +14,16 @@ const SAMPLE_CONFIG: AppConfig = {
       bic: 'COBADEFFXXX',
     },
   },
-  calendarUrl: 'https://calendar.google.com/calendar/ical/example%40group.calendar.google.com/basic.ics',
+  calendarUrl:
+    'https://calendar.google.com/calendar/ical/example%40group.calendar.google.com/basic.ics',
   outputDir: '/tmp/invoices',
   studios: {
     Yogibar: {
       fullName: 'Yogibar Yoga Studio GmbH',
       address: '456 Yoga Lane\nMunich',
       rateTiers: [
-        { minStudents: 1,  maxStudents: 5,    rate: 80  },
-        { minStudents: 6,  maxStudents: 10,   rate: 100 },
+        { minStudents: 1, maxStudents: 5, rate: 80 },
+        { minStudents: 6, maxStudents: 10, rate: 100 },
         { minStudents: 11, maxStudents: null, rate: 120 },
       ],
     },

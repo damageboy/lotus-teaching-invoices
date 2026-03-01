@@ -21,22 +21,36 @@ interface StudioCardProps {
   onUpdateField: (studioName: string, field: 'fullName' | 'address', value: string) => void;
 }
 
-function StudioCard({ studioName, studio, onRename, onDelete, onUpdateTier, onAddTier, onRemoveTier, onUpdateField }: StudioCardProps) {
+function StudioCard({
+  studioName,
+  studio,
+  onRename,
+  onDelete,
+  onUpdateTier,
+  onAddTier,
+  onRemoveTier,
+  onUpdateField,
+}: StudioCardProps) {
   const [draftName, setDraftName] = useState(studioName);
   const [isOpen, setIsOpen] = useState(false);
-  useEffect(() => { setDraftName(studioName); }, [studioName]);
+  useEffect(() => {
+    setDraftName(studioName);
+  }, [studioName]);
 
   return (
     <div className="rounded border border-gray-200">
       {/* Header — always visible, click to toggle */}
       <div
         className="flex items-center gap-2 px-4 py-3 cursor-pointer select-none"
-        onClick={() => setIsOpen(o => !o)}
+        onClick={() => setIsOpen((o) => !o)}
       >
         <span className="text-gray-400 text-xs w-3">{isOpen ? '▾' : '▸'}</span>
         <span className="flex-1 text-sm font-medium truncate">{draftName}</span>
         <button
-          onClick={e => { e.stopPropagation(); onDelete(studioName); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete(studioName);
+          }}
           className="text-xs text-red-400 hover:text-red-600"
         >
           Delete
@@ -45,86 +59,98 @@ function StudioCard({ studioName, studio, onRename, onDelete, onUpdateTier, onAd
 
       {/* Body — only when open */}
       {isOpen && (
-      <div className="px-4 pb-4 flex flex-col gap-3 border-t border-gray-100">
-        <div className="flex items-center gap-2 pt-3">
-          <input
-            className="flex-1 border border-gray-200 rounded px-2 py-1 text-sm font-medium"
-            value={draftName}
-            onChange={e => setDraftName(e.target.value)}
-            onBlur={() => { if (draftName !== studioName) onRename(studioName, draftName); }}
-            onClick={e => e.stopPropagation()}
-          />
+        <div className="px-4 pb-4 flex flex-col gap-3 border-t border-gray-100">
+          <div className="flex items-center gap-2 pt-3">
+            <input
+              className="flex-1 border border-gray-200 rounded px-2 py-1 text-sm font-medium"
+              value={draftName}
+              onChange={(e) => setDraftName(e.target.value)}
+              onBlur={() => {
+                if (draftName !== studioName) onRename(studioName, draftName);
+              }}
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-gray-400">Full name (for invoice)</span>
+            <input
+              className="border border-gray-200 rounded px-2 py-1 text-sm"
+              value={studio.fullName}
+              onChange={(e) => onUpdateField(studioName, 'fullName', e.target.value)}
+              placeholder="e.g. Yogibar Yoga Studio GmbH"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-gray-400">Address</span>
+            <textarea
+              className="border border-gray-200 rounded px-2 py-1 text-sm resize-none"
+              rows={2}
+              value={studio.address}
+              onChange={(e) => onUpdateField(studioName, 'address', e.target.value)}
+              placeholder="Street, City"
+            />
+          </label>
+
+          {/* Rate tiers table */}
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-gray-400 text-left">
+                <th className="pb-1 font-normal">Min students</th>
+                <th className="pb-1 font-normal">Max students</th>
+                <th className="pb-1 font-normal">Rate (€)</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {studio.rateTiers.map((tier, i) => (
+                <tr key={i}>
+                  <td className="pr-2 py-0.5">
+                    <input
+                      type="number"
+                      min={1}
+                      className="w-full border border-gray-200 rounded px-1.5 py-0.5"
+                      value={tier.minStudents}
+                      onChange={(e) => onUpdateTier(studioName, i, 'minStudents', e.target.value)}
+                    />
+                  </td>
+                  <td className="pr-2 py-0.5">
+                    <input
+                      type="number"
+                      placeholder="∞"
+                      className="w-full border border-gray-200 rounded px-1.5 py-0.5"
+                      value={tier.maxStudents ?? ''}
+                      onChange={(e) => onUpdateTier(studioName, i, 'maxStudents', e.target.value)}
+                    />
+                  </td>
+                  <td className="pr-2 py-0.5">
+                    <input
+                      type="number"
+                      min={0}
+                      className="w-full border border-gray-200 rounded px-1.5 py-0.5"
+                      value={tier.rate}
+                      onChange={(e) => onUpdateTier(studioName, i, 'rate', e.target.value)}
+                    />
+                  </td>
+                  <td>
+                    <button
+                      onClick={() => onRemoveTier(studioName, i)}
+                      className="text-gray-300 hover:text-red-400"
+                    >
+                      ✕
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <button
+            onClick={() => onAddTier(studioName)}
+            className="text-xs text-indigo-500 hover:text-indigo-700 self-start"
+          >
+            + Add tier
+          </button>
         </div>
-
-      <label className="flex flex-col gap-1">
-        <span className="text-xs text-gray-400">Full name (for invoice)</span>
-        <input
-          className="border border-gray-200 rounded px-2 py-1 text-sm"
-          value={studio.fullName}
-          onChange={e => onUpdateField(studioName, 'fullName', e.target.value)}
-          placeholder="e.g. Yogibar Yoga Studio GmbH"
-        />
-      </label>
-      <label className="flex flex-col gap-1">
-        <span className="text-xs text-gray-400">Address</span>
-        <textarea
-          className="border border-gray-200 rounded px-2 py-1 text-sm resize-none"
-          rows={2}
-          value={studio.address}
-          onChange={e => onUpdateField(studioName, 'address', e.target.value)}
-          placeholder="Street, City"
-        />
-      </label>
-
-      {/* Rate tiers table */}
-      <table className="w-full text-xs">
-        <thead>
-          <tr className="text-gray-400 text-left">
-            <th className="pb-1 font-normal">Min students</th>
-            <th className="pb-1 font-normal">Max students</th>
-            <th className="pb-1 font-normal">Rate (€)</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {studio.rateTiers.map((tier, i) => (
-            <tr key={i}>
-              <td className="pr-2 py-0.5">
-                <input
-                  type="number" min={1}
-                  className="w-full border border-gray-200 rounded px-1.5 py-0.5"
-                  value={tier.minStudents}
-                  onChange={e => onUpdateTier(studioName, i, 'minStudents', e.target.value)}
-                />
-              </td>
-              <td className="pr-2 py-0.5">
-                <input
-                  type="number"
-                  placeholder="∞"
-                  className="w-full border border-gray-200 rounded px-1.5 py-0.5"
-                  value={tier.maxStudents ?? ''}
-                  onChange={e => onUpdateTier(studioName, i, 'maxStudents', e.target.value)}
-                />
-              </td>
-              <td className="pr-2 py-0.5">
-                <input
-                  type="number" min={0}
-                  className="w-full border border-gray-200 rounded px-1.5 py-0.5"
-                  value={tier.rate}
-                  onChange={e => onUpdateTier(studioName, i, 'rate', e.target.value)}
-                />
-              </td>
-              <td>
-                <button onClick={() => onRemoveTier(studioName, i)} className="text-gray-300 hover:text-red-400">✕</button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <button onClick={() => onAddTier(studioName)} className="text-xs text-indigo-500 hover:text-indigo-700 self-start">
-        + Add tier
-      </button>
-      </div>
       )}
     </div>
   );
@@ -135,7 +161,10 @@ export function RatesTab({ config, isDirty, saveError, onUpdate, onSave }: Props
     onUpdate({ ...config, teacher: { ...config.teacher, [key]: value } });
   }
   function updateBank(key: keyof BankDetails, value: string) {
-    onUpdate({ ...config, teacher: { ...config.teacher, bankDetails: { ...config.teacher.bankDetails, [key]: value } } });
+    onUpdate({
+      ...config,
+      teacher: { ...config.teacher, bankDetails: { ...config.teacher.bankDetails, [key]: value } },
+    });
   }
   function updateCalendarUrl(value: string) {
     onUpdate({ ...config, calendarUrl: value });
@@ -149,33 +178,68 @@ export function RatesTab({ config, isDirty, saveError, onUpdate, onSave }: Props
   }
 
   function updateStudioField(studioName: string, field: 'fullName' | 'address', value: string) {
-    onUpdate({ ...config, studios: { ...config.studios, [studioName]: { ...config.studios[studioName], [field]: value } } });
+    onUpdate({
+      ...config,
+      studios: {
+        ...config.studios,
+        [studioName]: { ...config.studios[studioName], [field]: value },
+      },
+    });
   }
 
   function updateTier(studioName: string, index: number, field: keyof RateTier, raw: string) {
     const tiers = [...config.studios[studioName].rateTiers];
     tiers[index] = {
       ...tiers[index],
-      [field]: field === 'maxStudents'
-        ? (raw === '' ? null : Number(raw))
-        : Number(raw),
+      [field]: field === 'maxStudents' ? (raw === '' ? null : Number(raw)) : Number(raw),
     };
-    onUpdate({ ...config, studios: { ...config.studios, [studioName]: { ...config.studios[studioName], rateTiers: tiers } } });
+    onUpdate({
+      ...config,
+      studios: {
+        ...config.studios,
+        [studioName]: { ...config.studios[studioName], rateTiers: tiers },
+      },
+    });
   }
 
   function addTier(studioName: string) {
-    const tiers = [...config.studios[studioName].rateTiers, { minStudents: 1, maxStudents: null, rate: 50 }];
-    onUpdate({ ...config, studios: { ...config.studios, [studioName]: { ...config.studios[studioName], rateTiers: tiers } } });
+    const tiers = [
+      ...config.studios[studioName].rateTiers,
+      { minStudents: 1, maxStudents: null, rate: 50 },
+    ];
+    onUpdate({
+      ...config,
+      studios: {
+        ...config.studios,
+        [studioName]: { ...config.studios[studioName], rateTiers: tiers },
+      },
+    });
   }
 
   function removeTier(studioName: string, index: number) {
     const tiers = config.studios[studioName].rateTiers.filter((_, i) => i !== index);
-    onUpdate({ ...config, studios: { ...config.studios, [studioName]: { ...config.studios[studioName], rateTiers: tiers } } });
+    onUpdate({
+      ...config,
+      studios: {
+        ...config.studios,
+        [studioName]: { ...config.studios[studioName], rateTiers: tiers },
+      },
+    });
   }
 
   function addStudio() {
     const name = `New Studio ${Object.keys(config.studios).length + 1}`;
-    onUpdate({ ...config, studios: { ...config.studios, [name]: { fullName: '', address: '', rateTiers: [{ minStudents: 1, maxStudents: null, rate: 50 }] } } });
+    onUpdate({
+      ...config,
+      studios: {
+        ...config.studios,
+        [name]: {
+          fullName: '',
+          address: '',
+          rateTiers: [{ minStudents: 1, maxStudents: null, rate: 50 }],
+        },
+      },
+    });
   }
 
   function deleteStudio(name: string) {
@@ -190,7 +254,11 @@ export function RatesTab({ config, isDirty, saveError, onUpdate, onSave }: Props
       <div className="flex items-center justify-between">
         <h2 className="text-base font-semibold">Rates &amp; Config</h2>
         <div className="flex items-center gap-3">
-          {saveError && <span className="text-xs text-red-500" title={saveError}>Save failed</span>}
+          {saveError && (
+            <span className="text-xs text-red-500" title={saveError}>
+              Save failed
+            </span>
+          )}
           {!saveError && isDirty && <span className="text-xs text-amber-500">Unsaved changes</span>}
           <button
             onClick={() => onSave()}
@@ -207,49 +275,64 @@ export function RatesTab({ config, isDirty, saveError, onUpdate, onSave }: Props
         <h3 className="text-sm font-medium text-gray-700">Teacher</h3>
         <label className="flex flex-col gap-1">
           <span className="text-xs text-gray-500">Name</span>
-          <input className="border border-gray-200 rounded px-2 py-1 text-sm"
+          <input
+            className="border border-gray-200 rounded px-2 py-1 text-sm"
             value={config.teacher.name}
-            onChange={e => updateTeacher('name', e.target.value)} />
+            onChange={(e) => updateTeacher('name', e.target.value)}
+          />
         </label>
         <label className="flex flex-col gap-1">
           <span className="text-xs text-gray-500">Address</span>
-          <textarea className="border border-gray-200 rounded px-2 py-1 text-sm resize-none" rows={3}
+          <textarea
+            className="border border-gray-200 rounded px-2 py-1 text-sm resize-none"
+            rows={3}
             value={config.teacher.address}
-            onChange={e => updateTeacher('address', e.target.value)} />
+            onChange={(e) => updateTeacher('address', e.target.value)}
+          />
         </label>
         <label className="flex flex-col gap-1">
           <span className="text-xs text-gray-500">Tax number</span>
-          <input className="border border-gray-200 rounded px-2 py-1 text-sm"
+          <input
+            className="border border-gray-200 rounded px-2 py-1 text-sm"
             value={config.teacher.taxNumber}
-            onChange={e => updateTeacher('taxNumber', e.target.value)} />
+            onChange={(e) => updateTeacher('taxNumber', e.target.value)}
+          />
         </label>
 
         <h3 className="text-sm font-medium text-gray-700 mt-2">Bank details</h3>
         <label className="flex flex-col gap-1">
           <span className="text-xs text-gray-500">Account owner</span>
-          <input className="border border-gray-200 rounded px-2 py-1 text-sm"
+          <input
+            className="border border-gray-200 rounded px-2 py-1 text-sm"
             value={config.teacher.bankDetails.accountOwner}
-            onChange={e => updateBank('accountOwner', e.target.value)} />
+            onChange={(e) => updateBank('accountOwner', e.target.value)}
+          />
         </label>
         <label className="flex flex-col gap-1">
           <span className="text-xs text-gray-500">IBAN</span>
-          <input className="border border-gray-200 rounded px-2 py-1 text-sm font-mono tracking-wide"
+          <input
+            className="border border-gray-200 rounded px-2 py-1 text-sm font-mono tracking-wide"
             value={config.teacher.bankDetails.iban}
-            onChange={e => updateBank('iban', e.target.value)} />
+            onChange={(e) => updateBank('iban', e.target.value)}
+          />
         </label>
         <label className="flex flex-col gap-1">
           <span className="text-xs text-gray-500">BIC</span>
-          <input className="border border-gray-200 rounded px-2 py-1 text-sm font-mono"
+          <input
+            className="border border-gray-200 rounded px-2 py-1 text-sm font-mono"
             value={config.teacher.bankDetails.bic}
-            onChange={e => updateBank('bic', e.target.value)} />
+            onChange={(e) => updateBank('bic', e.target.value)}
+          />
         </label>
 
         <h3 className="text-sm font-medium text-gray-700 mt-2">Calendar</h3>
         <label className="flex flex-col gap-1">
           <span className="text-xs text-gray-500">Calendar URL (ICS)</span>
-          <input className="border border-gray-200 rounded px-2 py-1 text-sm font-mono"
+          <input
+            className="border border-gray-200 rounded px-2 py-1 text-sm font-mono"
             value={config.calendarUrl}
-            onChange={e => updateCalendarUrl(e.target.value)} />
+            onChange={(e) => updateCalendarUrl(e.target.value)}
+          />
         </label>
       </div>
 

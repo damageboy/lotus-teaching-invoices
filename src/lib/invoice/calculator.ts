@@ -1,4 +1,4 @@
-import { RateTier, ParsedClass, AppError } from "../types.js";
+import { RateTier, ParsedClass, AppError } from '../types.js';
 
 export function findRate(tiers: RateTier[], studentCount: number): number {
   for (const tier of tiers) {
@@ -8,21 +8,18 @@ export function findRate(tiers: RateTier[], studentCount: number): number {
       return tier.rate;
     }
   }
-  throw new AppError(
-    `No matching rate tier for ${studentCount} students`,
-    "NO_MATCHING_TIER",
-  );
+  throw new AppError(`No matching rate tier for ${studentCount} students`, 'NO_MATCHING_TIER');
 }
 
 export interface StudioMonthStats {
   totalAmount: number;
-  classCount: number;   // non-zero-student classes only
-  avgPerClass: number;  // 0 when classCount is 0
+  classCount: number; // non-zero-student classes only
+  avgPerClass: number; // 0 when classCount is 0
 }
 
 export function computeStudioStats(
   classes: ParsedClass[],
-  rateTiers: RateTier[],
+  rateTiers: RateTier[]
 ): StudioMonthStats {
   let totalAmount = 0;
   let classCount = 0;
