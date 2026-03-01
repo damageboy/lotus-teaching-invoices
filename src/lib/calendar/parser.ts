@@ -1,42 +1,41 @@
-import ical from "node-ical";
-import { CalendarEvent, ParsedClass, ParseWarning } from "../types.js";
+import ICAL from 'ical.js';
+import { CalendarEvent, ParsedClass, ParseWarning } from '../types.js';
 
 function formatDate(d: Date): string {
   const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
 
 function formatTime(d: Date): string {
-  const hours = String(d.getHours()).padStart(2, "0");
-  const minutes = String(d.getMinutes()).padStart(2, "0");
+  const hours = String(d.getHours()).padStart(2, '0');
+  const minutes = String(d.getMinutes()).padStart(2, '0');
   return `${hours}:${minutes}`;
 }
 
 function parseStudentCount(description: string | undefined): number | null {
   if (!description) return null;
-  // Look for a standalone number in the description
   const match = description.match(/(\d+)/);
   return match ? parseInt(match[1], 10) : null;
 }
 
 export function parseCalendarEvents(icsData: string): CalendarEvent[] {
-  const parsed = ical.sync.parseICS(icsData);
+  const jcal = ICAL.parse(icsData);
+  const comp = new ICAL.Component(jcal);
+  const vevents = comp.getAllSubcomponents('vevent');
   const events: CalendarEvent[] = [];
 
-  for (const [uid, component] of Object.entries(parsed)) {
-    if (component.type !== "VEVENT") continue;
-
-    const event = component as ical.VEvent;
-    if (!event.summary || !event.start || !event.end) continue;
+  for (const vevent of vevents) {
+    const event = new ICAL.Event(vevent);
+    if (!event.summary || !event.startDate || !event.endDate) continue;
 
     events.push({
-      uid,
+      uid: (vevent.getFirstPropertyValue('uid') as string) ?? event.uid,
       summary: event.summary,
-      description: (event.description as string) ?? "",
-      start: new Date(event.start as unknown as string),
-      end: new Date(event.end as unknown as string),
+      description: (vevent.getFirstPropertyValue('description') as string) ?? '',
+      start: event.startDate.toJSDate(),
+      end: event.endDate.toJSDate(),
     });
   }
 
@@ -45,14 +44,13 @@ export function parseCalendarEvents(icsData: string): CalendarEvent[] {
 
 export function extractClasses(
   events: CalendarEvent[],
-  knownStudios: Map<string, string>,  // lowercase -> canonical name
+  knownStudios: Map<string, string>,
 ): { classes: ParsedClass[]; warnings: ParseWarning[] } {
   const classes: ParsedClass[] = [];
   const warnings: ParseWarning[] = [];
 
   for (const event of events) {
-    // Expected format: "Studio Name / Class Type"
-    const slashIndex = event.summary.indexOf("/");
+    const slashIndex = event.summary.indexOf('/');
     if (slashIndex === -1) {
       warnings.push({ code: 'NO_SEPARATOR', event: event.summary });
       continue;
