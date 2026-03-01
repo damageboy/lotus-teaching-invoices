@@ -1,0 +1,12 @@
+calendarUrl: "https://calendar.google.com/calendar/ical/YOUR_CALENDAR_ID/basic.ics"
+studios:
+  "Zen Yoga":
+    rateTiers:
+      - { minStudents: 1, maxStudents: 5, rate: 80 }
+      - { minStudents: 6, maxStudents: 10, rate: 100 }
+      - { minStudents: 11, maxStudents: null, rate: 120 }
+  "Power House":
+    rateTiers:
+      - { minStudents: 1, maxStudents: 3, rate: 60 }
+      - { minStudents: 4, maxStudents: 8, rate: 90 }
+      - { minStudents: 9, maxStudents: null, rate: 110 }
