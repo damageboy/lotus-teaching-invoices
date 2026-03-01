@@ -23,21 +23,38 @@ interface StudioCardProps {
 
 function StudioCard({ studioName, studio, onRename, onDelete, onUpdateTier, onAddTier, onRemoveTier, onUpdateField }: StudioCardProps) {
   const [draftName, setDraftName] = useState(studioName);
+  const [isOpen, setIsOpen] = useState(false);
   useEffect(() => { setDraftName(studioName); }, [studioName]);
 
   return (
-    <div className="p-4 rounded border border-gray-200 flex flex-col gap-3">
-      <div className="flex items-center gap-2">
-        <input
-          className="flex-1 border border-gray-200 rounded px-2 py-1 text-sm font-medium"
-          value={draftName}
-          onChange={e => setDraftName(e.target.value)}
-          onBlur={() => { if (draftName !== studioName) onRename(studioName, draftName); }}
-        />
-        <button onClick={() => onDelete(studioName)} className="text-xs text-red-400 hover:text-red-600">
+    <div className="rounded border border-gray-200">
+      {/* Header — always visible, click to toggle */}
+      <div
+        className="flex items-center gap-2 px-4 py-3 cursor-pointer select-none"
+        onClick={() => setIsOpen(o => !o)}
+      >
+        <span className="text-gray-400 text-xs w-3">{isOpen ? '▾' : '▸'}</span>
+        <span className="flex-1 text-sm font-medium truncate">{draftName}</span>
+        <button
+          onClick={e => { e.stopPropagation(); onDelete(studioName); }}
+          className="text-xs text-red-400 hover:text-red-600"
+        >
           Delete
         </button>
       </div>
+
+      {/* Body — only when open */}
+      {isOpen && (
+      <div className="px-4 pb-4 flex flex-col gap-3 border-t border-gray-100">
+        <div className="flex items-center gap-2 pt-3">
+          <input
+            className="flex-1 border border-gray-200 rounded px-2 py-1 text-sm font-medium"
+            value={draftName}
+            onChange={e => setDraftName(e.target.value)}
+            onBlur={() => { if (draftName !== studioName) onRename(studioName, draftName); }}
+            onClick={e => e.stopPropagation()}
+          />
+        </div>
 
       <label className="flex flex-col gap-1">
         <span className="text-xs text-gray-400">Full name (for invoice)</span>
@@ -107,6 +124,8 @@ function StudioCard({ studioName, studio, onRename, onDelete, onUpdateTier, onAd
       <button onClick={() => onAddTier(studioName)} className="text-xs text-indigo-500 hover:text-indigo-700 self-start">
         + Add tier
       </button>
+      </div>
+      )}
     </div>
   );
 }
