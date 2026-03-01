@@ -16,12 +16,18 @@ function formatTime(d: Date): string {
 
 function parseStudentCount(description: string | undefined): number | null {
   if (!description) return null;
+  // Description must contain a standalone integer for student count
   const match = description.match(/(\d+)/);
   return match ? parseInt(match[1], 10) : null;
 }
 
 export function parseCalendarEvents(icsData: string): CalendarEvent[] {
-  const jcal = ICAL.parse(icsData);
+  let jcal: ReturnType<typeof ICAL.parse>;
+  try {
+    jcal = ICAL.parse(icsData);
+  } catch (e) {
+    throw new Error(`Failed to parse ICS data: ${(e as Error).message}`);
+  }
   const comp = new ICAL.Component(jcal);
   const vevents = comp.getAllSubcomponents('vevent');
   const events: CalendarEvent[] = [];
@@ -31,7 +37,7 @@ export function parseCalendarEvents(icsData: string): CalendarEvent[] {
     if (!event.summary || !event.startDate || !event.endDate) continue;
 
     events.push({
-      uid: (vevent.getFirstPropertyValue('uid') as string) ?? event.uid,
+      uid: (vevent.getFirstPropertyValue('uid') as string) ?? '',
       summary: event.summary,
       description: (vevent.getFirstPropertyValue('description') as string) ?? '',
       start: event.startDate.toJSDate(),
