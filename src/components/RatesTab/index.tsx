@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { AppConfig, RateTier, StudioConfig } from '../../lib/types';
+import { AppConfig, RateTier, StudioConfig, TeacherInfo, BankDetails } from '../../lib/types';
 
 interface Props {
   config: AppConfig;
@@ -18,9 +18,10 @@ interface StudioCardProps {
   onUpdateTier: (studioName: string, index: number, field: keyof RateTier, raw: string) => void;
   onAddTier: (studioName: string) => void;
   onRemoveTier: (studioName: string, index: number) => void;
+  onUpdateField: (studioName: string, field: 'fullName' | 'address', value: string) => void;
 }
 
-function StudioCard({ studioName, studio, onRename, onDelete, onUpdateTier, onAddTier, onRemoveTier }: StudioCardProps) {
+function StudioCard({ studioName, studio, onRename, onDelete, onUpdateTier, onAddTier, onRemoveTier, onUpdateField }: StudioCardProps) {
   const [draftName, setDraftName] = useState(studioName);
   useEffect(() => { setDraftName(studioName); }, [studioName]);
 
@@ -37,6 +38,26 @@ function StudioCard({ studioName, studio, onRename, onDelete, onUpdateTier, onAd
           Delete
         </button>
       </div>
+
+      <label className="flex flex-col gap-1">
+        <span className="text-xs text-gray-400">Full name (for invoice)</span>
+        <input
+          className="border border-gray-200 rounded px-2 py-1 text-sm"
+          value={studio.fullName}
+          onChange={e => onUpdateField(studioName, 'fullName', e.target.value)}
+          placeholder="e.g. Yogibar Yoga Studio GmbH"
+        />
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className="text-xs text-gray-400">Address</span>
+        <textarea
+          className="border border-gray-200 rounded px-2 py-1 text-sm resize-none"
+          rows={2}
+          value={studio.address}
+          onChange={e => onUpdateField(studioName, 'address', e.target.value)}
+          placeholder="Street, City"
+        />
+      </label>
 
       {/* Rate tiers table */}
       <table className="w-full text-xs">
@@ -91,8 +112,14 @@ function StudioCard({ studioName, studio, onRename, onDelete, onUpdateTier, onAd
 }
 
 export function RatesTab({ config, isDirty, saveError, onUpdate, onSave }: Props) {
-  function updateGlobal(key: 'teacherName' | 'calendarUrl', value: string) {
-    onUpdate({ ...config, [key]: value });
+  function updateTeacher(key: keyof Omit<TeacherInfo, 'bankDetails'>, value: string) {
+    onUpdate({ ...config, teacher: { ...config.teacher, [key]: value } });
+  }
+  function updateBank(key: keyof BankDetails, value: string) {
+    onUpdate({ ...config, teacher: { ...config.teacher, bankDetails: { ...config.teacher.bankDetails, [key]: value } } });
+  }
+  function updateCalendarUrl(value: string) {
+    onUpdate({ ...config, calendarUrl: value });
   }
 
   function updateStudioName(oldName: string, newName: string) {
@@ -100,6 +127,10 @@ export function RatesTab({ config, isDirty, saveError, onUpdate, onSave }: Props
       Object.entries(config.studios).map(([k, v]) => [k === oldName ? newName : k, v])
     );
     onUpdate({ ...config, studios });
+  }
+
+  function updateStudioField(studioName: string, field: 'fullName' | 'address', value: string) {
+    onUpdate({ ...config, studios: { ...config.studios, [studioName]: { ...config.studios[studioName], [field]: value } } });
   }
 
   function updateTier(studioName: string, index: number, field: keyof RateTier, raw: string) {
@@ -125,7 +156,7 @@ export function RatesTab({ config, isDirty, saveError, onUpdate, onSave }: Props
 
   function addStudio() {
     const name = `New Studio ${Object.keys(config.studios).length + 1}`;
-    onUpdate({ ...config, studios: { ...config.studios, [name]: { rateTiers: [{ minStudents: 1, maxStudents: null, rate: 50 }] } } });
+    onUpdate({ ...config, studios: { ...config.studios, [name]: { fullName: '', address: '', rateTiers: [{ minStudents: 1, maxStudents: null, rate: 50 }] } } });
   }
 
   function deleteStudio(name: string) {
@@ -154,22 +185,52 @@ export function RatesTab({ config, isDirty, saveError, onUpdate, onSave }: Props
 
       {/* Global settings */}
       <div className="flex flex-col gap-3 p-4 rounded border border-gray-200">
-        <h3 className="text-sm font-medium text-gray-700">Global</h3>
+        <h3 className="text-sm font-medium text-gray-700">Teacher</h3>
         <label className="flex flex-col gap-1">
-          <span className="text-xs text-gray-500">Teacher name</span>
-          <input
-            className="border border-gray-200 rounded px-2 py-1 text-sm"
-            value={config.teacherName}
-            onChange={e => updateGlobal('teacherName', e.target.value)}
-          />
+          <span className="text-xs text-gray-500">Name</span>
+          <input className="border border-gray-200 rounded px-2 py-1 text-sm"
+            value={config.teacher.name}
+            onChange={e => updateTeacher('name', e.target.value)} />
         </label>
         <label className="flex flex-col gap-1">
+          <span className="text-xs text-gray-500">Address</span>
+          <textarea className="border border-gray-200 rounded px-2 py-1 text-sm resize-none" rows={3}
+            value={config.teacher.address}
+            onChange={e => updateTeacher('address', e.target.value)} />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs text-gray-500">Tax number</span>
+          <input className="border border-gray-200 rounded px-2 py-1 text-sm"
+            value={config.teacher.taxNumber}
+            onChange={e => updateTeacher('taxNumber', e.target.value)} />
+        </label>
+
+        <h3 className="text-sm font-medium text-gray-700 mt-2">Bank details</h3>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs text-gray-500">Account owner</span>
+          <input className="border border-gray-200 rounded px-2 py-1 text-sm"
+            value={config.teacher.bankDetails.accountOwner}
+            onChange={e => updateBank('accountOwner', e.target.value)} />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs text-gray-500">IBAN</span>
+          <input className="border border-gray-200 rounded px-2 py-1 text-sm font-mono tracking-wide"
+            value={config.teacher.bankDetails.iban}
+            onChange={e => updateBank('iban', e.target.value)} />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs text-gray-500">BIC</span>
+          <input className="border border-gray-200 rounded px-2 py-1 text-sm font-mono"
+            value={config.teacher.bankDetails.bic}
+            onChange={e => updateBank('bic', e.target.value)} />
+        </label>
+
+        <h3 className="text-sm font-medium text-gray-700 mt-2">Calendar</h3>
+        <label className="flex flex-col gap-1">
           <span className="text-xs text-gray-500">Calendar URL (ICS)</span>
-          <input
-            className="border border-gray-200 rounded px-2 py-1 text-sm font-mono"
+          <input className="border border-gray-200 rounded px-2 py-1 text-sm font-mono"
             value={config.calendarUrl}
-            onChange={e => updateGlobal('calendarUrl', e.target.value)}
-          />
+            onChange={e => updateCalendarUrl(e.target.value)} />
         </label>
       </div>
 
@@ -184,6 +245,7 @@ export function RatesTab({ config, isDirty, saveError, onUpdate, onSave }: Props
           onUpdateTier={updateTier}
           onAddTier={addTier}
           onRemoveTier={removeTier}
+          onUpdateField={updateStudioField}
         />
       ))}
 
