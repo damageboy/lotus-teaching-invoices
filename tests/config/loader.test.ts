@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { join } from "node:path";
 import { loadConfig } from "../../src/lib/config/loader.js";
-import { validateConfig, validateRateTiers } from "../../src/lib/config/schema.js";
+import { validateConfig } from "../../src/lib/config/schema.js";
 
 const fixturesDir = join(import.meta.dirname, "..", "fixtures");
 
@@ -30,7 +30,7 @@ describe("validateConfig", () => {
   });
 
   it("rejects missing calendarUrl", () => {
-    expect(() => validateConfig({ studios: {} })).toThrow("calendarUrl");
+    expect(() => validateConfig({ studios: {} })).toThrow("Required");
   });
 
   it("rejects empty studios", () => {
@@ -38,43 +38,80 @@ describe("validateConfig", () => {
   });
 });
 
-describe("validateRateTiers", () => {
+describe("validateRateTiers (via validateConfig)", () => {
   it("accepts valid contiguous tiers", () => {
     expect(() =>
-      validateRateTiers("Test", [
-        { minStudents: 1, maxStudents: 5, rate: 80 },
-        { minStudents: 6, maxStudents: null, rate: 100 },
-      ]),
+      validateConfig({
+        calendarUrl: "url",
+        studios: {
+          "Test": {
+            rateTiers: [
+              { minStudents: 1, maxStudents: 5, rate: 80 },
+              { minStudents: 6, maxStudents: null, rate: 100 },
+            ]
+          }
+        }
+      })
     ).not.toThrow();
   });
 
   it("rejects empty tiers", () => {
-    expect(() => validateRateTiers("Test", [])).toThrow("no rate tiers");
+    expect(() =>
+      validateConfig({
+        calendarUrl: "url",
+        studios: {
+          "Test": {
+            rateTiers: []
+          }
+        }
+      })
+    ).toThrow("has no rate tiers");
   });
 
   it("rejects gap between tiers", () => {
     expect(() =>
-      validateRateTiers("Test", [
-        { minStudents: 1, maxStudents: 3, rate: 80 },
-        { minStudents: 5, maxStudents: null, rate: 100 },
-      ]),
+      validateConfig({
+        calendarUrl: "url",
+        studios: {
+          "Test": {
+            rateTiers: [
+              { minStudents: 1, maxStudents: 3, rate: 80 },
+              { minStudents: 5, maxStudents: null, rate: 100 },
+            ]
+          }
+        }
+      })
     ).toThrow("gap or overlap");
   });
 
   it("rejects non-terminal unbounded tier", () => {
     expect(() =>
-      validateRateTiers("Test", [
-        { minStudents: 1, maxStudents: null, rate: 80 },
-        { minStudents: 2, maxStudents: null, rate: 100 },
-      ]),
+      validateConfig({
+        calendarUrl: "url",
+        studios: {
+          "Test": {
+            rateTiers: [
+              { minStudents: 1, maxStudents: null, rate: 80 },
+              { minStudents: 2, maxStudents: null, rate: 100 },
+            ]
+          }
+        }
+      })
     ).toThrow("unbounded tier");
   });
 
   it("rejects bounded last tier", () => {
     expect(() =>
-      validateRateTiers("Test", [
-        { minStudents: 1, maxStudents: 5, rate: 80 },
-      ]),
+      validateConfig({
+        calendarUrl: "url",
+        studios: {
+          "Test": {
+            rateTiers: [
+              { minStudents: 1, maxStudents: 5, rate: 80 },
+            ]
+          }
+        }
+      })
     ).toThrow("last tier must be unbounded");
   });
 });

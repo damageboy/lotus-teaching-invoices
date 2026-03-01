@@ -14,10 +14,25 @@ export default function App() {
   const { classes, isLoading: calLoading, error: calError, refresh } = useCalendarData(config);
   const [activeTab, setActiveTab] = useState<Tab>('calendar');
 
+  function handleAddStudio(name: string) {
+    updateConfig({
+      ...config,
+      studios: {
+        ...config.studios,
+        [name]: {
+          fullName: name,
+          address: '',
+          rateTiers: [{ minStudents: 1, maxStudents: null, rate: 50 }]
+        }
+      }
+    });
+    setActiveTab('rates');
+  }
+
   // Start listening to Rust log events
   useEffect(() => {
     logInfo('App started');
-    let unlisten: () => void = () => {};
+    let unlisten: () => void = () => { };
     initRustLogListener().then(fn => { unlisten = fn; });
     return () => unlisten();
   }, []);
@@ -25,7 +40,7 @@ export default function App() {
   // Fetch calendar once config is loaded and calendarUrl is set
   useEffect(() => {
     if (!configLoading && config.calendarUrl) refresh();
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh is stable; including it would cause an infinite fetch loop
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh is stable; including it would cause an infinite fetch loop
   }, [configLoading, config.calendarUrl]);
 
   if (configLoading) {
@@ -46,11 +61,10 @@ export default function App() {
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`px-6 py-3 text-sm font-medium transition-colors ${
-              activeTab === tab.id
+            className={`px-6 py-3 text-sm font-medium transition-colors ${activeTab === tab.id
                 ? 'border-b-2 border-indigo-600 text-indigo-600'
                 : 'text-gray-600 hover:text-gray-900'
-            }`}
+              }`}
           >
             {tab.label}
             {tab.id === 'rates' && isDirty && (
@@ -73,7 +87,7 @@ export default function App() {
 
       {/* Tab content */}
       <div className="flex-1 overflow-auto min-h-0">
-        {activeTab === 'calendar' && <CalendarTab classes={classes} studios={config.studios} />}
+        {activeTab === 'calendar' && <CalendarTab classes={classes} studios={config.studios} onAddStudio={handleAddStudio} />}
         {activeTab === 'invoices' && (
           <InvoicesTab classes={classes} config={config} onSaveConfig={save} />
         )}

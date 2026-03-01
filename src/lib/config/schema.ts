@@ -1,146 +1,114 @@
-import { AppConfig, RateTier, TeacherInfo, BankDetails, AppError } from "../types.js";
+import { z } from "zod";
+import { AppConfig, RateTier, TeacherInfo, AppError } from "../types.js";
 
-export function validateRateTiers(studioName: string, tiers: RateTier[]): void {
-  if (!tiers || tiers.length === 0) {
-    throw new AppError(
-      `Studio "${studioName}" has no rate tiers defined`,
-      "INVALID_CONFIG",
-    );
-  }
+const RateTierSchema = z.object({
+  minStudents: z.number({ required_error: "rate tier must be an object" }).int().min(1, "tier minStudents must be >= 1"),
+  maxStudents: z.number().int().nullable().default(null).transform((v: number | null | undefined) => v === undefined ? null : v),
+  rate: z.number().positive("tier rate must be > 0"),
+});
 
-  // Sort by minStudents
+const validateContiguity = (tiers: RateTier[], ctx: z.RefinementCtx) => {
   const sorted = [...tiers].sort((a, b) => a.minStudents - b.minStudents);
 
   for (let i = 0; i < sorted.length; i++) {
     const tier = sorted[i];
 
-    if (tier.minStudents < 1) {
-      throw new AppError(
-        `Studio "${studioName}": tier minStudents must be >= 1`,
-        "INVALID_CONFIG",
-      );
-    }
-
-    if (tier.rate <= 0) {
-      throw new AppError(
-        `Studio "${studioName}": tier rate must be > 0`,
-        "INVALID_CONFIG",
-      );
-    }
-
     if (tier.maxStudents !== null && tier.maxStudents < tier.minStudents) {
-      throw new AppError(
-        `Studio "${studioName}": tier maxStudents (${tier.maxStudents}) < minStudents (${tier.minStudents})`,
-        "INVALID_CONFIG",
-      );
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `tier maxStudents (${tier.maxStudents}) < minStudents (${tier.minStudents})` });
+      return;
     }
 
-    // Check contiguity: next tier's min should be previous tier's max + 1
     if (i > 0) {
       const prev = sorted[i - 1];
       if (prev.maxStudents === null) {
-        throw new AppError(
-          `Studio "${studioName}": unbounded tier (maxStudents: null) must be the last tier`,
-          "INVALID_CONFIG",
-        );
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "unbounded tier (maxStudents: null) must be the last tier" });
+        return;
       }
       if (tier.minStudents !== prev.maxStudents + 1) {
-        throw new AppError(
-          `Studio "${studioName}": gap or overlap between tiers at ${prev.maxStudents} → ${tier.minStudents}`,
-          "INVALID_CONFIG",
-        );
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: `gap or overlap between tiers at ${prev.maxStudents} → ${tier.minStudents}` });
+        return;
       }
     }
 
-    // Last tier must be unbounded
+    // Only fail if it's the absolute LAST tier and it is bounded.
     if (i === sorted.length - 1 && tier.maxStudents !== null) {
-      throw new AppError(
-        `Studio "${studioName}": last tier must be unbounded (maxStudents: null)`,
-        "INVALID_CONFIG",
-      );
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "last tier must be unbounded (maxStudents: null)" });
+      return;
     }
   }
-}
+};
+
+const BankDetailsSchema = z.object({
+  accountOwner: z.string().default(''),
+  iban: z.string().default(''),
+  bic: z.string().default(''),
+}).default({});
+
+const TeacherInfoSchema = z.object({
+  name: z.string().default(''),
+  address: z.string().default(''),
+  taxNumber: z.string().default(''),
+  bankDetails: BankDetailsSchema,
+}).default({});
+
+const StudioConfigSchema = z.object({
+  fullName: z.string().default(''),
+  address: z.string().default(''),
+  rateTiers: z.array(RateTierSchema, { required_error: "must have a rateTiers array" })
+    .min(1, "has no rate tiers defined")
+    .superRefine(validateContiguity),
+});
+
+const ConfigSchema = z.object({
+  teacher: TeacherInfoSchema,
+  calendarUrl: z.string().min(1, "Config must have a non-empty calendarUrl string"),
+  outputDir: z.string().default(''),
+  studios: z.record(StudioConfigSchema, { required_error: "Config must have a studios object" })
+    .refine((record: Record<string, any>) => Object.keys(record).length > 0, "Config must have at least one studio"),
+});
 
 export function validateConfig(raw: unknown): AppConfig {
-  if (typeof raw !== "object" || raw === null) {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
     throw new AppError("Config must be an object", "INVALID_CONFIG");
   }
 
-  const obj = raw as Record<string, unknown>;
+  const result = ConfigSchema.safeParse(raw);
 
-  if (typeof obj.calendarUrl !== "string" || obj.calendarUrl.length === 0) {
-    throw new AppError("Config must have a non-empty calendarUrl string", "INVALID_CONFIG");
+  if (!result.success) {
+    const error = result.error.errors[0];
+    let message = error.message;
+    if (error.path.length > 0) {
+      if (error.path[0] === "studios" && error.path[1]) {
+        message = `Studio "${error.path[1]}" ${message.replace("has no", "has no").replace("must have", "must have")}`;
+        const issueMsg = error.message;
+
+        if (error.path.length > 2 && error.path[2] === "rateTiers") {
+          message = `Studio "${error.path[1]}": ${issueMsg}`;
+          if (error.path[3] !== undefined && (issueMsg.includes("object") || issueMsg.includes("Number"))) {
+            message = `Studio "${error.path[1]}" tier ${error.path[3]} must be an object`;
+          }
+        } else if (!message.includes("Studio")) {
+          message = `Studio "${error.path[1]}": ${issueMsg}`;
+        }
+      }
+    }
+    throw new AppError(message, "INVALID_CONFIG");
   }
 
-  // Parse teacher object (all fields optional, fall back to empty string)
-  const teacherRaw = (typeof obj.teacher === 'object' && obj.teacher !== null)
-    ? obj.teacher as Record<string, unknown>
-    : {};
-  const bankRaw = (typeof teacherRaw.bankDetails === 'object' && teacherRaw.bankDetails !== null)
-    ? teacherRaw.bankDetails as Record<string, unknown>
-    : {};
-
-  const teacher: TeacherInfo = {
-    name:       typeof teacherRaw.name      === 'string' ? teacherRaw.name      : '',
-    address:    typeof teacherRaw.address   === 'string' ? teacherRaw.address   : '',
-    taxNumber:  typeof teacherRaw.taxNumber === 'string' ? teacherRaw.taxNumber : '',
-    bankDetails: {
-      accountOwner: typeof bankRaw.accountOwner === 'string' ? bankRaw.accountOwner : '',
-      iban:         typeof bankRaw.iban         === 'string' ? bankRaw.iban         : '',
-      bic:          typeof bankRaw.bic          === 'string' ? bankRaw.bic          : '',
-    },
-  };
-
-  const outputDir = typeof obj.outputDir === 'string' ? obj.outputDir : '';
-
-  if (typeof obj.studios !== "object" || obj.studios === null || Array.isArray(obj.studios)) {
-    throw new AppError("Config must have a studios object", "INVALID_CONFIG");
-  }
-
-  const studios = obj.studios as Record<string, unknown>;
-  if (Object.keys(studios).length === 0) {
-    throw new AppError("Config must have at least one studio", "INVALID_CONFIG");
-  }
-
+  const configData = result.data;
   const config: AppConfig = {
-    teacher,
-    calendarUrl: obj.calendarUrl,
-    outputDir,
+    teacher: configData.teacher as TeacherInfo,
+    calendarUrl: configData.calendarUrl,
+    outputDir: configData.outputDir,
     studios: {},
   };
 
-  for (const [name, studioRaw] of Object.entries(studios)) {
-    if (typeof studioRaw !== "object" || studioRaw === null) {
-      throw new AppError(`Studio "${name}" must be an object`, "INVALID_CONFIG");
-    }
-
-    const studio = studioRaw as Record<string, unknown>;
-    if (!Array.isArray(studio.rateTiers)) {
-      throw new AppError(`Studio "${name}" must have a rateTiers array`, "INVALID_CONFIG");
-    }
-
-    const tiers: RateTier[] = studio.rateTiers.map((t: unknown, i: number) => {
-      if (typeof t !== "object" || t === null) {
-        throw new AppError(`Studio "${name}" tier ${i} must be an object`, "INVALID_CONFIG");
-      }
-      const tier = t as Record<string, unknown>;
-      return {
-        minStudents: Number(tier.minStudents),
-        maxStudents: tier.maxStudents === null || tier.maxStudents === undefined
-          ? null
-          : Number(tier.maxStudents),
-        rate: Number(tier.rate),
-      };
-    });
-
-    validateRateTiers(name, tiers);
-
-    // Store sorted tiers
+  for (const [name, studioRaw] of Object.entries(configData.studios)) {
+    const studio = studioRaw as any;
+    const sortedTiers = [...studio.rateTiers].sort((a: any, b: any) => a.minStudents - b.minStudents);
     config.studios[name] = {
-      fullName: typeof studio.fullName === 'string' ? studio.fullName : '',
-      address:  typeof studio.address  === 'string' ? studio.address  : '',
-      rateTiers: tiers.sort((a, b) => a.minStudents - b.minStudents),
+      ...studio,
+      rateTiers: sortedTiers,
     };
   }
 
