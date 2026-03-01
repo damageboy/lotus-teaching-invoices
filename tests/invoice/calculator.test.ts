@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { findRate } from "../../src/invoice/calculator.js";
-import { RateTier } from "../../src/types.js";
+import { findRate } from "../../src/lib/invoice/calculator.js";
+import { RateTier } from "../../src/lib/types.js";
 
 const tiers: RateTier[] = [
   { minStudents: 1, maxStudents: 5, rate: 80 },

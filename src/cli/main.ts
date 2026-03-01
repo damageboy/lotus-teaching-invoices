@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 
 import { readFileSync } from "node:fs";
-import { parseArgs } from "./cli/args.js";
-import { loadConfig } from "./config/loader.js";
-import { fetchCalendar } from "./calendar/fetcher.js";
-import { parseCalendarEvents, extractClasses } from "./calendar/parser.js";
-import { groupByStudio, filterByDateRange, filterByStudio } from "./invoice/grouper.js";
-import { generateInvoice } from "./invoice/generator.js";
-import { writeInvoice, printInvoice } from "./output/writer.js";
-import { printWarningReport } from "./output/reporter.js";
-import { AppError, InvoicePeriod, ParseWarning } from "./types.js";
+import { parseArgs } from "./args.js";
+import { loadConfig } from "../lib/config/loader.js";
+import { fetchCalendar } from "../lib/calendar/fetcher.js";
+import { parseCalendarEvents, extractClasses } from "../lib/calendar/parser.js";
+import { groupByStudio, filterByDateRange, filterByStudio } from "../lib/invoice/grouper.js";
+import { generateInvoice } from "../lib/invoice/generator.js";
+import { writeInvoice, printInvoice } from "../lib/output/writer.js";
+import { printWarningReport } from "../lib/output/reporter.js";
+import { AppError, InvoicePeriod, ParseWarning } from "../lib/types.js";
 
 async function main(): Promise<void> {
   const opts = parseArgs(process.argv);

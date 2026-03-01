@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { parseCalendarEvents, extractClasses } from "../../src/calendar/parser.js";
+import { parseCalendarEvents, extractClasses } from "../../src/lib/calendar/parser.js";
 
 const fixturesDir = join(import.meta.dirname, "..", "fixtures");
 const icsData = readFileSync(join(fixturesDir, "sample.ics"), "utf-8");
