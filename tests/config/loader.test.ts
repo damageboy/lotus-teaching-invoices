@@ -9,6 +9,8 @@ describe("loadConfig", () => {
   it("loads and validates the test fixture config", () => {
     const config = loadConfig(join(fixturesDir, "config.yaml"));
     expect(config.calendarUrl).toBe("https://calendar.google.com/calendar/ical/example/basic.ics");
+    expect(config.teacherName).toBe('');
+    expect(config.outputDir).toBe('');
     expect(Object.keys(config.studios)).toEqual(["Zen Yoga", "Power House"]);
     expect(config.studios["Zen Yoga"].rateTiers).toHaveLength(3);
     expect(config.studios["Power House"].rateTiers).toHaveLength(3);
