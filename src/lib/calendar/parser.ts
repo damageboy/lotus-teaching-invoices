@@ -71,12 +71,22 @@ export function extractClasses(
     }
 
     const studioName = knownStudios.get(rawStudioName.toLowerCase());
+    const studentCount = parseStudentCount(event.description);
+
     if (!studioName) {
-      warnings.push({ code: 'UNKNOWN_STUDIO', event: event.summary, studio: rawStudioName });
+      // Unknown studio: include on calendar as unconfigured so user can see it
+      classes.push({
+        studioName: rawStudioName,
+        classType,
+        date: formatDate(event.start),
+        startTime: formatTime(event.start),
+        endTime: formatTime(event.end),
+        studentCount: studentCount ?? 0,
+        unconfigured: true,
+      });
       continue;
     }
 
-    const studentCount = parseStudentCount(event.description);
     if (studentCount === null) {
       warnings.push({ code: 'MISSING_STUDENT_COUNT', event: event.summary, date: formatDate(event.start) });
     }
