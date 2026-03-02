@@ -68,5 +68,8 @@ export function matchesFinalizedInvoice(
   periodYear: string,
   periodMonth: string
 ): boolean {
-  return filename.endsWith(`-${slug}-${periodYear}-${periodMonth}.pdf`);
+  // Full-filename regex prevents false positives when one slug is a suffix of another
+  // e.g. slug "yoga" must not match "8-2026-bikram-yoga-2026-01.pdf"
+  const pattern = new RegExp(`^\\d+-\\d{4}-${slug}-${periodYear}-${periodMonth}\\.pdf$`);
+  return pattern.test(filename);
 }
