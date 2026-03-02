@@ -2,8 +2,8 @@ import { useState, useMemo } from 'react';
 import { confirm, open as openDialog } from '@tauri-apps/plugin-dialog';
 import { ParsedClass, AppConfig, InvoicePeriod } from '../../lib/types';
 import { generateInvoice } from '../../lib/invoice/generator';
-import { generateAndOpenPdf } from '../../lib/pdf/generatePdf';
 import {
+  generateAndOpenPdf,
   generateAndOpenFinalPdf,
   findExistingFinalInvoice,
   extractInvoiceNumberFromFilename,
