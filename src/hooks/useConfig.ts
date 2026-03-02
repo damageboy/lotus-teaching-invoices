@@ -5,6 +5,7 @@ import { AppConfig } from '../lib/types';
 import { validateConfig } from '../lib/config/schema';
 import { DEFAULT_CONFIG } from '../lib/config/defaults';
 import { logInfo, logError } from '../lib/logger';
+import { invoke } from '@tauri-apps/api/core';
 
 const CONFIG_FILE = 'config.yaml';
 const BASE_DIR = BaseDirectory.AppData;
@@ -19,12 +20,17 @@ export function useConfig() {
     setIsLoading(true);
     setError(null);
     try {
-      const fileExists = await exists(CONFIG_FILE, { baseDir: BASE_DIR });
+      const configPath = await invoke<string | null>('get_config_path');
+      const fileExists = configPath
+        ? await exists(configPath)
+        : await exists(CONFIG_FILE, { baseDir: BASE_DIR });
       if (!fileExists) {
         logInfo('Config file not found — using defaults');
         setConfig(DEFAULT_CONFIG);
       } else {
-        const raw = await readTextFile(CONFIG_FILE, { baseDir: BASE_DIR });
+        const raw = configPath
+          ? await readTextFile(configPath)
+          : await readTextFile(CONFIG_FILE, { baseDir: BASE_DIR });
         const parsed = parseYaml(raw);
         setConfig(validateConfig(parsed));
         logInfo('Config loaded from disk');
@@ -76,7 +82,12 @@ export function useConfig() {
     logInfo(`Saving config to ${CONFIG_FILE}`);
     try {
       const toSave: AppConfig = JSON.parse(JSON.stringify(raw));
-      await writeTextFile(CONFIG_FILE, stringifyYaml(toSave), { baseDir: BASE_DIR });
+      const configPath = await invoke<string | null>('get_config_path');
+      if (configPath) {
+        await writeTextFile(configPath, stringifyYaml(toSave));
+      } else {
+        await writeTextFile(CONFIG_FILE, stringifyYaml(toSave), { baseDir: BASE_DIR });
+      }
       setConfig(toSave);
       setIsDirty(false);
       logInfo('Config saved successfully');
