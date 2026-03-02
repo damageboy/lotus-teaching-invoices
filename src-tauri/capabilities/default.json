@@ -9,6 +9,8 @@
     "fs:default",
     "fs:allow-app-write",
     "fs:write-all",
+    "fs:allow-read-dir",
+    "fs:allow-mkdir",
     "fs:create-app-specific-dirs",
     { "identifier": "fs:scope", "allow": [{ "path": "$HOME/**" }, { "path": "/tmp/**" }] },
     "dialog:default",
