@@ -5,34 +5,24 @@ describe('Lotus Teaching Invoices', () => {
     // Wait for React to mount in the native window
     await browser.pause(2000);
 
-    // Verify the HTML document loaded and the React root is present
-    const root = await $('#root');
-    await expect(root).toBeExisting();
+    // Output DOM state to debug why it might be empty
+    const html = await $('body').getHTML();
+    console.log('PAGE HTML:', html);
 
-    // Find the Calendar Tab using standard CSS selectors and text check
-    // WebdriverIO translates `button=Text` to advanced XPaths that safari driver struggles with
-    const buttons = await $$('button');
-    const labels = await Promise.all(buttons.map((b) => b.getText()));
+    // Find the Calendar Tab
+    const calendarTabButton = await $('button=Calendar');
+    await expect(calendarTabButton).toBeExisting();
 
-    // Verify Calendar tab exists
-    expect(labels).toContain('Calendar');
-    expect(labels).toContain('Rates & Config');
+    const refreshButton = await $('button*=Refresh');
+    await expect(refreshButton).toBeExisting();
   });
 
   it('should navigate to the Rates & Config tab', async () => {
-    const buttons = await $$('button');
-    for (const btn of buttons) {
-      if ((await btn.getText()) === 'Rates & Config') {
-        await btn.click();
-        break;
-      }
-    }
-
-    // Wait a frame for transition
-    await browser.pause(500);
+    const ratesTabButton = await $('button=Rates & Config');
+    await ratesTabButton.click();
 
     // Ensure that form labels render, confirming React state transition
-    const nameLabel = await $('label*=Name'); // Partial text works better or we can check input
+    const nameLabel = await $('label=Name');
     await expect(nameLabel).toBeExisting();
   });
 });
