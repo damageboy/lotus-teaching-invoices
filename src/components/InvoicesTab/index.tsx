@@ -141,17 +141,17 @@ export function InvoicesTab({ classes, config, onSaveConfig }: Props) {
     }
 
     const [periodYear, periodMonth] = row.monthKey.split('-');
-    const currentYear = new Date().getFullYear().toString();
-    if (periodYear !== currentYear) {
-      setRowError(
-        `Invoice period year (${periodYear}) doesn't match current year (${currentYear}). Update the period or the last invoice number.`
-      );
-      return;
-    }
 
     const parsed = parseLastInvoice(config.lastInvoice);
     if (!parsed) {
       setRowError('Invalid last invoice number — expected N/YYYY format.');
+      return;
+    }
+
+    if (periodYear !== parsed.year.toString()) {
+      setRowError(
+        `Invoice period year (${periodYear}) doesn't match the year in your last invoice number (${parsed.year}). Update the last invoice number in Settings first.`
+      );
       return;
     }
 
