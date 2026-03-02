@@ -1,8 +1,15 @@
 import { useState, useMemo } from 'react';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
+import { confirm } from '@tauri-apps/plugin-dialog';
 import { ParsedClass, AppConfig, InvoicePeriod } from '../../lib/types';
 import { generateInvoice } from '../../lib/invoice/generator';
 import { generateAndOpenPdf } from '../../lib/pdf/generatePdf';
+import {
+  generateAndOpenFinalPdf,
+  findExistingFinalInvoice,
+  extractInvoiceNumberFromFilename,
+} from '../../lib/pdf/generatePdf';
+import { parseLastInvoice, formatInvoiceNumber, studioSlug } from '../../lib/invoice/finalization';
 import { logError } from '../../lib/logger';
 
 interface Props {
@@ -124,6 +131,81 @@ export function InvoicesTab({ classes, config, onSaveConfig }: Props) {
     }
   }
 
+  async function handleFinalize(row: InvoiceRow) {
+    if (!config.outputDir) {
+      setRowError('Set an output folder first.');
+      return;
+    }
+    if (!config.lastInvoice) {
+      setRowError('Set a last invoice number in Settings first (e.g. 0/2026).');
+      return;
+    }
+
+    const [periodYear, periodMonth] = row.monthKey.split('-');
+    const currentYear = new Date().getFullYear().toString();
+    if (periodYear !== currentYear) {
+      setRowError(
+        `Invoice period year (${periodYear}) doesn't match current year (${currentYear}). Update the period or the last invoice number.`
+      );
+      return;
+    }
+
+    const parsed = parseLastInvoice(config.lastInvoice);
+    if (!parsed) {
+      setRowError('Invalid last invoice number — expected N/YYYY format.');
+      return;
+    }
+
+    const rowKey = `${row.studioName}__${row.monthKey}`;
+    setGenerating(rowKey);
+    setRowError(null);
+
+    try {
+      const studioConfig = config.studios[row.studioName];
+      if (!studioConfig) throw new Error(`No config for studio "${row.studioName}"`);
+
+      const period = periodForMonthKey(row.monthKey);
+      const { invoice } = generateInvoice(row.studioName, row.classes, studioConfig, period);
+
+      const slug = studioSlug(row.studioName);
+      const existingFilename = await findExistingFinalInvoice(
+        config.outputDir,
+        slug,
+        periodYear,
+        periodMonth
+      );
+
+      let invoiceNumber: string;
+      let shouldIncrement = true;
+
+      if (existingFilename) {
+        const existingNumber =
+          extractInvoiceNumberFromFilename(existingFilename) ?? config.lastInvoice;
+        const overwrite = await confirm(
+          `Invoice ${existingNumber} is already finalized for this period.\n\nOverwrite? The invoice number will be reused — the counter will not increment.`,
+          { title: 'Invoice already finalized', kind: 'warning' }
+        );
+        if (!overwrite) return;
+        invoiceNumber = existingNumber;
+        shouldIncrement = false;
+      } else {
+        invoiceNumber = formatInvoiceNumber(parsed.n + 1, parsed.year);
+      }
+
+      await generateAndOpenFinalPdf(invoice, config, invoiceNumber);
+
+      if (shouldIncrement) {
+        await onSaveConfig({ ...config, lastInvoice: invoiceNumber });
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      logError(`Finalization failed for ${row.studioName}: ${msg}`);
+      setRowError(msg);
+    } finally {
+      setGenerating(null);
+    }
+  }
+
   return (
     <div className="p-4 flex flex-col gap-4">
       {/* Output folder */}
@@ -178,13 +260,22 @@ export function InvoicesTab({ classes, config, onSaveConfig }: Props) {
                   )}
                 </td>
                 <td className="py-2 text-right">
-                  <button
-                    onClick={() => handleGenerate(row)}
-                    disabled={!studioConfig || generating !== null}
-                    className="text-xs px-3 py-1 rounded bg-indigo-50 text-indigo-700 hover:bg-indigo-100 disabled:opacity-40"
-                  >
-                    {generating === rowKey ? 'Generating…' : 'Generate Invoice…'}
-                  </button>
+                  <div className="flex items-center justify-end gap-2">
+                    <button
+                      onClick={() => handleGenerate(row)}
+                      disabled={!studioConfig || generating !== null}
+                      className="text-xs px-3 py-1 rounded bg-indigo-50 text-indigo-700 hover:bg-indigo-100 disabled:opacity-40"
+                    >
+                      {generating === rowKey ? 'Generating…' : 'Generate Invoice…'}
+                    </button>
+                    <button
+                      onClick={() => handleFinalize(row)}
+                      disabled={!studioConfig || generating !== null}
+                      className="text-xs px-3 py-1 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-40"
+                    >
+                      {generating === rowKey ? 'Finalizing…' : 'Finalize Invoice…'}
+                    </button>
+                  </div>
                 </td>
               </tr>
             );
