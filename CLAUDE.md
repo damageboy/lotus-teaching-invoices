@@ -68,3 +68,21 @@ Copy `config.example.yaml` to `config.yaml`. The `calendarUrl` must be a public 
 ## Tests
 
 Tests live in `tests/` mirroring `src/` structure. Fixtures are in `tests/fixtures/` (a sample `.ics` and a `config.yaml`). Tests use Vitest with globals enabled — no imports needed for `describe`/`it`/`expect`.
+
+### Testing layers — use them all
+
+| Layer       | Command                                         | What it covers                                                                          |
+| ----------- | ----------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Unit tests  | `bun test`                                      | Pure logic: calculator, parser, grouper, config schema, finalization helpers            |
+| TypeScript  | `bunx tsc --project tsconfig.app.json --noEmit` | Frontend type correctness                                                               |
+| E2E (Tauri) | `bun run e2e`                                   | Full app: real file system, HTTP, Tauri commands, dialog, PDF — run after any UI change |
+| Vite smoke  | `bun run dev:vite` + browser tools              | Quick visual iteration only — Tauri APIs not available                                  |
+
+**After any UI change, always run `bun run e2e`.** It builds the real Tauri binary, starts the app with a temp config (`tests/fixtures/e2e-config.yaml` → `/tmp/lotus-e2e-config.yaml`), and exercises the full app via WebdriverIO. The Vite-only smoke test cannot verify file writes, folder creation, the dialog plugin, PDF generation, or config persistence.
+
+```bash
+# Run the full e2e suite (takes ~30s for build + binary compile)
+bun run e2e
+```
+
+E2E test file: `tests/e2e/smoke.e2e.ts` — 14 tests covering Boot, Calendar nav, Invoices empty state, Rates dirty+save+YAML verify, Log panel toggle.
