@@ -1,6 +1,5 @@
 import { useState, useMemo } from 'react';
-import { open as openDialog } from '@tauri-apps/plugin-dialog';
-import { confirm } from '@tauri-apps/plugin-dialog';
+import { confirm, open as openDialog } from '@tauri-apps/plugin-dialog';
 import { ParsedClass, AppConfig, InvoicePeriod } from '../../lib/types';
 import { generateInvoice } from '../../lib/invoice/generator';
 import { generateAndOpenPdf } from '../../lib/pdf/generatePdf';
@@ -179,8 +178,12 @@ export function InvoicesTab({ classes, config, onSaveConfig }: Props) {
       let shouldIncrement = true;
 
       if (existingFilename) {
-        const existingNumber =
-          extractInvoiceNumberFromFilename(existingFilename) ?? config.lastInvoice;
+        const existingNumber = extractInvoiceNumberFromFilename(existingFilename);
+        if (!existingNumber) {
+          throw new Error(
+            `Could not read invoice number from existing file "${existingFilename}". Please check the Final/ folder.`
+          );
+        }
         const overwrite = await confirm(
           `Invoice ${existingNumber} is already finalized for this period.\n\nOverwrite? The invoice number will be reused — the counter will not increment.`,
           { title: 'Invoice already finalized', kind: 'warning' }
