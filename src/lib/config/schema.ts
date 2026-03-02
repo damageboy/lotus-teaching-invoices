@@ -88,6 +88,12 @@ const ConfigSchema = z.object({
   teacher: TeacherInfoSchema,
   calendarUrl: z.string().min(1, 'Config must have a non-empty calendarUrl string'),
   outputDir: z.string().default(''),
+  lastInvoice: z
+    .string()
+    .default('')
+    .refine((v) => v === '' || /^\d+\/\d{4}$/.test(v), {
+      message: 'lastInvoice must be in N/YYYY format or empty',
+    }),
   studios: z
     .record(StudioConfigSchema, { required_error: 'Config must have a studios object' })
     .refine(
@@ -132,6 +138,7 @@ export function validateConfig(raw: unknown): AppConfig {
     teacher: configData.teacher as TeacherInfo,
     calendarUrl: configData.calendarUrl,
     outputDir: configData.outputDir,
+    lastInvoice: configData.lastInvoice,
     studios: {},
   };
 

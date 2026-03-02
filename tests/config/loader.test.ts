@@ -115,3 +115,32 @@ describe('validateRateTiers (via validateConfig)', () => {
     ).toThrow('last tier must be unbounded');
   });
 });
+
+describe('lastInvoice field', () => {
+  it('defaults to empty string when absent', () => {
+    const cfg = validateConfig({
+      calendarUrl: 'https://example.com/cal.ics',
+      studios: { Foo: { rateTiers: [{ minStudents: 1, maxStudents: null, rate: 80 }] } },
+    });
+    expect(cfg.lastInvoice).toBe('');
+  });
+
+  it('accepts a valid N/YYYY string', () => {
+    const cfg = validateConfig({
+      calendarUrl: 'https://example.com/cal.ics',
+      lastInvoice: '7/2026',
+      studios: { Foo: { rateTiers: [{ minStudents: 1, maxStudents: null, rate: 80 }] } },
+    });
+    expect(cfg.lastInvoice).toBe('7/2026');
+  });
+
+  it('rejects an invalid format', () => {
+    expect(() =>
+      validateConfig({
+        calendarUrl: 'https://example.com/cal.ics',
+        lastInvoice: 'bad',
+        studios: { Foo: { rateTiers: [{ minStudents: 1, maxStudents: null, rate: 80 }] } },
+      })
+    ).toThrow(/lastInvoice/);
+  });
+});
