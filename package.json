@@ -16,7 +16,7 @@
     "cli:build": "tsc --project tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "e2e": "bun run build:vite && cargo build --manifest-path src-tauri/Cargo.toml --release && wdio run wdio.conf.ts",
+    "e2e": "bun run build:vite && cargo build --manifest-path src-tauri/Cargo.toml --features webdriver && bunx wdio run wdio.conf.ts",
     "prepare": "husky"
   },
   "dependencies": {
