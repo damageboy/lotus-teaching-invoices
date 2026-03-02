@@ -1,30 +1,89 @@
 import React from 'react';
 import { pdf, type DocumentProps } from '@react-pdf/renderer';
-import { writeFile } from '@tauri-apps/plugin-fs';
+import { writeFile, mkdir, readDir } from '@tauri-apps/plugin-fs';
 import { invoke } from '@tauri-apps/api/core';
 import { Invoice, AppConfig } from '../types';
 import { InvoiceDocument } from './InvoiceDocument';
+import {
+  studioSlug,
+  previewFilename,
+  finalizedFilename,
+  matchesFinalizedInvoice,
+  extractInvoiceNumberFromFilename,
+} from '../invoice/finalization';
 
-export function invoiceFilename(invoice: Invoice): string {
-  const slug = invoice.studioName
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
-  const [year, month] = invoice.invoicePeriod.from.split('-');
-  return `${slug}-${year}-${month}.pdf`;
+async function ensureDir(path: string): Promise<void> {
+  await mkdir(path, { recursive: true });
 }
 
-export async function generateAndOpenPdf(invoice: Invoice, config: AppConfig): Promise<void> {
-  const filename = invoiceFilename(invoice);
-  const outputPath = `${config.outputDir}/${filename}`;
-
+async function renderPdf(invoice: Invoice, config: AppConfig): Promise<Uint8Array> {
   const element = React.createElement(InvoiceDocument, {
     invoice,
     config,
   }) as unknown as React.ReactElement<DocumentProps>;
-
   const blob = await pdf(element).toBlob();
-  const arrayBuffer = await blob.arrayBuffer();
-  await writeFile(outputPath, new Uint8Array(arrayBuffer));
+  return new Uint8Array(await blob.arrayBuffer());
+}
+
+/** Write preview PDF to {outputDir}/Preview/ and open it. */
+export async function generateAndOpenPdf(invoice: Invoice, config: AppConfig): Promise<void> {
+  const previewDir = `${config.outputDir}/Preview`;
+  await ensureDir(previewDir);
+  const filename = previewFilename(
+    invoice.studioName,
+    invoice.invoicePeriod.from,
+    invoice.invoicePeriod.to
+  );
+  const outputPath = `${previewDir}/${filename}`;
+  await writeFile(outputPath, await renderPdf(invoice, config));
   await invoke('open_file', { path: outputPath });
 }
+
+/**
+ * Scan {outputDir}/Final/ for a previously finalized file matching this studio+period.
+ * Returns the filename (not full path) if found, or null.
+ * Does not throw if the Final directory does not yet exist.
+ */
+export async function findExistingFinalInvoice(
+  outputDir: string,
+  slug: string,
+  periodYear: string,
+  periodMonth: string
+): Promise<string | null> {
+  const finalDir = `${outputDir}/Final`;
+  try {
+    const entries = await readDir(finalDir);
+    for (const entry of entries) {
+      if (
+        !entry.isDirectory &&
+        entry.name &&
+        matchesFinalizedInvoice(entry.name, slug, periodYear, periodMonth)
+      ) {
+        return entry.name;
+      }
+    }
+  } catch {
+    // Final dir doesn't exist yet — treat as no existing file
+  }
+  return null;
+}
+
+/** Write finalized PDF to {outputDir}/Final/ with invoice number embedded in filename. */
+export async function generateAndOpenFinalPdf(
+  invoice: Invoice,
+  config: AppConfig,
+  invoiceNumber: string
+): Promise<void> {
+  const finalDir = `${config.outputDir}/Final`;
+  await ensureDir(finalDir);
+  const [periodYear, periodMonth] = invoice.invoicePeriod.from.split('-');
+  const slug = studioSlug(invoice.studioName);
+  const filename = finalizedFilename(slug, periodYear, periodMonth, invoiceNumber);
+  const outputPath = `${finalDir}/${filename}`;
+  const invoiceWithNumber: Invoice = { ...invoice, invoiceNumber };
+  await writeFile(outputPath, await renderPdf(invoiceWithNumber, config));
+  await invoke('open_file', { path: outputPath });
+}
+
+/** Extract invoice number from a finalized filename (convenience re-export for InvoicesTab). */
+export { extractInvoiceNumberFromFilename };
