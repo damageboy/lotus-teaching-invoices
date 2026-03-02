@@ -169,6 +169,9 @@ export function RatesTab({ config, isDirty, saveError, onUpdate, onSave }: Props
   function updateCalendarUrl(value: string) {
     onUpdate({ ...config, calendarUrl: value });
   }
+  function updateLastInvoice(value: string) {
+    onUpdate({ ...config, lastInvoice: value });
+  }
 
   function updateStudioName(oldName: string, newName: string) {
     const studios = Object.fromEntries(
@@ -333,6 +336,20 @@ export function RatesTab({ config, isDirty, saveError, onUpdate, onSave }: Props
             value={config.calendarUrl}
             onChange={(e) => updateCalendarUrl(e.target.value)}
           />
+        </label>
+
+        <h3 className="text-sm font-medium text-gray-700 mt-2">Invoicing</h3>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs text-gray-500">Last invoice number</span>
+          <input
+            className="border border-gray-200 rounded px-2 py-1 text-sm font-mono w-32"
+            value={config.lastInvoice}
+            onChange={(e) => updateLastInvoice(e.target.value)}
+            placeholder="e.g. 7/2026"
+          />
+          <span className="text-xs text-gray-400">
+            The next finalized invoice will use the following number.
+          </span>
         </label>
       </div>
 
