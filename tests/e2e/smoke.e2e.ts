@@ -1,11 +1,5 @@
 import { expect, browser, $ } from '@wdio/globals';
-import { readFileSync } from 'node:fs';
-import { parse } from 'yaml';
-import { TMP_CONFIG_PATH } from './helpers.js';
-
-function readTmpConfig() {
-  return parse(readFileSync(TMP_CONFIG_PATH, 'utf-8')) as Record<string, unknown>;
-}
+import { TMP_CONFIG_PATH, readTmpConfig } from './helpers.js';
 
 // ─── Boot ────────────────────────────────────────────────────────────────────
 
@@ -87,11 +81,11 @@ describe('Rates & Config tab', () => {
   });
 
   it('renders the Name label', async () => {
-    await expect($('label=Name')).toBeDisplayed();
+    await expect($('label*=Name')).toBeDisplayed();
   });
 
   it('shows "Unsaved changes" after editing the Name field', async () => {
-    const nameInput = await $('label=Name').$('input');
+    const nameInput = await $('label*=Name').$('input');
     await nameInput.clearValue();
     await nameInput.setValue('E2E Updated Teacher');
     await expect($('span=Unsaved changes')).toBeDisplayed();
