@@ -1,4 +1,5 @@
 calendarUrl: "https://calendar.google.com/calendar/ical/example/basic.ics"
+lastInvoice: ""
 studios:
   "Zen Yoga":
     fullName: "Zen Yoga Center"
