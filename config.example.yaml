@@ -8,6 +8,7 @@ teacher:
     bic: "COBADEFFXXX"
 calendarUrl: "https://calendar.google.com/calendar/ical/YOUR_CALENDAR_ID/basic.ics"
 outputDir: ""
+lastInvoice: ""
 studios:
   "Yogibar":
     fullName: "Yogibar Yoga Studio GmbH"

@@ -27,6 +27,7 @@ export interface AppConfig {
   teacher: TeacherInfo;
   calendarUrl: string;
   outputDir: string;
+  lastInvoice: string; // "N/YYYY" e.g. "7/2026", or "" if unset
   studios: Record<string, StudioConfig>;
 }
 
@@ -71,6 +72,7 @@ export interface Invoice {
   classes: InvoiceLineItem[];
   totalClasses: number;
   totalAmount: number;
+  invoiceNumber?: string; // set only on finalized invoices, e.g. "8/2026"
 }
 
 export type WarningCode =
