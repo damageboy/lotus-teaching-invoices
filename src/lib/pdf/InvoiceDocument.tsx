@@ -94,6 +94,14 @@ export function InvoiceDocument({ invoice, config }: Props) {
           </View>
         </View>
 
+        {/* Invoice number — only for finalized invoices */}
+        {invoice.invoiceNumber ? (
+          <View style={s.section}>
+            <Text style={s.label}>Invoice No.</Text>
+            <Text style={{ ...s.value, fontWeight: 'bold' }}>{invoice.invoiceNumber}</Text>
+          </View>
+        ) : null}
+
         {/* Invoice period */}
         <View style={s.section}>
           <Text style={s.label}>Invoice period</Text>
