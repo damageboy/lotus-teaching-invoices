@@ -3,6 +3,7 @@ import { pdf, type DocumentProps } from '@react-pdf/renderer';
 import { writeFile, mkdir, readDir } from '@tauri-apps/plugin-fs';
 import { invoke } from '@tauri-apps/api/core';
 import { Invoice, AppConfig } from '../types';
+import { logWarn } from '../logger';
 import { InvoiceDocument } from './InvoiceDocument';
 import {
   studioSlug,
@@ -62,8 +63,16 @@ export async function findExistingFinalInvoice(
         return entry.name;
       }
     }
-  } catch {
-    // Final dir doesn't exist yet — treat as no existing file
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // ENOENT means the Final dir doesn't exist yet — expected on first run
+    if (
+      !msg.includes('No such file') &&
+      !msg.includes('os error 2') &&
+      !msg.includes('(os error 2)')
+    ) {
+      logWarn(`findExistingFinalInvoice: unexpected error scanning Final/ folder: ${msg}`);
+    }
   }
   return null;
 }
