@@ -1,0 +1,21 @@
+calendarUrl: ""
+outputDir: ""
+teacher:
+  name: E2E Teacher
+  address: "Test Street 1\nTest City 12345"
+  taxNumber: "123/456/78901"
+  bankDetails:
+    accountOwner: E2E Teacher
+    iban: "DE00 1234 5678 9012 3456 78"
+    bic: TESTDE88
+studios:
+  Test Studio:
+    fullName: Test Studio GmbH
+    address: "Studio Street 1, Test City"
+    rateTiers:
+      - minStudents: 1
+        maxStudents: 5
+        rate: 40
+      - minStudents: 6
+        maxStudents: null
+        rate: 55
