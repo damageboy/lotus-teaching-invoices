@@ -75,4 +75,9 @@ describe('matchesFinalizedInvoice', () => {
       false
     );
   });
+  it('does not match a slug that is a suffix of another studio slug', () => {
+    expect(matchesFinalizedInvoice('8-2026-bikram-yoga-2026-01.pdf', 'yoga', '2026', '01')).toBe(
+      false
+    );
+  });
 });
