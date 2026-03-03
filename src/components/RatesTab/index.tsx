@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { AppConfig, RateTier, StudioConfig, TeacherInfo, BankDetails } from '../../lib/types';
 import { ColorPickerPopup } from '../ColorPickerPopup';
-import { PALETTE_HEX, nextUnusedColor } from '../../lib/studioColors';
+import { effectiveHex, nextUnusedColor } from '../../lib/studioColors';
 
 interface Props {
   config: AppConfig;
@@ -42,8 +42,8 @@ function StudioCard({
     setDraftName(studioName);
   }, [studioName]);
 
-  // Effective color: stored or derived from palette via borderColor (more vivid than bg)
-  const effectiveColor = studio.color ?? PALETTE_HEX[0];
+  // Effective color: stored hex or hash-derived palette hex for this studio name
+  const effectiveColor = effectiveHex(studioName, studio.color);
 
   return (
     <div className="rounded border border-gray-200">

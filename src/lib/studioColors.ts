@@ -57,3 +57,7 @@ export function nextUnusedColor(usedHexes: string[]): string {
   const used = new Set(usedHexes.map((h) => h.toLowerCase()));
   return PALETTE_HEX.find((h) => !used.has(h)) ?? PALETTE_HEX[0];
 }
+
+export function effectiveHex(name: string, stored?: string): string {
+  return stored ?? PALETTE_HEX[hashString(name) % PALETTE_HEX.length];
+}
