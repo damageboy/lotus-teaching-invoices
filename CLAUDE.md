@@ -85,4 +85,4 @@ Tests live in `tests/` mirroring `src/` structure. Fixtures are in `tests/fixtur
 bun run e2e
 ```
 
-E2E test file: `tests/e2e/smoke.e2e.ts` — 14 tests covering Boot, Calendar nav, Invoices empty state, Rates dirty+save+YAML verify, Log panel toggle.
+E2E test file: `tests/e2e/smoke.e2e.ts` — 15 tests covering Boot, Calendar nav, Invoices empty state, Rates dirty+save+YAML verify+version badge, Log panel toggle.
