@@ -16,6 +16,8 @@ describe('loadConfig', () => {
     expect(Object.keys(config.studios)).toEqual(['Zen Yoga', 'Power House']);
     expect(config.studios['Zen Yoga'].rateTiers).toHaveLength(3);
     expect(config.studios['Power House'].rateTiers).toHaveLength(3);
+    expect(config.studios['Zen Yoga'].color).toBe('#7c3aed');
+    expect(config.studios['Power House'].color).toBeUndefined();
   });
 
   it('throws on missing file', () => {
@@ -181,6 +183,24 @@ describe('studio color field', () => {
       validateConfig({
         ...base,
         studios: { Foo: { ...base.studios['Foo'], color: 'violet' } },
+      })
+    ).toThrow(/color/);
+  });
+
+  it('rejects 3-digit shorthand hex', () => {
+    expect(() =>
+      validateConfig({
+        ...base,
+        studios: { Foo: { ...base.studios['Foo'], color: '#abc' } },
+      })
+    ).toThrow(/color/);
+  });
+
+  it('rejects 8-digit hex with alpha', () => {
+    expect(() =>
+      validateConfig({
+        ...base,
+        studios: { Foo: { ...base.studios['Foo'], color: '#7c3aed80' } },
       })
     ).toThrow(/color/);
   });
