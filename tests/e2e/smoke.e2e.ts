@@ -107,6 +107,14 @@ describe('Rates & Config tab', () => {
     const after = Object.keys((readTmpConfig() as { studios: object }).studios).length;
     expect(after).toBe(before + 1);
   });
+
+  it('shows the version badge', async () => {
+    const badge = await $('[data-testid="version-badge"]');
+    await expect(badge).toBeDisplayed();
+    const text = await badge.getText();
+    // Should start with 'v' followed by a digit or 'unknown'
+    expect(text).toMatch(/^v(\d|unknown)/);
+  });
 });
 
 // ─── Log panel ───────────────────────────────────────────────────────────────
