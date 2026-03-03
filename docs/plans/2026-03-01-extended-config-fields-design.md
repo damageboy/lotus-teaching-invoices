@@ -22,19 +22,19 @@ interface BankDetails {
 
 interface TeacherInfo {
   name: string;
-  address: string;    // free-form, newlines allowed
+  address: string; // free-form, newlines allowed
   taxNumber: string;
   bankDetails: BankDetails;
 }
 
 interface StudioConfig {
-  fullName: string;   // display name for PDF; key remains calendar match key
+  fullName: string; // display name for PDF; key remains calendar match key
   address: string;
   rateTiers: RateTier[];
 }
 
 interface AppConfig {
-  teacher: TeacherInfo;   // replaces teacherName
+  teacher: TeacherInfo; // replaces teacherName
   calendarUrl: string;
   outputDir: string;
   studios: Record<string, StudioConfig>;
@@ -64,16 +64,16 @@ studios:
 
 ## Files to Change
 
-| File | Change |
-|------|--------|
-| `src/lib/types.ts` | Add `BankDetails`, `TeacherInfo`; update `AppConfig`, `StudioConfig` |
-| `src/lib/config/schema.ts` | Parse `teacher` object; parse `fullName`/`address` in studio loop |
-| `src/lib/config/defaults.ts` | Restructure `DEFAULT_CONFIG` |
+| File                                | Change                                                                           |
+| ----------------------------------- | -------------------------------------------------------------------------------- |
+| `src/lib/types.ts`                  | Add `BankDetails`, `TeacherInfo`; update `AppConfig`, `StudioConfig`             |
+| `src/lib/config/schema.ts`          | Parse `teacher` object; parse `fullName`/`address` in studio loop                |
+| `src/lib/config/defaults.ts`        | Restructure `DEFAULT_CONFIG`                                                     |
 | `src/components/RatesTab/index.tsx` | Add `teacher.*` fields to global section; add `fullName`/`address` to StudioCard |
-| `src/lib/pdf/InvoiceDocument.tsx` | Render teacher address, tax number, bank details, studio address |
-| `config.example.yaml` | Update example |
-| `tests/fixtures/config.yaml` | Update fixture |
-| `tests/` | Fix any references to `config.teacherName` |
+| `src/lib/pdf/InvoiceDocument.tsx`   | Render teacher address, tax number, bank details, studio address                 |
+| `config.example.yaml`               | Update example                                                                   |
+| `tests/fixtures/config.yaml`        | Update fixture                                                                   |
+| `tests/`                            | Fix any references to `config.teacherName`                                       |
 
 ## PDF Layout
 

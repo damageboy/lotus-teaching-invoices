@@ -19,14 +19,11 @@ Add alongside `findRate`:
 ```ts
 export interface StudioMonthStats {
   totalAmount: number;
-  classCount: number;   // non-zero-student classes only
-  avgPerClass: number;  // 0 when classCount is 0
+  classCount: number; // non-zero-student classes only
+  avgPerClass: number; // 0 when classCount is 0
 }
 
-export function computeStudioStats(
-  classes: ParsedClass[],
-  rateTiers: RateTier[],
-): StudioMonthStats
+export function computeStudioStats(classes: ParsedClass[], rateTiers: RateTier[]): StudioMonthStats;
 ```
 
 - Skips classes with `studentCount === 0` (matches generator behaviour)
@@ -46,6 +43,7 @@ export function computeStudioStats(
 Below `<CalendarGrid>`, render a `flex flex-wrap gap-2` row of colored pills — one per configured studio with ≥1 class in the displayed month.
 
 Each pill uses `studioColor(s)` (same as the legend) and shows:
+
 ```
 StudioName  €320  ·  avg €40
 ```
@@ -68,10 +66,10 @@ Summary pills rendered below CalendarGrid
 
 ## Files changed
 
-| File | Change |
-|------|--------|
-| `src/lib/invoice/calculator.ts` | Add `StudioMonthStats` + `computeStudioStats` |
-| `src/lib/invoice/generator.ts` | Refactor to use `computeStudioStats` |
-| `src/App.tsx` | Pass `studios={config.studios}` to `<CalendarTab>` |
-| `src/components/CalendarTab/index.tsx` | Accept `studios` prop, render summary section |
-| `tests/invoice/calculator.test.ts` | Add tests for `computeStudioStats` |
+| File                                   | Change                                             |
+| -------------------------------------- | -------------------------------------------------- |
+| `src/lib/invoice/calculator.ts`        | Add `StudioMonthStats` + `computeStudioStats`      |
+| `src/lib/invoice/generator.ts`         | Refactor to use `computeStudioStats`               |
+| `src/App.tsx`                          | Pass `studios={config.studios}` to `<CalendarTab>` |
+| `src/components/CalendarTab/index.tsx` | Accept `studios` prop, render summary section      |
+| `tests/invoice/calculator.test.ts`     | Add tests for `computeStudioStats`                 |

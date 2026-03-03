@@ -13,6 +13,7 @@
 ### Task 1: Update type definitions
 
 **Files:**
+
 - Modify: `src/lib/types.ts`
 
 The `AppConfig` interface currently has a flat `teacherName: string`. Replace it with a nested `teacher: TeacherInfo` object. Also add `fullName` and `address` to `StudioConfig`.
@@ -30,13 +31,13 @@ export interface BankDetails {
 
 export interface TeacherInfo {
   name: string;
-  address: string;     // free-form, newlines allowed
+  address: string; // free-form, newlines allowed
   taxNumber: string;
   bankDetails: BankDetails;
 }
 
 export interface StudioConfig {
-  fullName: string;    // display name for PDF; key is still the calendar match string
+  fullName: string; // display name for PDF; key is still the calendar match string
   address: string;
   rateTiers: RateTier[];
 }
@@ -70,6 +71,7 @@ git commit -m "refactor: restructure AppConfig types for teacher info and studio
 ### Task 2: Update tests to use the new type shape (they will fail)
 
 **Files:**
+
 - Modify: `tests/config/serialization.test.ts`
 - Modify: `tests/config/loader.test.ts`
 - Modify: `tests/fixtures/config.yaml`
@@ -79,17 +81,17 @@ The tests reference `config.teacherName` and `SAMPLE_CONFIG.teacherName`. Update
 **Step 1: Update `tests/fixtures/config.yaml`**
 
 ```yaml
-calendarUrl: "https://calendar.google.com/calendar/ical/example/basic.ics"
+calendarUrl: 'https://calendar.google.com/calendar/ical/example/basic.ics'
 studios:
-  "Zen Yoga":
-    fullName: "Zen Yoga Center"
+  'Zen Yoga':
+    fullName: 'Zen Yoga Center'
     address: "789 Peace St\nHamburg"
     rateTiers:
       - { minStudents: 1, maxStudents: 5, rate: 80 }
       - { minStudents: 6, maxStudents: 10, rate: 100 }
       - { minStudents: 11, maxStudents: null, rate: 120 }
-  "Power House":
-    fullName: "Power House Gym"
+  'Power House':
+    fullName: 'Power House Gym'
     address: "101 Fitness Ave\nBerlin"
     rateTiers:
       - { minStudents: 1, maxStudents: 3, rate: 60 }
@@ -123,15 +125,16 @@ const SAMPLE_CONFIG: AppConfig = {
       bic: 'COBADEFFXXX',
     },
   },
-  calendarUrl: 'https://calendar.google.com/calendar/ical/example%40group.calendar.google.com/basic.ics',
+  calendarUrl:
+    'https://calendar.google.com/calendar/ical/example%40group.calendar.google.com/basic.ics',
   outputDir: '/tmp/invoices',
   studios: {
     Yogibar: {
       fullName: 'Yogibar Yoga Studio GmbH',
       address: '456 Yoga Lane\nMunich',
       rateTiers: [
-        { minStudents: 1,  maxStudents: 5,    rate: 80  },
-        { minStudents: 6,  maxStudents: 10,   rate: 100 },
+        { minStudents: 1, maxStudents: 5, rate: 80 },
+        { minStudents: 6, maxStudents: 10, rate: 100 },
         { minStudents: 11, maxStudents: null, rate: 120 },
       ],
     },
@@ -140,6 +143,7 @@ const SAMPLE_CONFIG: AppConfig = {
 ```
 
 Replace the `reparsed.teacherName` assertion (line 29):
+
 ```ts
 expect(reparsed.teacher.name).toBe(SAMPLE_CONFIG.teacher.name);
 expect(reparsed.teacher.bankDetails.iban).toBe(SAMPLE_CONFIG.teacher.bankDetails.iban);
@@ -167,6 +171,7 @@ git commit -m "test: update config tests for teacher object and studio fullName/
 ### Task 3: Update the config schema to parse the new shape
 
 **Files:**
+
 - Modify: `src/lib/config/schema.ts`
 
 `validateConfig` currently reads `obj.teacherName`. Replace it to parse the nested `teacher` object and the new studio fields.
@@ -176,28 +181,30 @@ git commit -m "test: update config tests for teacher object and studio fullName/
 Update the imports at the top to include the new types:
 
 ```ts
-import { AppConfig, RateTier, TeacherInfo, BankDetails, AppError } from "../types.js";
+import { AppConfig, RateTier, TeacherInfo, BankDetails, AppError } from '../types.js';
 ```
 
 Replace the `teacherName`/`outputDir` block and the `AppConfig` construction in `validateConfig`:
 
 ```ts
 // Parse teacher object (all fields optional)
-const teacherRaw = (typeof obj.teacher === 'object' && obj.teacher !== null)
-  ? obj.teacher as Record<string, unknown>
-  : {};
-const bankRaw = (typeof teacherRaw.bankDetails === 'object' && teacherRaw.bankDetails !== null)
-  ? teacherRaw.bankDetails as Record<string, unknown>
-  : {};
+const teacherRaw =
+  typeof obj.teacher === 'object' && obj.teacher !== null
+    ? (obj.teacher as Record<string, unknown>)
+    : {};
+const bankRaw =
+  typeof teacherRaw.bankDetails === 'object' && teacherRaw.bankDetails !== null
+    ? (teacherRaw.bankDetails as Record<string, unknown>)
+    : {};
 
 const teacher: TeacherInfo = {
-  name:       typeof teacherRaw.name      === 'string' ? teacherRaw.name      : '',
-  address:    typeof teacherRaw.address   === 'string' ? teacherRaw.address   : '',
-  taxNumber:  typeof teacherRaw.taxNumber === 'string' ? teacherRaw.taxNumber : '',
+  name: typeof teacherRaw.name === 'string' ? teacherRaw.name : '',
+  address: typeof teacherRaw.address === 'string' ? teacherRaw.address : '',
+  taxNumber: typeof teacherRaw.taxNumber === 'string' ? teacherRaw.taxNumber : '',
   bankDetails: {
     accountOwner: typeof bankRaw.accountOwner === 'string' ? bankRaw.accountOwner : '',
-    iban:         typeof bankRaw.iban         === 'string' ? bankRaw.iban         : '',
-    bic:          typeof bankRaw.bic          === 'string' ? bankRaw.bic          : '',
+    iban: typeof bankRaw.iban === 'string' ? bankRaw.iban : '',
+    bic: typeof bankRaw.bic === 'string' ? bankRaw.bic : '',
   },
 };
 
@@ -218,7 +225,7 @@ In the studio loop, replace the final `config.studios[name] = { rateTiers: ... }
 ```ts
 config.studios[name] = {
   fullName: typeof studio.fullName === 'string' ? studio.fullName : '',
-  address:  typeof studio.address  === 'string' ? studio.address  : '',
+  address: typeof studio.address === 'string' ? studio.address : '',
   rateTiers: tiers.sort((a, b) => a.minStudents - b.minStudents),
 };
 ```
@@ -251,6 +258,7 @@ git commit -m "feat: update config schema to parse teacher object and studio ful
 ### Task 4: Update defaults and example config
 
 **Files:**
+
 - Modify: `src/lib/config/defaults.ts`
 - Modify: `config.example.yaml`
 
@@ -272,15 +280,16 @@ export const DEFAULT_CONFIG: AppConfig = {
       bic: '',
     },
   },
-  calendarUrl: 'https://calendar.google.com/calendar/ical/ca97afba7cedbe03060b5a536c3637d379c891f93c3afa7b8bae9ec1972552aa%40group.calendar.google.com/private-8a00bedadf09be027a0265c7e8cbb0b1/basic.ics',
+  calendarUrl:
+    'https://calendar.google.com/calendar/ical/ca97afba7cedbe03060b5a536c3637d379c891f93c3afa7b8bae9ec1972552aa%40group.calendar.google.com/private-8a00bedadf09be027a0265c7e8cbb0b1/basic.ics',
   outputDir: '',
   studios: {
-    'Yogibar': {
+    Yogibar: {
       fullName: '',
       address: '',
       rateTiers: [
-        { minStudents: 1,  maxStudents: 5,    rate: 80  },
-        { minStudents: 6,  maxStudents: 10,   rate: 100 },
+        { minStudents: 1, maxStudents: 5, rate: 80 },
+        { minStudents: 6, maxStudents: 10, rate: 100 },
         { minStudents: 11, maxStudents: null, rate: 120 },
       ],
     },
@@ -294,22 +303,22 @@ Replace entire file:
 
 ```yaml
 teacher:
-  name: "Your Name"
+  name: 'Your Name'
   address: "Your Street 1\n12345 Your City\nYour Country"
-  taxNumber: "DE123456789"
+  taxNumber: 'DE123456789'
   bankDetails:
-    accountOwner: "Your Name"
-    iban: "DE89 3704 0044 0532 0130 00"
-    bic: "COBADEFFXXX"
-calendarUrl: "https://calendar.google.com/calendar/ical/YOUR_CALENDAR_ID/basic.ics"
-outputDir: ""
+    accountOwner: 'Your Name'
+    iban: 'DE89 3704 0044 0532 0130 00'
+    bic: 'COBADEFFXXX'
+calendarUrl: 'https://calendar.google.com/calendar/ical/YOUR_CALENDAR_ID/basic.ics'
+outputDir: ''
 studios:
-  "Yogibar":
-    fullName: "Yogibar Yoga Studio GmbH"
+  'Yogibar':
+    fullName: 'Yogibar Yoga Studio GmbH'
     address: "Studio Street 42\n80331 Munich\nGermany"
     rateTiers:
-      - { minStudents: 1,  maxStudents: 5,    rate: 80  }
-      - { minStudents: 6,  maxStudents: 10,   rate: 100 }
+      - { minStudents: 1, maxStudents: 5, rate: 80 }
+      - { minStudents: 6, maxStudents: 10, rate: 100 }
       - { minStudents: 11, maxStudents: null, rate: 120 }
 ```
 
@@ -334,6 +343,7 @@ git commit -m "feat: update defaults and example config for teacher object struc
 ### Task 5: Update the RatesTab UI
 
 **Files:**
+
 - Modify: `src/components/RatesTab/index.tsx`
 
 The global section currently has `teacherName` and `calendarUrl` inputs. Expand it to cover all teacher fields. The `StudioCard` needs `fullName` and `address` inputs.
@@ -347,7 +357,10 @@ function updateTeacher(key: keyof Omit<TeacherInfo, 'bankDetails'>, value: strin
   onUpdate({ ...config, teacher: { ...config.teacher, [key]: value } });
 }
 function updateBank(key: keyof BankDetails, value: string) {
-  onUpdate({ ...config, teacher: { ...config.teacher, bankDetails: { ...config.teacher.bankDetails, [key]: value } } });
+  onUpdate({
+    ...config,
+    teacher: { ...config.teacher, bankDetails: { ...config.teacher.bankDetails, [key]: value } },
+  });
 }
 function updateCalendarUrl(value: string) {
   onUpdate({ ...config, calendarUrl: value });
@@ -367,7 +380,10 @@ Add the handler in `RatesTab`:
 
 ```ts
 function updateStudioField(studioName: string, field: 'fullName' | 'address', value: string) {
-  onUpdate({ ...config, studios: { ...config.studios, [studioName]: { ...config.studios[studioName], [field]: value } } });
+  onUpdate({
+    ...config,
+    studios: { ...config.studios, [studioName]: { ...config.studios[studioName], [field]: value } },
+  });
 }
 ```
 
@@ -402,54 +418,70 @@ Replace the global section in `RatesTab`:
   <h3 className="text-sm font-medium text-gray-700">Teacher</h3>
   <label className="flex flex-col gap-1">
     <span className="text-xs text-gray-500">Name</span>
-    <input className="border border-gray-200 rounded px-2 py-1 text-sm"
+    <input
+      className="border border-gray-200 rounded px-2 py-1 text-sm"
       value={config.teacher.name}
-      onChange={e => updateTeacher('name', e.target.value)} />
+      onChange={(e) => updateTeacher('name', e.target.value)}
+    />
   </label>
   <label className="flex flex-col gap-1">
     <span className="text-xs text-gray-500">Address</span>
-    <textarea className="border border-gray-200 rounded px-2 py-1 text-sm resize-none" rows={3}
+    <textarea
+      className="border border-gray-200 rounded px-2 py-1 text-sm resize-none"
+      rows={3}
       value={config.teacher.address}
-      onChange={e => updateTeacher('address', e.target.value)} />
+      onChange={(e) => updateTeacher('address', e.target.value)}
+    />
   </label>
   <label className="flex flex-col gap-1">
     <span className="text-xs text-gray-500">Tax number</span>
-    <input className="border border-gray-200 rounded px-2 py-1 text-sm"
+    <input
+      className="border border-gray-200 rounded px-2 py-1 text-sm"
       value={config.teacher.taxNumber}
-      onChange={e => updateTeacher('taxNumber', e.target.value)} />
+      onChange={(e) => updateTeacher('taxNumber', e.target.value)}
+    />
   </label>
 
   <h3 className="text-sm font-medium text-gray-700 mt-2">Bank details</h3>
   <label className="flex flex-col gap-1">
     <span className="text-xs text-gray-500">Account owner</span>
-    <input className="border border-gray-200 rounded px-2 py-1 text-sm"
+    <input
+      className="border border-gray-200 rounded px-2 py-1 text-sm"
       value={config.teacher.bankDetails.accountOwner}
-      onChange={e => updateBank('accountOwner', e.target.value)} />
+      onChange={(e) => updateBank('accountOwner', e.target.value)}
+    />
   </label>
   <label className="flex flex-col gap-1">
     <span className="text-xs text-gray-500">IBAN</span>
-    <input className="border border-gray-200 rounded px-2 py-1 text-sm font-mono tracking-wide"
+    <input
+      className="border border-gray-200 rounded px-2 py-1 text-sm font-mono tracking-wide"
       value={config.teacher.bankDetails.iban}
-      onChange={e => updateBank('iban', e.target.value)} />
+      onChange={(e) => updateBank('iban', e.target.value)}
+    />
   </label>
   <label className="flex flex-col gap-1">
     <span className="text-xs text-gray-500">BIC</span>
-    <input className="border border-gray-200 rounded px-2 py-1 text-sm font-mono"
+    <input
+      className="border border-gray-200 rounded px-2 py-1 text-sm font-mono"
       value={config.teacher.bankDetails.bic}
-      onChange={e => updateBank('bic', e.target.value)} />
+      onChange={(e) => updateBank('bic', e.target.value)}
+    />
   </label>
 
   <h3 className="text-sm font-medium text-gray-700 mt-2">Calendar</h3>
   <label className="flex flex-col gap-1">
     <span className="text-xs text-gray-500">Calendar URL (ICS)</span>
-    <input className="border border-gray-200 rounded px-2 py-1 text-sm font-mono"
+    <input
+      className="border border-gray-200 rounded px-2 py-1 text-sm font-mono"
       value={config.calendarUrl}
-      onChange={e => updateCalendarUrl(e.target.value)} />
+      onChange={(e) => updateCalendarUrl(e.target.value)}
+    />
   </label>
 </div>
 ```
 
 Also add the `import` for `BankDetails` and `TeacherInfo` at the top of the file:
+
 ```ts
 import { AppConfig, RateTier, StudioConfig, TeacherInfo, BankDetails } from '../../lib/types';
 ```
@@ -474,6 +506,7 @@ git commit -m "feat: update RatesTab with teacher and studio address fields"
 ### Task 6: Update the PDF invoice template
 
 **Files:**
+
 - Modify: `src/lib/pdf/InvoiceDocument.tsx`
 
 Add teacher contact info (top-left), studio info (top-right), and bank details (footer).
@@ -485,13 +518,13 @@ Add new style entries to the `StyleSheet.create` call:
 ```ts
 const s = StyleSheet.create({
   // ... keep all existing entries, add: ...
-  headerRow:   { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 32 },
-  addressBlock:{ flex: 1 },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 32 },
+  addressBlock: { flex: 1 },
   addressText: { fontSize: 9, color: '#444', lineHeight: 1.5 },
-  footer:      { marginTop: 32, paddingTop: 12, borderTopWidth: 0.5, borderColor: '#ddd' },
+  footer: { marginTop: 32, paddingTop: 12, borderTopWidth: 0.5, borderColor: '#ddd' },
   footerLabel: { fontSize: 7, color: '#aaa', textTransform: 'uppercase', marginBottom: 1 },
   footerValue: { fontSize: 8, color: '#555', marginBottom: 6 },
-  footerRow:   { flexDirection: 'row', gap: 32 },
+  footerRow: { flexDirection: 'row', gap: 32 },
 });
 ```
 
@@ -507,20 +540,19 @@ export function InvoiceDocument({ invoice, config }: Props) {
   return (
     <Document>
       <Page size="A4" style={s.page}>
-
         {/* Two-column header */}
         <View style={s.headerRow}>
           <View style={s.addressBlock}>
             <Text style={s.title}>{teacher.name || 'Invoice'}</Text>
-            {teacher.address ? (
-              <Text style={s.addressText}>{teacher.address}</Text>
-            ) : null}
+            {teacher.address ? <Text style={s.addressText}>{teacher.address}</Text> : null}
             {teacher.taxNumber ? (
               <Text style={s.addressText}>Tax no.: {teacher.taxNumber}</Text>
             ) : null}
           </View>
           <View style={[s.addressBlock, { alignItems: 'flex-end' }]}>
-            <Text style={{ fontSize: 11, fontWeight: 'bold', marginBottom: 4 }}>{studioDisplay}</Text>
+            <Text style={{ fontSize: 11, fontWeight: 'bold', marginBottom: 4 }}>
+              {studioDisplay}
+            </Text>
             {studioAddress ? (
               <Text style={[s.addressText, { textAlign: 'right' }]}>{studioAddress}</Text>
             ) : null}
@@ -530,7 +562,9 @@ export function InvoiceDocument({ invoice, config }: Props) {
         {/* Invoice period */}
         <View style={s.section}>
           <Text style={s.label}>Invoice period</Text>
-          <Text style={s.value}>{invoice.invoicePeriod.from} — {invoice.invoicePeriod.to}</Text>
+          <Text style={s.value}>
+            {invoice.invoicePeriod.from} — {invoice.invoicePeriod.to}
+          </Text>
         </View>
 
         {/* Class table — unchanged */}
@@ -546,7 +580,9 @@ export function InvoiceDocument({ invoice, config }: Props) {
           {invoice.classes.map((item, i) => (
             <View key={i} style={s.tableRow}>
               <Text style={s.col}>{item.date}</Text>
-              <Text style={s.col}>{item.startTime}–{item.endTime}</Text>
+              <Text style={s.col}>
+                {item.startTime}–{item.endTime}
+              </Text>
               <Text style={s.col}>{item.classType}</Text>
               <Text style={s.colRight}>{item.studentCount}</Text>
               <Text style={s.colRight}>{item.rateApplied}</Text>
@@ -561,7 +597,7 @@ export function InvoiceDocument({ invoice, config }: Props) {
         </View>
 
         {/* Bank details footer */}
-        {(teacher.bankDetails.iban || teacher.bankDetails.bic) ? (
+        {teacher.bankDetails.iban || teacher.bankDetails.bic ? (
           <View style={s.footer}>
             <View style={s.footerRow}>
               {teacher.bankDetails.accountOwner ? (
@@ -585,7 +621,6 @@ export function InvoiceDocument({ invoice, config }: Props) {
             </View>
           </View>
         ) : null}
-
       </Page>
     </Document>
   );
@@ -636,6 +671,7 @@ Expected: no errors.
 **Step 3: Screenshot the Rates & Config tab**
 
 Click the "Rates & Config" tab. Verify:
+
 - Teacher section shows Name, Address (textarea), Tax number
 - Bank Details section shows Account owner, IBAN (monospace), BIC (monospace)
 - Calendar section shows the ICS URL input

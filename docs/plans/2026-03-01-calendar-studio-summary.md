@@ -13,6 +13,7 @@
 ### Task 1: Add `computeStudioStats` to calculator.ts (TDD)
 
 **Files:**
+
 - Modify: `src/lib/invoice/calculator.ts`
 - Test: `tests/invoice/calculator.test.ts`
 
@@ -21,48 +22,77 @@
 Append to `tests/invoice/calculator.test.ts` (after the existing `findRate` describe block):
 
 ```ts
-import { findRate, computeStudioStats } from "../../src/lib/invoice/calculator.js";
-import { RateTier, ParsedClass } from "../../src/lib/types.js";
+import { findRate, computeStudioStats } from '../../src/lib/invoice/calculator.js';
+import { RateTier, ParsedClass } from '../../src/lib/types.js';
 ```
 
 Replace the existing import line at the top with:
+
 ```ts
-import { findRate, computeStudioStats } from "../../src/lib/invoice/calculator.js";
-import { RateTier, ParsedClass } from "../../src/lib/types.js";
+import { findRate, computeStudioStats } from '../../src/lib/invoice/calculator.js';
+import { RateTier, ParsedClass } from '../../src/lib/types.js';
 ```
 
 Then append this describe block at the bottom of the file:
 
 ```ts
 const classFixtures: ParsedClass[] = [
-  { studioName: "Zen Yoga", classType: "Vinyasa", date: "2026-01-03", startTime: "09:00", endTime: "10:15", studentCount: 8 },   // → 100
-  { studioName: "Zen Yoga", classType: "Yin",     date: "2026-01-05", startTime: "18:00", endTime: "19:15", studentCount: 3 },   // → 80
-  { studioName: "Zen Yoga", classType: "Vinyasa", date: "2026-01-10", startTime: "09:00", endTime: "10:15", studentCount: 12 },  // → 120
+  {
+    studioName: 'Zen Yoga',
+    classType: 'Vinyasa',
+    date: '2026-01-03',
+    startTime: '09:00',
+    endTime: '10:15',
+    studentCount: 8,
+  }, // → 100
+  {
+    studioName: 'Zen Yoga',
+    classType: 'Yin',
+    date: '2026-01-05',
+    startTime: '18:00',
+    endTime: '19:15',
+    studentCount: 3,
+  }, // → 80
+  {
+    studioName: 'Zen Yoga',
+    classType: 'Vinyasa',
+    date: '2026-01-10',
+    startTime: '09:00',
+    endTime: '10:15',
+    studentCount: 12,
+  }, // → 120
 ];
 
-describe("computeStudioStats", () => {
-  it("sums rates and counts classes", () => {
+describe('computeStudioStats', () => {
+  it('sums rates and counts classes', () => {
     const stats = computeStudioStats(classFixtures, tiers);
     expect(stats.totalAmount).toBe(300); // 100 + 80 + 120
     expect(stats.classCount).toBe(3);
   });
 
-  it("computes correct average", () => {
+  it('computes correct average', () => {
     const stats = computeStudioStats(classFixtures, tiers);
     expect(stats.avgPerClass).toBeCloseTo(100); // 300 / 3
   });
 
-  it("skips zero-student classes", () => {
+  it('skips zero-student classes', () => {
     const withZero: ParsedClass[] = [
       ...classFixtures,
-      { studioName: "Zen Yoga", classType: "Hatha", date: "2026-01-12", startTime: "09:00", endTime: "10:15", studentCount: 0 },
+      {
+        studioName: 'Zen Yoga',
+        classType: 'Hatha',
+        date: '2026-01-12',
+        startTime: '09:00',
+        endTime: '10:15',
+        studentCount: 0,
+      },
     ];
     const stats = computeStudioStats(withZero, tiers);
     expect(stats.totalAmount).toBe(300);
     expect(stats.classCount).toBe(3);
   });
 
-  it("returns zeros for empty input", () => {
+  it('returns zeros for empty input', () => {
     const stats = computeStudioStats([], tiers);
     expect(stats.totalAmount).toBe(0);
     expect(stats.classCount).toBe(0);
@@ -84,7 +114,7 @@ Expected: import error — `computeStudioStats` is not exported yet.
 Replace the full file contents:
 
 ```ts
-import { RateTier, ParsedClass, AppError } from "../types.js";
+import { RateTier, ParsedClass, AppError } from '../types.js';
 
 export function findRate(tiers: RateTier[], studentCount: number): number {
   for (const tier of tiers) {
@@ -95,21 +125,18 @@ export function findRate(tiers: RateTier[], studentCount: number): number {
     }
   }
 
-  throw new AppError(
-    `No matching rate tier for ${studentCount} students`,
-    "NO_MATCHING_TIER",
-  );
+  throw new AppError(`No matching rate tier for ${studentCount} students`, 'NO_MATCHING_TIER');
 }
 
 export interface StudioMonthStats {
   totalAmount: number;
-  classCount: number;   // non-zero-student classes only
-  avgPerClass: number;  // 0 when classCount is 0
+  classCount: number; // non-zero-student classes only
+  avgPerClass: number; // 0 when classCount is 0
 }
 
 export function computeStudioStats(
   classes: ParsedClass[],
-  rateTiers: RateTier[],
+  rateTiers: RateTier[]
 ): StudioMonthStats {
   let totalAmount = 0;
   let classCount = 0;
@@ -146,6 +173,7 @@ git commit -m "feat: add computeStudioStats to calculator"
 ### Task 2: Refactor `generateInvoice` to use `computeStudioStats`
 
 **Files:**
+
 - Modify: `src/lib/invoice/generator.ts`
 - Test: `tests/invoice/generator.test.ts` (no changes needed — existing tests verify behaviour is unchanged)
 
@@ -154,8 +182,15 @@ git commit -m "feat: add computeStudioStats to calculator"
 Replace `src/lib/invoice/generator.ts` with:
 
 ```ts
-import { ParsedClass, Invoice, InvoiceLineItem, InvoicePeriod, StudioConfig, ParseWarning } from "../types.js";
-import { findRate, computeStudioStats } from "./calculator.js";
+import {
+  ParsedClass,
+  Invoice,
+  InvoiceLineItem,
+  InvoicePeriod,
+  StudioConfig,
+  ParseWarning,
+} from '../types.js';
+import { findRate, computeStudioStats } from './calculator.js';
 
 export interface GenerateResult {
   invoice: Invoice;
@@ -166,14 +201,18 @@ export function generateInvoice(
   studioName: string,
   classes: ParsedClass[],
   studioConfig: StudioConfig,
-  period: InvoicePeriod,
+  period: InvoicePeriod
 ): GenerateResult {
   const lineItems: InvoiceLineItem[] = [];
   const warnings: ParseWarning[] = [];
 
   for (const cls of classes) {
     if (cls.studentCount === 0) {
-      warnings.push({ code: 'ZERO_STUDENTS', event: `${cls.studioName} / ${cls.classType}`, date: cls.date });
+      warnings.push({
+        code: 'ZERO_STUDENTS',
+        event: `${cls.studioName} / ${cls.classType}`,
+        date: cls.date,
+      });
       continue;
     }
 
@@ -225,6 +264,7 @@ git commit -m "refactor: generateInvoice uses computeStudioStats for totals"
 ### Task 3: Pass `studios` config into CalendarTab
 
 **Files:**
+
 - Modify: `src/App.tsx`
 - Modify: `src/components/CalendarTab/index.tsx`
 
@@ -245,6 +285,7 @@ interface Props {
 ```
 
 Update the function signature:
+
 ```ts
 export function CalendarTab({ classes, studios = {} }: Props) {
 ```
@@ -277,6 +318,7 @@ git commit -m "feat: pass studios config into CalendarTab"
 ### Task 4: Render studio summary pills below the calendar grid
 
 **Files:**
+
 - Modify: `src/components/CalendarTab/index.tsx`
 
 **Step 1: Add import for `computeStudioStats`**
@@ -295,12 +337,15 @@ Inside `CalendarTab`, after the `monthClasses` computation, add:
 // Per-studio stats for the displayed month (configured studios only)
 const studioStats = Object.entries(studios)
   .map(([key, studioConfig]) => {
-    const studioClasses = monthClasses.filter(c => c.studioName === key && !c.unconfigured);
+    const studioClasses = monthClasses.filter((c) => c.studioName === key && !c.unconfigured);
     if (studioClasses.length === 0) return null;
     const stats = computeStudioStats(studioClasses, studioConfig.rateTiers);
     return { key, stats };
   })
-  .filter((entry): entry is { key: string; stats: ReturnType<typeof computeStudioStats> } => entry !== null);
+  .filter(
+    (entry): entry is { key: string; stats: ReturnType<typeof computeStudioStats> } =>
+      entry !== null
+  );
 ```
 
 **Step 3: Render summary pills below the grid**
@@ -308,25 +353,26 @@ const studioStats = Object.entries(studios)
 Inside the return JSX, after `<CalendarGrid ... />`, add:
 
 ```tsx
-{studioStats.length > 0 && (
-  <div className="flex gap-2 flex-wrap items-center pt-1">
-    {studioStats.map(({ key, stats }) => {
-      const c = studioColor(key);
-      return (
-        <span
-          key={key}
-          className={`text-xs px-3 py-1 rounded border ${c.bg} ${c.text} ${c.border}`}
-        >
-          {key}
-          <span className="mx-1.5 opacity-40">·</span>
-          €{stats.totalAmount.toFixed(2)}
-          <span className="mx-1.5 opacity-40">·</span>
-          avg €{stats.avgPerClass.toFixed(2)}
-        </span>
-      );
-    })}
-  </div>
-)}
+{
+  studioStats.length > 0 && (
+    <div className="flex gap-2 flex-wrap items-center pt-1">
+      {studioStats.map(({ key, stats }) => {
+        const c = studioColor(key);
+        return (
+          <span
+            key={key}
+            className={`text-xs px-3 py-1 rounded border ${c.bg} ${c.text} ${c.border}`}
+          >
+            {key}
+            <span className="mx-1.5 opacity-40">·</span>€{stats.totalAmount.toFixed(2)}
+            <span className="mx-1.5 opacity-40">·</span>
+            avg €{stats.avgPerClass.toFixed(2)}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
 ```
 
 **Step 4: Run TypeScript check**

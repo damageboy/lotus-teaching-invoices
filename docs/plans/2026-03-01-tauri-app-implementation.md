@@ -15,6 +15,7 @@
 ## Task 1: Add Tauri 2 + Vite + React scaffold
 
 **Files:**
+
 - Modify: `package.json`
 - Create: `vite.config.ts`
 - Create: `index.html`
@@ -151,7 +152,7 @@ export default function App() {
 **Step 9: Create `src/index.css`** (Tailwind entry)
 
 ```css
-@import "tailwindcss";
+@import 'tailwindcss';
 ```
 
 **Step 10: Update `package.json` scripts**
@@ -178,6 +179,7 @@ npx tauri init
 ```
 
 Answer the prompts:
+
 - App name: `Lotus Teaching Invoices`
 - Window title: `Lotus Teaching Invoices`
 - Web assets location: `../dist`
@@ -188,6 +190,7 @@ Answer the prompts:
 **Step 12: Add Tauri plugins to `src-tauri/Cargo.toml`**
 
 Add under `[dependencies]`:
+
 ```toml
 tauri-plugin-http = "2"
 tauri-plugin-fs = "2"
@@ -250,6 +253,7 @@ git commit -m "feat: scaffold Tauri 2 + Vite + React app"
 The existing business logic moves to `src/lib/`. The CLI entry moves to `src/cli/main.ts`. Tests update their import paths.
 
 **Files:**
+
 - Move: `src/calendar/` → `src/lib/calendar/`
 - Move: `src/config/` → `src/lib/config/`
 - Move: `src/invoice/` → `src/lib/invoice/`
@@ -276,10 +280,11 @@ mv src/index.ts src/cli/main.ts
 Change all `"./` and `"../` paths to point into `src/lib/`:
 
 ```typescript
-import { parseArgs } from "../lib/cli/args.js";
+import { parseArgs } from '../lib/cli/args.js';
 ```
 
 Wait — `src/cli/args.ts` was under `src/cli/` already. Move it too:
+
 ```bash
 mv src/cli src/lib/cli
 mkdir -p src/cli
@@ -287,16 +292,17 @@ mv src/lib/cli/args.ts src/cli/args.ts   # keep args.ts with CLI
 ```
 
 Then `src/cli/main.ts` imports:
+
 ```typescript
-import { parseArgs } from "./args.js";
-import { loadConfig } from "../lib/config/loader.js";
-import { fetchCalendar } from "../lib/calendar/fetcher.js";
-import { parseCalendarEvents, extractClasses } from "../lib/calendar/parser.js";
-import { groupByStudio, filterByDateRange, filterByStudio } from "../lib/invoice/grouper.js";
-import { generateInvoice } from "../lib/invoice/generator.js";
-import { writeInvoice, printInvoice } from "../lib/output/writer.js";
-import { printWarningReport } from "../lib/output/reporter.js";
-import { AppError, InvoicePeriod, ParseWarning } from "../lib/types.js";
+import { parseArgs } from './args.js';
+import { loadConfig } from '../lib/config/loader.js';
+import { fetchCalendar } from '../lib/calendar/fetcher.js';
+import { parseCalendarEvents, extractClasses } from '../lib/calendar/parser.js';
+import { groupByStudio, filterByDateRange, filterByStudio } from '../lib/invoice/grouper.js';
+import { generateInvoice } from '../lib/invoice/generator.js';
+import { writeInvoice, printInvoice } from '../lib/output/writer.js';
+import { printWarningReport } from '../lib/output/reporter.js';
+import { AppError, InvoicePeriod, ParseWarning } from '../lib/types.js';
 ```
 
 **Step 3: Fix all internal imports within `src/lib/`**
@@ -347,6 +353,7 @@ git commit -m "refactor: move business logic to src/lib/, CLI to src/cli/"
 `node-ical` uses Node.js APIs and cannot run in the browser. `ical.js` is Mozilla's browser-compatible ICS parser with an equivalent data model.
 
 **Files:**
+
 - Modify: `src/lib/calendar/parser.ts`
 - Modify: `src/lib/types.ts`
 - Modify: `src/lib/config/schema.ts`
@@ -363,6 +370,7 @@ npm install --save-dev @types/ical.js
 **Step 2: Update `src/lib/types.ts` — add new AppConfig fields**
 
 Change `AppConfig`:
+
 ```typescript
 export interface AppConfig {
   teacherName: string;
@@ -375,12 +383,14 @@ export interface AppConfig {
 **Step 3: Update `src/lib/config/schema.ts` — validate new fields**
 
 In `validateConfig`, add after the `calendarUrl` check:
+
 ```typescript
 const teacherName = typeof obj.teacherName === 'string' ? obj.teacherName : '';
 const outputDir = typeof obj.outputDir === 'string' ? obj.outputDir : '';
 ```
 
 And in the returned config object:
+
 ```typescript
 const config: AppConfig = {
   teacherName,
@@ -426,7 +436,7 @@ export function parseCalendarEvents(icsData: string): CalendarEvent[] {
     if (!event.summary || !event.startDate || !event.endDate) continue;
 
     events.push({
-      uid: vevent.getFirstPropertyValue('uid') as string ?? event.uid,
+      uid: (vevent.getFirstPropertyValue('uid') as string) ?? event.uid,
       summary: event.summary,
       description: (vevent.getFirstPropertyValue('description') as string) ?? '',
       start: event.startDate.toJSDate(),
@@ -440,7 +450,7 @@ export function parseCalendarEvents(icsData: string): CalendarEvent[] {
 // extractClasses is unchanged — copy as-is from previous version
 export function extractClasses(
   events: CalendarEvent[],
-  knownStudios: Map<string, string>,
+  knownStudios: Map<string, string>
 ): { classes: ParsedClass[]; warnings: ParseWarning[] } {
   // ... (identical to current implementation)
 }
@@ -457,11 +467,11 @@ Expected: all 31 tests pass. The `parseCalendarEvents` tests use the fixture ICS
 **Step 6: Update `config.example.yaml` with new fields**
 
 ```yaml
-teacherName: "Your Name"
-calendarUrl: "https://calendar.google.com/calendar/ical/YOUR_CALENDAR_ID/basic.ics"
-outputDir: ""
+teacherName: 'Your Name'
+calendarUrl: 'https://calendar.google.com/calendar/ical/YOUR_CALENDAR_ID/basic.ics'
+outputDir: ''
 studios:
-  "Zen Yoga":
+  'Zen Yoga':
     rateTiers:
       - { minStudents: 1, maxStudents: 5, rate: 80 }
       - { minStudents: 6, maxStudents: 10, rate: 100 }
@@ -482,6 +492,7 @@ git commit -m "feat: replace node-ical with ical.js, add teacherName/outputDir t
 Reads and writes `config.yaml` from Tauri's app data directory. On first launch (file doesn't exist), writes a default config.
 
 **Files:**
+
 - Create: `src/hooks/useConfig.ts`
 - Create: `src/lib/config/defaults.ts`
 
@@ -539,19 +550,24 @@ export function useConfig() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const updateConfig = useCallback((next: AppConfig) => {
     setConfig(next);
     setIsDirty(true);
   }, []);
 
-  const save = useCallback(async (next?: AppConfig) => {
-    const toSave = next ?? config;
-    await writeTextFile(CONFIG_FILE, stringifyYaml(toSave), { baseDir: BASE_DIR });
-    setConfig(toSave);
-    setIsDirty(false);
-  }, [config]);
+  const save = useCallback(
+    async (next?: AppConfig) => {
+      const toSave = next ?? config;
+      await writeTextFile(CONFIG_FILE, stringifyYaml(toSave), { baseDir: BASE_DIR });
+      setConfig(toSave);
+      setIsDirty(false);
+    },
+    [config]
+  );
 
   return { config, isDirty, isLoading, error, updateConfig, save, reload: load };
 }
@@ -579,6 +595,7 @@ git commit -m "feat: add useConfig hook (reads/writes config.yaml via Tauri fs)"
 Fetches the ICS URL via Tauri's HTTP plugin on mount, parses it, and caches the result. Exposes a `refresh()` function.
 
 **Files:**
+
 - Create: `src/hooks/useCalendarData.ts`
 
 **Step 1: Create `src/hooks/useCalendarData.ts`**
@@ -615,7 +632,7 @@ export function useCalendarData(config: AppConfig): CalendarData {
       const icsData = await response.text();
       const events = parseCalendarEvents(icsData);
       const knownStudios = new Map(
-        Object.keys(config.studios).map(name => [name.toLowerCase(), name])
+        Object.keys(config.studios).map((name) => [name.toLowerCase(), name])
       );
       const { classes: parsed, warnings: warns } = extractClasses(events, knownStudios);
       setClasses(parsed);
@@ -653,6 +670,7 @@ git commit -m "feat: add useCalendarData hook (fetches and caches ICS via Tauri 
 Wire up both hooks and render the tab navigation. Each tab is a placeholder component for now.
 
 **Files:**
+
 - Modify: `src/App.tsx`
 - Create: `src/components/CalendarTab/index.tsx` (placeholder)
 - Create: `src/components/InvoicesTab/index.tsx` (placeholder)
@@ -661,27 +679,41 @@ Wire up both hooks and render the tab navigation. Each tab is a placeholder comp
 **Step 1: Create placeholder tab components**
 
 `src/components/CalendarTab/index.tsx`:
+
 ```tsx
 import { ParsedClass } from '../../lib/types';
-interface Props { classes: ParsedClass[]; }
+interface Props {
+  classes: ParsedClass[];
+}
 export function CalendarTab({ classes }: Props) {
   return <div className="p-4">Calendar — {classes.length} classes loaded</div>;
 }
 ```
 
 `src/components/InvoicesTab/index.tsx`:
+
 ```tsx
 import { ParsedClass, AppConfig } from '../../lib/types';
-interface Props { classes: ParsedClass[]; config: AppConfig; onSaveConfig: (c: AppConfig) => Promise<void>; }
+interface Props {
+  classes: ParsedClass[];
+  config: AppConfig;
+  onSaveConfig: (c: AppConfig) => Promise<void>;
+}
 export function InvoicesTab({ classes }: Props) {
   return <div className="p-4">Invoices — {classes.length} classes</div>;
 }
 ```
 
 `src/components/RatesTab/index.tsx`:
+
 ```tsx
 import { AppConfig } from '../../lib/types';
-interface Props { config: AppConfig; isDirty: boolean; onUpdate: (c: AppConfig) => void; onSave: () => Promise<void>; }
+interface Props {
+  config: AppConfig;
+  isDirty: boolean;
+  onUpdate: (c: AppConfig) => void;
+  onSave: () => Promise<void>;
+}
 export function RatesTab({ config }: Props) {
   return <div className="p-4">Rates — {Object.keys(config.studios).length} studios</div>;
 }
@@ -723,7 +755,7 @@ export default function App() {
     <div className="flex flex-col h-screen bg-white">
       {/* Tab bar */}
       <div className="flex border-b border-gray-200 bg-gray-50">
-        {tabs.map(tab => (
+        {tabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
@@ -741,7 +773,11 @@ export default function App() {
         ))}
         <div className="ml-auto flex items-center px-4 gap-3">
           {calLoading && <span className="text-xs text-gray-400">Refreshing…</span>}
-          {calError && <span className="text-xs text-red-500" title={calError}>⚠ Calendar error</span>}
+          {calError && (
+            <span className="text-xs text-red-500" title={calError}>
+              ⚠ Calendar error
+            </span>
+          )}
           <button
             onClick={refresh}
             disabled={calLoading}
@@ -759,7 +795,12 @@ export default function App() {
           <InvoicesTab classes={classes} config={config} onSaveConfig={save} />
         )}
         {activeTab === 'rates' && (
-          <RatesTab config={config} isDirty={isDirty} onUpdate={updateConfig} onSave={() => save()} />
+          <RatesTab
+            config={config}
+            isDirty={isDirty}
+            onUpdate={updateConfig}
+            onSave={() => save()}
+          />
         )}
       </div>
     </div>
@@ -789,6 +830,7 @@ git commit -m "feat: add three-tab app shell with useConfig and useCalendarData 
 A monthly grid with studio-colored event chips and a month switcher.
 
 **Files:**
+
 - Modify: `src/components/CalendarTab/index.tsx`
 - Create: `src/components/CalendarTab/CalendarGrid.tsx`
 - Create: `src/components/CalendarTab/EventChip.tsx`
@@ -800,11 +842,11 @@ A monthly grid with studio-colored event chips and a month switcher.
 // A palette of distinct colors — extend as needed
 const PALETTE = [
   { bg: 'bg-violet-100', text: 'text-violet-800', border: 'border-violet-300' },
-  { bg: 'bg-sky-100',    text: 'text-sky-800',    border: 'border-sky-300' },
-  { bg: 'bg-emerald-100',text: 'text-emerald-800',border: 'border-emerald-300' },
-  { bg: 'bg-amber-100',  text: 'text-amber-800',  border: 'border-amber-300' },
-  { bg: 'bg-rose-100',   text: 'text-rose-800',   border: 'border-rose-300' },
-  { bg: 'bg-teal-100',   text: 'text-teal-800',   border: 'border-teal-300' },
+  { bg: 'bg-sky-100', text: 'text-sky-800', border: 'border-sky-300' },
+  { bg: 'bg-emerald-100', text: 'text-emerald-800', border: 'border-emerald-300' },
+  { bg: 'bg-amber-100', text: 'text-amber-800', border: 'border-amber-300' },
+  { bg: 'bg-rose-100', text: 'text-rose-800', border: 'border-rose-300' },
+  { bg: 'bg-teal-100', text: 'text-teal-800', border: 'border-teal-300' },
 ];
 
 function hashString(s: string): number {
@@ -887,7 +929,7 @@ export function CalendarGrid({ year, month, classes }: Props) {
 
   return (
     <div className="grid grid-cols-7 gap-px bg-gray-200 border border-gray-200 rounded">
-      {DAY_LABELS.map(d => (
+      {DAY_LABELS.map((d) => (
         <div key={d} className="bg-gray-50 text-center text-xs font-medium text-gray-500 py-1">
           {d}
         </div>
@@ -900,15 +942,15 @@ export function CalendarGrid({ year, month, classes }: Props) {
         const dayClasses = byDate.get(dateStr) ?? [];
         const today = new Date();
         const isToday =
-          today.getFullYear() === year &&
-          today.getMonth() === month &&
-          today.getDate() === day;
+          today.getFullYear() === year && today.getMonth() === month && today.getDate() === day;
 
         return (
           <div key={dateStr} className="bg-white min-h-[80px] p-1">
-            <div className={`text-xs font-medium mb-1 w-5 h-5 flex items-center justify-center rounded-full ${
-              isToday ? 'bg-indigo-600 text-white' : 'text-gray-700'
-            }`}>
+            <div
+              className={`text-xs font-medium mb-1 w-5 h-5 flex items-center justify-center rounded-full ${
+                isToday ? 'bg-indigo-600 text-white' : 'text-gray-700'
+              }`}
+            >
               {day}
             </div>
             {dayClasses.map((cls, j) => (
@@ -934,48 +976,73 @@ interface Props {
   classes: ParsedClass[];
 }
 
-const MONTH_NAMES = ['January','February','March','April','May','June',
-  'July','August','September','October','November','December'];
+const MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
 
 export function CalendarTab({ classes }: Props) {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
 
-  const monthClasses = classes.filter(cls => {
+  const monthClasses = classes.filter((cls) => {
     const prefix = `${year}-${String(month + 1).padStart(2, '0')}`;
     return cls.date.startsWith(prefix);
   });
 
   // Unique studios for legend
-  const studios = [...new Set(classes.map(c => c.studioName))].sort();
+  const studios = [...new Set(classes.map((c) => c.studioName))].sort();
 
   function prevMonth() {
-    if (month === 0) { setMonth(11); setYear(y => y - 1); }
-    else setMonth(m => m - 1);
+    if (month === 0) {
+      setMonth(11);
+      setYear((y) => y - 1);
+    } else setMonth((m) => m - 1);
   }
   function nextMonth() {
-    if (month === 11) { setMonth(0); setYear(y => y + 1); }
-    else setMonth(m => m + 1);
+    if (month === 11) {
+      setMonth(0);
+      setYear((y) => y + 1);
+    } else setMonth((m) => m + 1);
   }
 
   return (
     <div className="p-4 flex flex-col gap-4">
       {/* Month switcher */}
       <div className="flex items-center gap-4">
-        <button onClick={prevMonth} className="px-3 py-1 rounded hover:bg-gray-100 text-gray-600">‹</button>
-        <h2 className="text-lg font-semibold w-44 text-center">{MONTH_NAMES[month]} {year}</h2>
-        <button onClick={nextMonth} className="px-3 py-1 rounded hover:bg-gray-100 text-gray-600">›</button>
+        <button onClick={prevMonth} className="px-3 py-1 rounded hover:bg-gray-100 text-gray-600">
+          ‹
+        </button>
+        <h2 className="text-lg font-semibold w-44 text-center">
+          {MONTH_NAMES[month]} {year}
+        </h2>
+        <button onClick={nextMonth} className="px-3 py-1 rounded hover:bg-gray-100 text-gray-600">
+          ›
+        </button>
         <span className="ml-4 text-sm text-gray-400">{monthClasses.length} classes</span>
       </div>
 
       {/* Legend */}
       {studios.length > 0 && (
         <div className="flex gap-3 flex-wrap">
-          {studios.map(s => {
+          {studios.map((s) => {
             const c = studioColor(s);
             return (
-              <span key={s} className={`text-xs px-2 py-0.5 rounded border ${c.bg} ${c.text} ${c.border}`}>
+              <span
+                key={s}
+                className={`text-xs px-2 py-0.5 rounded border ${c.bg} ${c.text} ${c.border}`}
+              >
                 {s}
               </span>
             );
@@ -1011,6 +1078,7 @@ git commit -m "feat: implement CalendarTab with monthly grid and studio colors"
 Build the invoice PDF template using `@react-pdf/renderer` and a utility to save + open it.
 
 **Files:**
+
 - Create: `src/lib/pdf/InvoiceDocument.tsx`
 - Create: `src/lib/pdf/generatePdf.ts`
 
@@ -1030,19 +1098,36 @@ import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
 import { Invoice, AppConfig } from '../types';
 
 const s = StyleSheet.create({
-  page:      { padding: 48, fontFamily: 'Helvetica', fontSize: 10, color: '#111' },
-  header:    { marginBottom: 32 },
-  title:     { fontSize: 18, fontWeight: 'bold', marginBottom: 4 },
-  subtitle:  { fontSize: 11, color: '#555' },
-  section:   { marginBottom: 20 },
-  label:     { fontSize: 8, color: '#888', textTransform: 'uppercase', marginBottom: 2 },
-  value:     { fontSize: 10 },
-  table:     { marginTop: 16 },
-  tableHead: { flexDirection: 'row', borderBottomWidth: 1, borderColor: '#ddd', paddingBottom: 4, marginBottom: 4 },
-  tableRow:  { flexDirection: 'row', paddingVertical: 3, borderBottomWidth: 0.5, borderColor: '#eee' },
-  col:       { flex: 1, fontSize: 9 },
-  colRight:  { flex: 1, fontSize: 9, textAlign: 'right' },
-  total:     { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 12, fontSize: 11, fontWeight: 'bold' },
+  page: { padding: 48, fontFamily: 'Helvetica', fontSize: 10, color: '#111' },
+  header: { marginBottom: 32 },
+  title: { fontSize: 18, fontWeight: 'bold', marginBottom: 4 },
+  subtitle: { fontSize: 11, color: '#555' },
+  section: { marginBottom: 20 },
+  label: { fontSize: 8, color: '#888', textTransform: 'uppercase', marginBottom: 2 },
+  value: { fontSize: 10 },
+  table: { marginTop: 16 },
+  tableHead: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderColor: '#ddd',
+    paddingBottom: 4,
+    marginBottom: 4,
+  },
+  tableRow: {
+    flexDirection: 'row',
+    paddingVertical: 3,
+    borderBottomWidth: 0.5,
+    borderColor: '#eee',
+  },
+  col: { flex: 1, fontSize: 9 },
+  colRight: { flex: 1, fontSize: 9, textAlign: 'right' },
+  total: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 12,
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
 });
 
 interface Props {
@@ -1061,7 +1146,9 @@ export function InvoiceDocument({ invoice, config }: Props) {
 
         <View style={s.section}>
           <Text style={s.label}>Invoice period</Text>
-          <Text style={s.value}>{invoice.invoicePeriod.from} — {invoice.invoicePeriod.to}</Text>
+          <Text style={s.value}>
+            {invoice.invoicePeriod.from} — {invoice.invoicePeriod.to}
+          </Text>
         </View>
 
         <View style={s.table}>
@@ -1076,7 +1163,9 @@ export function InvoiceDocument({ invoice, config }: Props) {
           {invoice.classes.map((item, i) => (
             <View key={i} style={s.tableRow}>
               <Text style={s.col}>{item.date}</Text>
-              <Text style={s.col}>{item.startTime}–{item.endTime}</Text>
+              <Text style={s.col}>
+                {item.startTime}–{item.endTime}
+              </Text>
               <Text style={s.col}>{item.classType}</Text>
               <Text style={s.colRight}>{item.studentCount}</Text>
               <Text style={s.colRight}>{item.rateApplied}</Text>
@@ -1114,9 +1203,7 @@ export async function generateAndOpenPdf(invoice: Invoice, config: AppConfig): P
   const filename = invoiceFilename(invoice);
   const outputPath = `${config.outputDir}/${filename}`;
 
-  const blob = await pdf(
-    React.createElement(InvoiceDocument, { invoice, config })
-  ).toBlob();
+  const blob = await pdf(React.createElement(InvoiceDocument, { invoice, config })).toBlob();
 
   const arrayBuffer = await blob.arrayBuffer();
   await writeFile(outputPath, new Uint8Array(arrayBuffer));
@@ -1144,6 +1231,7 @@ git commit -m "feat: add PDF invoice generation with @react-pdf/renderer"
 ## Task 9: InvoicesTab — table + output folder setting
 
 **Files:**
+
 - Modify: `src/components/InvoicesTab/index.tsx`
 
 **Step 1: Implement `src/components/InvoicesTab/index.tsx`**
@@ -1165,14 +1253,26 @@ interface Props {
 interface InvoiceRow {
   studioName: string;
   monthKey: string; // "YYYY-MM"
-  label: string;    // "February 2026"
+  label: string; // "February 2026"
   classCount: number;
   total: number;
   classes: ParsedClass[];
 }
 
-const MONTH_NAMES = ['January','February','March','April','May','June',
-  'July','August','September','October','November','December'];
+const MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
 
 function buildRows(classes: ParsedClass[]): InvoiceRow[] {
   const map = new Map<string, ParsedClass[]>();
@@ -1195,7 +1295,9 @@ function buildRows(classes: ParsedClass[]): InvoiceRow[] {
         classes: clsList,
       };
     })
-    .sort((a, b) => b.monthKey.localeCompare(a.monthKey) || a.studioName.localeCompare(b.studioName));
+    .sort(
+      (a, b) => b.monthKey.localeCompare(a.monthKey) || a.studioName.localeCompare(b.studioName)
+    );
 }
 
 export function InvoicesTab({ classes, config, onSaveConfig }: Props) {
@@ -1268,9 +1370,13 @@ export function InvoicesTab({ classes, config, onSaveConfig }: Props) {
         </thead>
         <tbody>
           {rows.length === 0 && (
-            <tr><td colSpan={5} className="py-8 text-center text-gray-400">No classes loaded</td></tr>
+            <tr>
+              <td colSpan={5} className="py-8 text-center text-gray-400">
+                No classes loaded
+              </td>
+            </tr>
           )}
-          {rows.map(row => {
+          {rows.map((row) => {
             const rowKey = `${row.studioName}__${row.monthKey}`;
             const studioConfig = config.studios[row.studioName];
             // Compute real total from invoice generator
@@ -1281,9 +1387,14 @@ export function InvoicesTab({ classes, config, onSaveConfig }: Props) {
                 const from = `${year}-${month}-01`;
                 const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate();
                 const to = `${year}-${month}-${String(lastDay).padStart(2, '0')}`;
-                const { invoice } = generateInvoice(row.studioName, row.classes, studioConfig, { from, to });
+                const { invoice } = generateInvoice(row.studioName, row.classes, studioConfig, {
+                  from,
+                  to,
+                });
                 total = invoice.totalAmount;
-              } catch { /* no matching tier */ }
+              } catch {
+                /* no matching tier */
+              }
             }
             return (
               <tr key={rowKey} className="border-b border-gray-100 hover:bg-gray-50">
@@ -1332,6 +1443,7 @@ git commit -m "feat: implement InvoicesTab with PDF generation and output folder
 ## Task 10: RatesTab — config editor
 
 **Files:**
+
 - Modify: `src/components/RatesTab/index.tsx`
 
 **Step 1: Implement `src/components/RatesTab/index.tsx`**
@@ -1362,15 +1474,16 @@ export function RatesTab({ config, isDirty, onUpdate, onSave }: Props) {
     const tiers = [...config.studios[studioName].rateTiers];
     tiers[index] = {
       ...tiers[index],
-      [field]: field === 'maxStudents'
-        ? (raw === '' ? null : Number(raw))
-        : Number(raw),
+      [field]: field === 'maxStudents' ? (raw === '' ? null : Number(raw)) : Number(raw),
     };
     onUpdate({ ...config, studios: { ...config.studios, [studioName]: { rateTiers: tiers } } });
   }
 
   function addTier(studioName: string) {
-    const tiers = [...config.studios[studioName].rateTiers, { minStudents: 1, maxStudents: null, rate: 0 }];
+    const tiers = [
+      ...config.studios[studioName].rateTiers,
+      { minStudents: 1, maxStudents: null, rate: 0 },
+    ];
     onUpdate({ ...config, studios: { ...config.studios, [studioName]: { rateTiers: tiers } } });
   }
 
@@ -1381,7 +1494,13 @@ export function RatesTab({ config, isDirty, onUpdate, onSave }: Props) {
 
   function addStudio() {
     const name = `New Studio ${Object.keys(config.studios).length + 1}`;
-    onUpdate({ ...config, studios: { ...config.studios, [name]: { rateTiers: [{ minStudents: 1, maxStudents: null, rate: 0 }] } } });
+    onUpdate({
+      ...config,
+      studios: {
+        ...config.studios,
+        [name]: { rateTiers: [{ minStudents: 1, maxStudents: null, rate: 0 }] },
+      },
+    });
   }
 
   function deleteStudio(name: string) {
@@ -1415,7 +1534,7 @@ export function RatesTab({ config, isDirty, onUpdate, onSave }: Props) {
           <input
             className="border border-gray-200 rounded px-2 py-1 text-sm"
             value={config.teacherName}
-            onChange={e => updateGlobal('teacherName', e.target.value)}
+            onChange={(e) => updateGlobal('teacherName', e.target.value)}
           />
         </label>
         <label className="flex flex-col gap-1">
@@ -1423,7 +1542,7 @@ export function RatesTab({ config, isDirty, onUpdate, onSave }: Props) {
           <input
             className="border border-gray-200 rounded px-2 py-1 text-sm font-mono"
             value={config.calendarUrl}
-            onChange={e => updateGlobal('calendarUrl', e.target.value)}
+            onChange={(e) => updateGlobal('calendarUrl', e.target.value)}
           />
         </label>
       </div>
@@ -1435,9 +1554,12 @@ export function RatesTab({ config, isDirty, onUpdate, onSave }: Props) {
             <input
               className="flex-1 border border-gray-200 rounded px-2 py-1 text-sm font-medium"
               value={studioName}
-              onChange={e => updateStudioName(studioName, e.target.value)}
+              onChange={(e) => updateStudioName(studioName, e.target.value)}
             />
-            <button onClick={() => deleteStudio(studioName)} className="text-xs text-red-400 hover:text-red-600">
+            <button
+              onClick={() => deleteStudio(studioName)}
+              className="text-xs text-red-400 hover:text-red-600"
+            >
               Delete
             </button>
           </div>
@@ -1457,10 +1579,11 @@ export function RatesTab({ config, isDirty, onUpdate, onSave }: Props) {
                 <tr key={i}>
                   <td className="pr-2 py-0.5">
                     <input
-                      type="number" min={1}
+                      type="number"
+                      min={1}
                       className="w-full border border-gray-200 rounded px-1.5 py-0.5"
                       value={tier.minStudents}
-                      onChange={e => updateTier(studioName, i, 'minStudents', e.target.value)}
+                      onChange={(e) => updateTier(studioName, i, 'minStudents', e.target.value)}
                     />
                   </td>
                   <td className="pr-2 py-0.5">
@@ -1469,25 +1592,34 @@ export function RatesTab({ config, isDirty, onUpdate, onSave }: Props) {
                       placeholder="∞"
                       className="w-full border border-gray-200 rounded px-1.5 py-0.5"
                       value={tier.maxStudents ?? ''}
-                      onChange={e => updateTier(studioName, i, 'maxStudents', e.target.value)}
+                      onChange={(e) => updateTier(studioName, i, 'maxStudents', e.target.value)}
                     />
                   </td>
                   <td className="pr-2 py-0.5">
                     <input
-                      type="number" min={0}
+                      type="number"
+                      min={0}
                       className="w-full border border-gray-200 rounded px-1.5 py-0.5"
                       value={tier.rate}
-                      onChange={e => updateTier(studioName, i, 'rate', e.target.value)}
+                      onChange={(e) => updateTier(studioName, i, 'rate', e.target.value)}
                     />
                   </td>
                   <td>
-                    <button onClick={() => removeTier(studioName, i)} className="text-gray-300 hover:text-red-400">✕</button>
+                    <button
+                      onClick={() => removeTier(studioName, i)}
+                      className="text-gray-300 hover:text-red-400"
+                    >
+                      ✕
+                    </button>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <button onClick={() => addTier(studioName)} className="text-xs text-indigo-500 hover:text-indigo-700 self-start">
+          <button
+            onClick={() => addTier(studioName)}
+            className="text-xs text-indigo-500 hover:text-indigo-700 self-start"
+          >
             + Add tier
           </button>
         </div>
@@ -1524,6 +1656,7 @@ git commit -m "feat: implement RatesTab config editor"
 ## Task 11: Update CLAUDE.md and final cleanup
 
 **Files:**
+
 - Modify: `CLAUDE.md`
 
 **Step 1: Update CLAUDE.md**
@@ -1534,22 +1667,29 @@ Replace the Commands section to reflect the new scripts:
 ## Commands
 
 \`\`\`bash
+
 # Run the Tauri desktop app (dev mode)
+
 npm run dev
 
 # Run just the Vite frontend (no Tauri window, for fast UI iteration)
+
 npm run dev:vite
 
 # Run the CLI (original Node.js tool)
+
 npm run cli -- --from 2026-02-01 --to 2026-02-28 --dry-run
 
 # Build the desktop app
+
 npm run build
 
 # Run all tests
+
 npm test
 
 # Run a single test file
+
 npx vitest run tests/invoice/calculator.test.ts
 \`\`\`
 ```

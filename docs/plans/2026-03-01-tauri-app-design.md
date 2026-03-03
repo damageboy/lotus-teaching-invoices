@@ -11,12 +11,12 @@ The existing project is a Node.js CLI that reads a Google Calendar ICS feed and 
 
 **Tauri is a thin native shell.** All business logic runs in the Vite/React webview. Tauri contributes only native OS capabilities:
 
-| Plugin | Purpose |
-|---|---|
-| `@tauri-apps/plugin-http` | Fetch the ICS URL from Rust (bypasses browser CORS) |
-| `@tauri-apps/plugin-fs` | Read/write `config.yaml` and PDF files |
-| `@tauri-apps/plugin-dialog` | Native folder picker for PDF output directory |
-| `@tauri-apps/plugin-shell` | `open()` to launch the system PDF viewer |
+| Plugin                      | Purpose                                             |
+| --------------------------- | --------------------------------------------------- |
+| `@tauri-apps/plugin-http`   | Fetch the ICS URL from Rust (bypasses browser CORS) |
+| `@tauri-apps/plugin-fs`     | Read/write `config.yaml` and PDF files              |
+| `@tauri-apps/plugin-dialog` | Native folder picker for PDF output directory       |
+| `@tauri-apps/plugin-shell`  | `open()` to launch the system PDF viewer            |
 
 The Rust side stays minimal. Future DB integration (SQLite etc.) would slot into the Rust layer without touching frontend logic.
 
@@ -46,11 +46,11 @@ src/
 `config.yaml` lives in Tauri's app data directory (`~/Library/Application Support` on macOS). Two new fields are added:
 
 ```yaml
-teacherName: "Jane Doe"
-outputDir: "/Users/jane/Documents/Invoices"
-calendarUrl: "https://..."
+teacherName: 'Jane Doe'
+outputDir: '/Users/jane/Documents/Invoices'
+calendarUrl: 'https://...'
 studios:
-  "Yogibar":
+  'Yogibar':
     rateTiers: ...
 ```
 
@@ -77,6 +77,7 @@ A table with one row per studio × month combination that has classes, sorted by
 **Output folder setting** (top of tab): a read-only path display + **"Change folder..."** button that opens a native folder picker. The chosen path is saved to `outputDir` in `config.yaml`. Defaults to `~/Documents/Invoices` on first launch.
 
 **"Generate Invoice..." button:**
+
 1. Runs `generateInvoice()` against current in-memory ICS data and config rates
 2. Renders a PDF using `@react-pdf/renderer` (React components → PDF)
 3. Writes `{StudioName}-{YYYY}-{MM}.pdf` to the configured output folder via Tauri fs
@@ -89,10 +90,12 @@ A table with one row per studio × month combination that has classes, sorted by
 A form editor for `config.yaml`.
 
 **Global settings block (top):**
+
 - Teacher name — text input
 - Calendar URL — text input
 
 **Per-studio cards (one per studio):**
+
 - Studio name — editable (renaming updates the config key)
 - Rate tiers — inline editable table (min students, max students, rate); rows can be added/removed; `maxStudents` is blank for open-ended
 - Delete studio button (with confirmation)
@@ -103,13 +106,13 @@ A form editor for `config.yaml`.
 
 ## Key Dependencies
 
-| Package | Purpose |
-|---|---|
-| `tauri` 2.x | Desktop shell |
-| `react` + `typescript` + `vite` | Frontend framework |
-| `ical.js` | Browser-compatible ICS parser (replaces `node-ical`) |
-| `yaml` | Config read/write (already in project) |
-| `@react-pdf/renderer` | PDF generation from React components |
+| Package                         | Purpose                                              |
+| ------------------------------- | ---------------------------------------------------- |
+| `tauri` 2.x                     | Desktop shell                                        |
+| `react` + `typescript` + `vite` | Frontend framework                                   |
+| `ical.js`                       | Browser-compatible ICS parser (replaces `node-ical`) |
+| `yaml`                          | Config read/write (already in project)               |
+| `@react-pdf/renderer`           | PDF generation from React components                 |
 
 ## What Is Explicitly Out of Scope
 

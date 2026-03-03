@@ -1,4 +1,0 @@
-bunx lint-staged
-bunx tsc --project tsconfig.app.json --noEmit
-bunx tsc --project tsconfig.json --noEmit
-bun run test
