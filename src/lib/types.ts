@@ -21,6 +21,7 @@ export interface StudioConfig {
   fullName: string; // display name for PDF; key is still the calendar match string
   address: string;
   rateTiers: RateTier[];
+  color?: string; // hex, e.g. "#7c3aed"; absent = auto-assigned from palette
 }
 
 export interface AppConfig {
