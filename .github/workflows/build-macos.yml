@@ -3,6 +3,7 @@ name: Build macOS
 on:
   push:
     branches: [master]
+    tags: ['v*']
   workflow_dispatch:
 
 jobs:
@@ -27,6 +28,19 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      - name: Inject tag version into tauri.conf.json
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          node -e "
+            const fs = require('fs');
+            const p = 'src-tauri/tauri.conf.json';
+            const cfg = JSON.parse(fs.readFileSync(p, 'utf8'));
+            cfg.version = process.env.TAG.replace(/^v/, '');
+            fs.writeFileSync(p, JSON.stringify(cfg, null, 2) + '\n');
+          "
+        env:
+          TAG: ${{ github.ref_name }}
 
       - name: Build Tauri app (universal binary)
         run: bun run build -- --target universal-apple-darwin
