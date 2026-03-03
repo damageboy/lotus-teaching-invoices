@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ParsedClass, StudioConfig } from '../../lib/types';
 import { CalendarGrid } from './CalendarGrid';
 import { studioColor } from '../../lib/studioColors';
@@ -53,6 +53,15 @@ export function CalendarTab({ classes, studios = {}, onAddStudio }: Props) {
     })
     .filter((entry): entry is { key: string; stats: StudioMonthStats } => entry !== null);
 
+  const colorMap = useMemo(
+    () =>
+      Object.fromEntries(Object.entries(studios).map(([name, cfg]) => [name, cfg.color])) as Record<
+        string,
+        string | undefined
+      >,
+    [studios]
+  );
+
   // Unique studios for legend — split configured vs unconfigured
   const configuredStudios = [
     ...new Set(classes.filter((c) => !c.unconfigured).map((c) => c.studioName)),
@@ -101,7 +110,7 @@ export function CalendarTab({ classes, studios = {}, onAddStudio }: Props) {
       {(configuredStudios.length > 0 || unconfiguredStudios.length > 0) && (
         <div className="flex gap-2 flex-wrap items-center">
           {configuredStudios.map((s) => {
-            const c = studioColor(s);
+            const c = studioColor(s, colorMap[s]);
             return (
               <span
                 key={s}
@@ -120,7 +129,7 @@ export function CalendarTab({ classes, studios = {}, onAddStudio }: Props) {
             <span className="text-gray-200">|</span>
           )}
           {unconfiguredStudios.map((s) => {
-            const c = studioColor(s);
+            const c = studioColor(s, colorMap[s]);
             return (
               <span
                 key={s}
@@ -148,12 +157,12 @@ export function CalendarTab({ classes, studios = {}, onAddStudio }: Props) {
         </div>
       )}
 
-      <CalendarGrid year={year} month={month} classes={monthClasses} />
+      <CalendarGrid year={year} month={month} classes={monthClasses} colorMap={colorMap} />
 
       {studioStats.length > 0 && (
         <div className="flex gap-2 flex-wrap items-center pt-1">
           {studioStats.map(({ key, stats }) => {
-            const c = studioColor(key);
+            const c = studioColor(key, colorMap[key]);
             return (
               <span
                 key={key}
