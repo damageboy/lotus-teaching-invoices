@@ -112,8 +112,8 @@ describe('Rates & Config tab', () => {
     const badge = await $('[data-testid="version-badge"]');
     await expect(badge).toBeDisplayed();
     const text = await badge.getText();
-    // Should start with 'v' followed by a digit or 'unknown'
-    expect(text).toMatch(/^v(\d|unknown)/);
+    // Should start with 'v' followed by non-whitespace (semver, commit hash, or 'unknown')
+    expect(text).toMatch(/^v\S/);
   });
 });
 
