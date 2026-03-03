@@ -3,20 +3,17 @@ import { studioColor } from '../../lib/studioColors';
 
 interface Props {
   cls: ParsedClass;
+  studioHex?: string;
 }
 
-export function EventChip({ cls }: Props) {
-  const color = studioColor(cls.studioName);
+export function EventChip({ cls, studioHex }: Props) {
+  const c = studioColor(cls.studioName, studioHex);
   if (cls.unconfigured) {
     return (
       <div
         title={`${cls.studioName} — no rates configured`}
-        className="text-xs rounded px-1 py-0.5 mb-0.5 truncate border border-dashed opacity-70 cursor-default"
-        style={{
-          backgroundColor: color.backgroundColor,
-          color: color.color,
-          borderColor: color.borderColor,
-        }}
+        style={{ ...c, opacity: 0.7, borderStyle: 'dashed' }}
+        className="text-xs rounded px-1 py-0.5 mb-0.5 truncate border cursor-default"
       >
         ⚠ {cls.startTime} {cls.classType}
       </div>
@@ -35,12 +32,8 @@ export function EventChip({ cls }: Props) {
   return (
     <div
       title={`${cls.studioName} — ${cls.studentCount} students`}
+      style={c}
       className="text-xs rounded px-1 py-0.5 mb-0.5 truncate border cursor-default"
-      style={{
-        backgroundColor: color.backgroundColor,
-        color: color.color,
-        borderColor: color.borderColor,
-      }}
     >
       {cls.startTime} {cls.classType}
     </div>
