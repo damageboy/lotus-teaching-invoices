@@ -54,6 +54,6 @@ export function studioColor(
 }
 
 export function nextUnusedColor(usedHexes: string[]): string {
-  const used = new Set(usedHexes);
+  const used = new Set(usedHexes.map((h) => h.toLowerCase()));
   return PALETTE_HEX.find((h) => !used.has(h)) ?? PALETTE_HEX[0];
 }

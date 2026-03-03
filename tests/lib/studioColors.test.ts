@@ -51,4 +51,8 @@ describe('nextUnusedColor', () => {
   it('wraps around when all palette colors are used', () => {
     expect(nextUnusedColor(PALETTE_HEX)).toBe(PALETTE_HEX[0]);
   });
+
+  it('treats uppercase and lowercase hex as the same color', () => {
+    expect(nextUnusedColor([PALETTE_HEX[0].toUpperCase()])).toBe(PALETTE_HEX[1]);
+  });
 });
