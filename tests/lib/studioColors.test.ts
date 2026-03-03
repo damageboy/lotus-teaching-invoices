@@ -84,4 +84,11 @@ describe('nextUnusedColor', () => {
   it('treats uppercase and lowercase hex as the same color', () => {
     expect(nextUnusedColor([PALETTE_HEX[0].toUpperCase()])).toBe(PALETTE_HEX[1]);
   });
+
+  it('ignores custom radial-picker hex when determining next palette slot', () => {
+    // Studio A: palette[0] (from swatch), Studio B: custom radial color not in palette
+    // Adding Studio C should skip palette[0] but not be confused by the custom hex
+    const usedHexes = [PALETTE_HEX[0], '#ab1234'];
+    expect(nextUnusedColor(usedHexes)).toBe(PALETTE_HEX[1]);
+  });
 });
