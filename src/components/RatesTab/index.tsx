@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { AppConfig, RateTier, StudioConfig, TeacherInfo, BankDetails } from '../../lib/types';
+import { ColorPickerPopup } from '../ColorPickerPopup';
+import { PALETTE_HEX, nextUnusedColor } from '../../lib/studioColors';
 
 interface Props {
   config: AppConfig;
@@ -18,6 +20,7 @@ interface StudioCardProps {
   onUpdateTier: (studioName: string, index: number, field: keyof RateTier, raw: string) => void;
   onAddTier: (studioName: string) => void;
   onRemoveTier: (studioName: string, index: number) => void;
+  onUpdateColor: (studioName: string, hex: string) => void;
   onUpdateField: (studioName: string, field: 'fullName' | 'address', value: string) => void;
 }
 
@@ -30,12 +33,17 @@ function StudioCard({
   onAddTier,
   onRemoveTier,
   onUpdateField,
+  onUpdateColor,
 }: StudioCardProps) {
   const [draftName, setDraftName] = useState(studioName);
   const [isOpen, setIsOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   useEffect(() => {
     setDraftName(studioName);
   }, [studioName]);
+
+  // Effective color: stored or derived from palette via borderColor (more vivid than bg)
+  const effectiveColor = studio.color ?? PALETTE_HEX[0];
 
   return (
     <div className="rounded border border-gray-200">
@@ -45,6 +53,24 @@ function StudioCard({
         onClick={() => setIsOpen((o) => !o)}
       >
         <span className="text-gray-400 text-xs w-3">{isOpen ? '▾' : '▸'}</span>
+
+        {/* Color dot trigger */}
+        <div className="relative flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+          <button
+            onClick={() => setPickerOpen((o) => !o)}
+            title="Change studio color"
+            style={{ backgroundColor: effectiveColor }}
+            className="w-4 h-4 rounded-full border border-white shadow-sm hover:scale-110 transition-transform"
+          />
+          {pickerOpen && (
+            <ColorPickerPopup
+              currentColor={effectiveColor}
+              onColorChange={(hex) => onUpdateColor(studioName, hex)}
+              onClose={() => setPickerOpen(false)}
+            />
+          )}
+        </div>
+
         <span className="flex-1 text-sm font-medium truncate">{draftName}</span>
         <button
           onClick={(e) => {
@@ -186,6 +212,16 @@ export function RatesTab({ config, isDirty, saveError, onUpdate, onSave }: Props
       studios: {
         ...config.studios,
         [studioName]: { ...config.studios[studioName], [field]: value },
+      },
+    });
+  }
+
+  function updateStudioColor(studioName: string, hex: string) {
+    onUpdate({
+      ...config,
+      studios: {
+        ...config.studios,
+        [studioName]: { ...config.studios[studioName], color: hex },
       },
     });
   }
@@ -365,6 +401,7 @@ export function RatesTab({ config, isDirty, saveError, onUpdate, onSave }: Props
           onAddTier={addTier}
           onRemoveTier={removeTier}
           onUpdateField={updateStudioField}
+          onUpdateColor={updateStudioColor}
         />
       ))}
 
