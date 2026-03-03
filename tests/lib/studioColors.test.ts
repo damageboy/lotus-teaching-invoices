@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { studioColor, nextUnusedColor, PALETTE_HEX } from '../../src/lib/studioColors';
+import {
+  studioColor,
+  nextUnusedColor,
+  effectiveHex,
+  PALETTE_HEX,
+} from '../../src/lib/studioColors';
 
 describe('PALETTE_HEX', () => {
   it('has 6 entries, all valid hex', () => {
@@ -35,6 +40,30 @@ describe('studioColor', () => {
     const bgL = parseInt(s.backgroundColor.match(/(\d+)%\)/)![1]);
     const borderL = parseInt(s.borderColor.match(/(\d+)%\)/)![1]);
     expect(bgL).toBeGreaterThan(borderL);
+  });
+});
+
+describe('effectiveHex', () => {
+  it('returns stored hex when provided', () => {
+    expect(effectiveHex('Any Studio', '#ff0000')).toBe('#ff0000');
+  });
+
+  it('returns hash-derived palette hex when stored is absent', () => {
+    const result = effectiveHex('Test Studio');
+    expect(PALETTE_HEX).toContain(result);
+  });
+
+  it('two studios with same name get same fallback color', () => {
+    expect(effectiveHex('Yoga Place')).toBe(effectiveHex('Yoga Place'));
+  });
+
+  it('two studios with different names may get different fallback colors', () => {
+    // These two hash to different palette entries
+    const a = effectiveHex('Zen Yoga');
+    const b = effectiveHex('Power House');
+    // They may or may not collide, but both must be valid palette colors
+    expect(PALETTE_HEX).toContain(a);
+    expect(PALETTE_HEX).toContain(b);
   });
 });
 
