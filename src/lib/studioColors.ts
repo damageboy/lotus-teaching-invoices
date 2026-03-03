@@ -1,11 +1,10 @@
-// A palette of distinct colors — extend as needed
-const PALETTE = [
-  { bg: 'bg-violet-100', text: 'text-violet-800', border: 'border-violet-300' },
-  { bg: 'bg-sky-100', text: 'text-sky-800', border: 'border-sky-300' },
-  { bg: 'bg-emerald-100', text: 'text-emerald-800', border: 'border-emerald-300' },
-  { bg: 'bg-amber-100', text: 'text-amber-800', border: 'border-amber-300' },
-  { bg: 'bg-rose-100', text: 'text-rose-800', border: 'border-rose-300' },
-  { bg: 'bg-teal-100', text: 'text-teal-800', border: 'border-teal-300' },
+export const PALETTE_HEX = [
+  '#7c3aed', // violet
+  '#0284c7', // sky
+  '#059669', // emerald
+  '#d97706', // amber
+  '#e11d48', // rose
+  '#0d9488', // teal
 ];
 
 function hashString(s: string): number {
@@ -14,6 +13,47 @@ function hashString(s: string): number {
   return Math.abs(h);
 }
 
-export function studioColor(name: string) {
-  return PALETTE[hashString(name) % PALETTE.length];
+function hexToHsl(hex: string): [number, number, number] {
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  let h = 0;
+  let s = 0;
+  const l = (max + min) / 2;
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r:
+        h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+        break;
+      case g:
+        h = ((b - r) / d + 2) / 6;
+        break;
+      case b:
+        h = ((r - g) / d + 4) / 6;
+        break;
+    }
+  }
+  return [Math.round(h * 360), Math.round(s * 100), Math.round(l * 100)];
+}
+
+export function studioColor(
+  name: string,
+  hex?: string
+): { backgroundColor: string; color: string; borderColor: string } {
+  const baseHex = hex ?? PALETTE_HEX[hashString(name) % PALETTE_HEX.length];
+  const [h, s] = hexToHsl(baseHex);
+  return {
+    backgroundColor: `hsl(${h}, ${s}%, 93%)`,
+    color: `hsl(${h}, ${s}%, 25%)`,
+    borderColor: `hsl(${h}, ${s}%, 70%)`,
+  };
+}
+
+export function nextUnusedColor(usedHexes: string[]): string {
+  const used = new Set(usedHexes);
+  return PALETTE_HEX.find((h) => !used.has(h)) ?? PALETTE_HEX[0];
 }

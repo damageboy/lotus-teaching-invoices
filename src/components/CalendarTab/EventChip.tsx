@@ -11,7 +11,12 @@ export function EventChip({ cls }: Props) {
     return (
       <div
         title={`${cls.studioName} — no rates configured`}
-        className={`text-xs rounded px-1 py-0.5 mb-0.5 truncate border border-dashed ${color.bg} ${color.text} ${color.border} opacity-70 cursor-default`}
+        className="text-xs rounded px-1 py-0.5 mb-0.5 truncate border border-dashed opacity-70 cursor-default"
+        style={{
+          backgroundColor: color.backgroundColor,
+          color: color.color,
+          borderColor: color.borderColor,
+        }}
       >
         ⚠ {cls.startTime} {cls.classType}
       </div>
@@ -30,7 +35,12 @@ export function EventChip({ cls }: Props) {
   return (
     <div
       title={`${cls.studioName} — ${cls.studentCount} students`}
-      className={`text-xs rounded px-1 py-0.5 mb-0.5 truncate border ${color.bg} ${color.text} ${color.border} cursor-default`}
+      className="text-xs rounded px-1 py-0.5 mb-0.5 truncate border cursor-default"
+      style={{
+        backgroundColor: color.backgroundColor,
+        color: color.color,
+        borderColor: color.borderColor,
+      }}
     >
       {cls.startTime} {cls.classType}
     </div>
