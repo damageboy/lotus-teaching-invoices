@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { AppConfig, RateTier, StudioConfig, TeacherInfo, BankDetails } from '../../lib/types';
 import { ColorPickerPopup } from '../ColorPickerPopup';
 import { effectiveHex, nextUnusedColor } from '../../lib/studioColors';
+import { APP_VERSION, APP_IS_OFFICIAL } from '../../lib/version';
 
 interface Props {
   config: AppConfig;
@@ -415,6 +416,19 @@ export function RatesTab({ config, isDirty, saveError, onUpdate, onSave }: Props
       >
         + Add studio
       </button>
+
+      {/* Version badge */}
+      <div className="flex justify-end pt-2">
+        <span data-testid="version-badge" className="text-xs text-gray-400 font-mono">
+          v{APP_VERSION}
+          {!APP_IS_OFFICIAL && (
+            <span className="ml-1.5 px-1 py-0.5 rounded bg-gray-100 text-gray-400">dev</span>
+          )}
+          {APP_VERSION.endsWith('-dirty') && (
+            <span className="ml-1 px-1 py-0.5 rounded bg-amber-50 text-amber-500">dirty</span>
+          )}
+        </span>
+      </div>
     </div>
   );
 }
