@@ -1,0 +1,30 @@
+repos:
+  - repo: local
+    hooks:
+      - id: prettier
+        name: Prettier
+        entry: bunx prettier --write
+        language: system
+        files: \.(ts|tsx|js|json|css|md)$
+        stages: [pre-commit]
+
+      - id: tsc-app
+        name: TypeScript (frontend)
+        entry: bunx tsc --project tsconfig.app.json --noEmit
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+
+      - id: tsc-cli
+        name: TypeScript (CLI)
+        entry: bunx tsc --project tsconfig.json --noEmit
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+
+      - id: test
+        name: Unit tests
+        entry: bun run test
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
