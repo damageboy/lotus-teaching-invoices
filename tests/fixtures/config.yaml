@@ -4,6 +4,7 @@ studios:
   "Zen Yoga":
     fullName: "Zen Yoga Center"
     address: "789 Peace St\nHamburg"
+    color: "#7c3aed"
     rateTiers:
       - { minStudents: 1, maxStudents: 5, rate: 80 }
       - { minStudents: 6, maxStudents: 10, rate: 100 }

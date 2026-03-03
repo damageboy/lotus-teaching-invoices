@@ -29,8 +29,11 @@ describe('validateConfig', () => {
     expect(() => validateConfig('string')).toThrow('Config must be an object');
   });
 
-  it('rejects missing calendarUrl', () => {
-    expect(() => validateConfig({ studios: {} })).toThrow('Required');
+  it('accepts missing calendarUrl (defaults to empty string)', () => {
+    const cfg = validateConfig({
+      studios: { Foo: { rateTiers: [{ minStudents: 1, maxStudents: null, rate: 80 }] } },
+    });
+    expect(cfg.calendarUrl).toBe('');
   });
 
   it('rejects empty studios', () => {
@@ -142,5 +145,43 @@ describe('lastInvoice field', () => {
         studios: { Foo: { rateTiers: [{ minStudents: 1, maxStudents: null, rate: 80 }] } },
       })
     ).toThrow(/lastInvoice/);
+  });
+});
+
+describe('studio color field', () => {
+  const base = {
+    studios: {
+      Foo: { rateTiers: [{ minStudents: 1, maxStudents: null, rate: 80 }] },
+    },
+  };
+
+  it('accepts absent color (defaults to undefined)', () => {
+    const cfg = validateConfig(base);
+    expect(cfg.studios['Foo'].color).toBeUndefined();
+  });
+
+  it('accepts a valid hex color', () => {
+    const cfg = validateConfig({
+      ...base,
+      studios: { Foo: { ...base.studios['Foo'], color: '#7c3aed' } },
+    });
+    expect(cfg.studios['Foo'].color).toBe('#7c3aed');
+  });
+
+  it('accepts uppercase hex', () => {
+    const cfg = validateConfig({
+      ...base,
+      studios: { Foo: { ...base.studios['Foo'], color: '#7C3AED' } },
+    });
+    expect(cfg.studios['Foo'].color).toBe('#7C3AED');
+  });
+
+  it('rejects an invalid color string', () => {
+    expect(() =>
+      validateConfig({
+        ...base,
+        studios: { Foo: { ...base.studios['Foo'], color: 'violet' } },
+      })
+    ).toThrow(/color/);
   });
 });

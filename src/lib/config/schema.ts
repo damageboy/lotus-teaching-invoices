@@ -82,11 +82,15 @@ const StudioConfigSchema = z.object({
     .array(RateTierSchema, { required_error: 'must have a rateTiers array' })
     .min(1, 'has no rate tiers defined')
     .superRefine(validateContiguity),
+  color: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/, 'color must be a 6-digit hex string e.g. #7c3aed')
+    .optional(),
 });
 
 const ConfigSchema = z.object({
   teacher: TeacherInfoSchema,
-  calendarUrl: z.string().min(1, 'Config must have a non-empty calendarUrl string'),
+  calendarUrl: z.string().default(''),
   outputDir: z.string().default(''),
   lastInvoice: z
     .string()
@@ -150,6 +154,7 @@ export function validateConfig(raw: unknown): AppConfig {
     config.studios[name] = {
       ...studio,
       rateTiers: sortedTiers,
+      color: studio.color,
     };
   }
 
