@@ -15,5 +15,13 @@
     "sourceMap": true
   },
   "include": ["src/cli", "src/lib"],
-  "exclude": ["node_modules", "dist", "tests", "src-tauri", "src/lib/pdf", "src/lib/config/defaults.ts"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "tests",
+    "src-tauri",
+    "src/lib/pdf",
+    "src/lib/config/defaults.ts",
+    "src/lib/version.ts"
+  ]
 }
