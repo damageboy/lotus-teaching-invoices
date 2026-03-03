@@ -268,6 +268,9 @@ export function RatesTab({ config, isDirty, saveError, onUpdate, onSave }: Props
 
   function addStudio() {
     const name = `New Studio ${Object.keys(config.studios).length + 1}`;
+    const usedHexes = Object.values(config.studios)
+      .map((s) => s.color)
+      .filter((c): c is string => c !== undefined);
     onUpdate({
       ...config,
       studios: {
@@ -276,6 +279,7 @@ export function RatesTab({ config, isDirty, saveError, onUpdate, onSave }: Props
           fullName: '',
           address: '',
           rateTiers: [{ minStudents: 1, maxStudents: null, rate: 50 }],
+          color: nextUnusedColor(usedHexes),
         },
       },
     });
