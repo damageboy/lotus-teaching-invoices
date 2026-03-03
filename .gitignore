@@ -3,3 +3,7 @@ dist/
 invoices/
 config.yaml
 *.tsbuildinfo
+
+# Debug screenshots from browser tooling
+/*.png
+.playwright-mcp/
