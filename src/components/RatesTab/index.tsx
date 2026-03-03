@@ -424,7 +424,7 @@ export function RatesTab({ config, isDirty, saveError, onUpdate, onSave }: Props
           {!APP_IS_OFFICIAL && (
             <span className="ml-1.5 px-1 py-0.5 rounded bg-gray-100 text-gray-400">dev</span>
           )}
-          {APP_VERSION.endsWith('-dirty') && (
+          {!APP_IS_OFFICIAL && APP_VERSION.endsWith('-dirty') && (
             <span className="ml-1 px-1 py-0.5 rounded bg-amber-50 text-amber-500">dirty</span>
           )}
         </span>
