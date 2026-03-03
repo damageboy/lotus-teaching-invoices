@@ -105,7 +105,12 @@ export function CalendarTab({ classes, studios = {}, onAddStudio }: Props) {
             return (
               <span
                 key={s}
-                className={`text-xs px-2 py-0.5 rounded border ${c.bg} ${c.text} ${c.border}`}
+                className="text-xs px-2 py-0.5 rounded border"
+                style={{
+                  backgroundColor: c.backgroundColor,
+                  color: c.color,
+                  borderColor: c.borderColor,
+                }}
               >
                 {s}
               </span>
@@ -119,7 +124,12 @@ export function CalendarTab({ classes, studios = {}, onAddStudio }: Props) {
             return (
               <span
                 key={s}
-                className={`text-xs px-2 py-0.5 flex items-center gap-2 rounded border border-dashed opacity-70 ${c.bg} ${c.text} ${c.border}`}
+                className="text-xs px-2 py-0.5 flex items-center gap-2 rounded border border-dashed opacity-70"
+                style={{
+                  backgroundColor: c.backgroundColor,
+                  color: c.color,
+                  borderColor: c.borderColor,
+                }}
                 title="No rates configured"
               >
                 <span>⚠ {s}</span>
@@ -147,7 +157,12 @@ export function CalendarTab({ classes, studios = {}, onAddStudio }: Props) {
             return (
               <span
                 key={key}
-                className={`text-xs px-3 py-1 rounded border ${c.bg} ${c.text} ${c.border}`}
+                className="text-xs px-3 py-1 rounded border"
+                style={{
+                  backgroundColor: c.backgroundColor,
+                  color: c.color,
+                  borderColor: c.borderColor,
+                }}
               >
                 {key}
                 <span className="mx-1.5 opacity-40">·</span>€{stats.totalAmount.toFixed(2)}
