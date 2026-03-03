@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { HexColorPicker } from 'react-colorful';
-import { PALETTE_HEX, studioColor } from '../../lib/studioColors';
+import { PALETTE_HEX } from '../../lib/studioColors';
 
 interface Props {
   currentColor: string;
@@ -25,6 +25,11 @@ export function ColorPickerPopup({ currentColor, onColorChange, onClose }: Props
     document.addEventListener('mousedown', handleMouseDown);
     return () => document.removeEventListener('mousedown', handleMouseDown);
   }, [onClose]);
+
+  // Keep radial wheel in sync with prop updates (e.g. after swatch pick)
+  useEffect(() => {
+    setRadialColor(currentColor);
+  }, [currentColor]);
 
   function handleSwatchClick(hex: string) {
     onColorChange(hex);
