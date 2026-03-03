@@ -6,6 +6,7 @@ import { InvoicesTab } from './components/InvoicesTab';
 import { RatesTab } from './components/RatesTab';
 import { LogPanel } from './components/LogPanel';
 import { initRustLogListener, logInfo } from './lib/logger';
+import { nextUnusedColor } from './lib/studioColors';
 
 type Tab = 'calendar' | 'invoices' | 'rates';
 
@@ -22,6 +23,9 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('calendar');
 
   function handleAddStudio(name: string) {
+    const usedHexes = Object.values(config.studios)
+      .map((s) => s.color)
+      .filter((c): c is string => c !== undefined);
     updateConfig({
       ...config,
       studios: {
@@ -30,6 +34,7 @@ export default function App() {
           fullName: name,
           address: '',
           rateTiers: [{ minStudents: 1, maxStudents: null, rate: 50 }],
+          color: nextUnusedColor(usedHexes),
         },
       },
     });
@@ -46,11 +51,12 @@ export default function App() {
     return () => unlisten();
   }, []);
 
-  // Fetch calendar once config is loaded and calendarUrl is set
+  // Fetch calendar once config is loaded and whenever calendarUrl or the set of studios changes.
+  // refresh is safe to include: it only changes when calendarUrl/studioKeys change, and calling
+  // it doesn't mutate either, so there is no loop.
   useEffect(() => {
     if (!configLoading && config.calendarUrl) refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh is stable; including it would cause an infinite fetch loop
-  }, [configLoading, config.calendarUrl]);
+  }, [configLoading, config.calendarUrl, refresh]);
 
   if (configLoading) {
     return <div className="flex items-center justify-center h-screen text-gray-500">Loading…</div>;
