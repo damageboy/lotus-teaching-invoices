@@ -22,7 +22,11 @@ interface StudioCardProps {
   onAddTier: (studioName: string) => void;
   onRemoveTier: (studioName: string, index: number) => void;
   onUpdateColor: (studioName: string, hex: string) => void;
-  onUpdateField: (studioName: string, field: 'fullName' | 'address', value: string) => void;
+  onUpdateField: (
+    studioName: string,
+    field: 'fullName' | 'address' | 'invoiceEmail',
+    value: string
+  ) => void;
 }
 
 function StudioCard({
@@ -39,6 +43,7 @@ function StudioCard({
   const [draftName, setDraftName] = useState(studioName);
   const [isOpen, setIsOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [emailError, setEmailError] = useState<string | null>(null);
   useEffect(() => {
     setDraftName(studioName);
   }, [studioName]);
@@ -117,6 +122,28 @@ function StudioCard({
               onChange={(e) => onUpdateField(studioName, 'address', e.target.value)}
               placeholder="Street, City"
             />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-gray-400">Invoice e-mail</span>
+            <input
+              type="email"
+              className={`border rounded px-2 py-1 text-sm ${emailError ? 'border-red-400' : 'border-gray-200'}`}
+              value={studio.invoiceEmail ?? ''}
+              onChange={(e) => {
+                setEmailError(null);
+                onUpdateField(studioName, 'invoiceEmail', e.target.value);
+              }}
+              onBlur={(e) => {
+                const v = e.target.value;
+                if (v !== '' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) {
+                  setEmailError('Please enter a valid e-mail address');
+                } else {
+                  setEmailError(null);
+                }
+              }}
+              placeholder="studio@example.com"
+            />
+            {emailError && <span className="text-xs text-red-500">{emailError}</span>}
           </label>
 
           {/* Rate tiers table */}
@@ -207,7 +234,11 @@ export function RatesTab({ config, isDirty, saveError, onUpdate, onSave }: Props
     onUpdate({ ...config, studios });
   }
 
-  function updateStudioField(studioName: string, field: 'fullName' | 'address', value: string) {
+  function updateStudioField(
+    studioName: string,
+    field: 'fullName' | 'address' | 'invoiceEmail',
+    value: string
+  ) {
     onUpdate({
       ...config,
       studios: {

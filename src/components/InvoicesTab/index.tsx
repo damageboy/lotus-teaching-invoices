@@ -10,6 +10,7 @@ import {
 } from '../../lib/pdf/generatePdf';
 import { parseLastInvoice, formatInvoiceNumber, studioSlug } from '../../lib/invoice/finalization';
 import { logError } from '../../lib/logger';
+import { createGmailDraft } from '../../lib/gmail/drafts';
 
 interface Props {
   classes: ParsedClass[];
@@ -209,6 +210,60 @@ export function InvoicesTab({ classes, config, onSaveConfig }: Props) {
     }
   }
 
+  async function handleDraftEmail(row: InvoiceRow) {
+    const studioConfig = config.studios[row.studioName];
+    if (!studioConfig?.invoiceEmail) return;
+    if (!config.outputDir) {
+      setRowError('Set an output folder first.');
+      return;
+    }
+
+    const [periodYear, periodMonth] = row.monthKey.split('-');
+    const slug = studioSlug(row.studioName);
+
+    const existingFilename = await findExistingFinalInvoice(
+      config.outputDir,
+      slug,
+      periodYear,
+      periodMonth
+    );
+
+    if (!existingFilename) {
+      setRowError('No finalized invoice found for this period. Finalize the invoice first.');
+      return;
+    }
+
+    const invoiceNumber = extractInvoiceNumberFromFilename(existingFilename);
+    if (!invoiceNumber) {
+      setRowError(
+        `Could not read invoice number from existing file "${existingFilename}". Please check the Final/ folder.`
+      );
+      return;
+    }
+    const pdfPath = `${config.outputDir}/Final/${existingFilename}`;
+
+    const rowKey = `${row.studioName}__${row.monthKey}`;
+    setGenerating(rowKey);
+    setRowError(null);
+
+    try {
+      const monthName = MONTH_NAMES[parseInt(periodMonth) - 1];
+      await createGmailDraft({
+        pdfPath,
+        to: studioConfig.invoiceEmail,
+        subject: `Invoice ${invoiceNumber} — ${config.teacher.name}`,
+        body: `Please find attached the invoice for ${monthName} ${periodYear}.`,
+        pdfFilename: existingFilename,
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      logError(`Gmail draft failed for ${row.studioName}: ${msg}`);
+      setRowError(msg);
+    } finally {
+      setGenerating(null);
+    }
+  }
+
   return (
     <div className="p-4 flex flex-col gap-4">
       {/* Output folder */}
@@ -278,6 +333,15 @@ export function InvoicesTab({ classes, config, onSaveConfig }: Props) {
                     >
                       {generating === rowKey ? 'Finalizing…' : 'Finalize Invoice…'}
                     </button>
+                    {studioConfig?.invoiceEmail && (
+                      <button
+                        onClick={() => handleDraftEmail(row)}
+                        disabled={generating !== null}
+                        className="text-xs px-3 py-1 rounded bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:opacity-40"
+                      >
+                        {generating === rowKey ? 'Drafting…' : 'Draft Email…'}
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>

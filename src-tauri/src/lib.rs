@@ -1,5 +1,7 @@
 use tauri::Manager;
 
+mod oauth;
+
 struct ConfigPath(Option<String>);
 
 #[tauri::command]
@@ -24,6 +26,7 @@ pub fn run() {
 
     let builder = tauri::Builder::default()
         .manage(ConfigPath(config_path))
+        .manage(oauth::OAuthListener(std::sync::Mutex::new(None)))
         .plugin(
             tauri_plugin_log::Builder::new()
                 .level(log::LevelFilter::Debug)
@@ -51,7 +54,12 @@ pub fn run() {
             log::info!("App started. AppData: {}", app_data_dir.display());
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![open_file, get_config_path])
+        .invoke_handler(tauri::generate_handler![
+            open_file,
+            get_config_path,
+            oauth::start_oauth_server,
+            oauth::wait_oauth_code
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
