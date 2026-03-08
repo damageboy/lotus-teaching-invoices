@@ -44,6 +44,7 @@ export interface CalendarEvent {
 export interface ParsedClass {
   studioName: string;
   classType: string;
+  location?: string;
   date: string; // YYYY-MM-DD
   startTime: string; // HH:mm
   endTime: string; // HH:mm
@@ -57,6 +58,7 @@ export interface InvoiceLineItem {
   startTime: string;
   endTime: string;
   classType: string;
+  location?: string;
   studentCount: number;
   rateApplied: number;
   lineTotal: number;
