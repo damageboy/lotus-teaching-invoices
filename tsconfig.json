@@ -21,6 +21,7 @@
     "tests",
     "src-tauri",
     "src/lib/pdf",
+    "src/lib/gmail",
     "src/lib/config/defaults.ts",
     "src/lib/version.ts"
   ]
