@@ -126,7 +126,9 @@ export function InvoiceDocument({ invoice, config }: Props) {
               <Text style={s.col}>
                 {item.startTime}–{item.endTime}
               </Text>
-              <Text style={s.col}>{item.classType}</Text>
+              <Text style={s.col}>
+                {item.location ? `${item.location} / ${item.classType}` : item.classType}
+              </Text>
               <Text style={s.colRight}>{item.studentCount}</Text>
               <Text style={s.colRight}>{item.rateApplied}</Text>
               <Text style={s.colRight}>{item.lineTotal}</Text>
