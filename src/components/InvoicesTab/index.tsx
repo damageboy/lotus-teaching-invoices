@@ -251,7 +251,7 @@ export function InvoicesTab({ classes, config, onSaveConfig }: Props) {
       await createGmailDraft({
         pdfPath,
         to: studioConfig.invoiceEmail,
-        subject: `Invoice ${invoiceNumber} — ${config.teacher.name}`,
+        subject: `Invoice ${invoiceNumber} - ${config.teacher.name}`,
         body: `Please find attached the invoice for ${monthName} ${periodYear}.`,
         pdfFilename: existingFilename,
       });

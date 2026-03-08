@@ -15,11 +15,22 @@ interface MimeParams {
 
 const BOUNDARY = '____lotus_invoice_boundary____';
 
+/** RFC 2047 encode a header value for non-ASCII safety. */
+export function rfc2047Encode(value: string): string {
+  if (/^[\x20-\x7E]*$/.test(value)) return value;
+  const bytes = new TextEncoder().encode(value);
+  let binary = '';
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return `=?UTF-8?B?${btoa(binary)}?=`;
+}
+
 /** Build an RFC 2822 MIME multipart message string. */
 export function buildMimeMessage(params: MimeParams): string {
   const lines = [
     `To: ${params.to}`,
-    `Subject: ${params.subject}`,
+    `Subject: ${rfc2047Encode(params.subject)}`,
     'MIME-Version: 1.0',
     `Content-Type: multipart/mixed; boundary="${BOUNDARY}"`,
     '',

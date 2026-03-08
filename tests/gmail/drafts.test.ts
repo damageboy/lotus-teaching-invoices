@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { buildMimeMessage } from '../../src/lib/gmail/drafts';
+import { buildMimeMessage, rfc2047Encode } from '../../src/lib/gmail/drafts';
 
 describe('buildMimeMessage', () => {
   it('includes To header', () => {
     const mime = buildMimeMessage({
       to: 'studio@example.com',
-      subject: 'Invoice 8/2026 — Jane Doe',
+      subject: 'Invoice 8/2026 - Jane Doe',
       body: 'Please find attached the invoice.',
       pdfBase64: 'AAAA',
       pdfFilename: 'invoice.pdf',
@@ -16,7 +16,7 @@ describe('buildMimeMessage', () => {
   it('includes Subject header', () => {
     const mime = buildMimeMessage({
       to: 'studio@example.com',
-      subject: 'Invoice 8/2026 — Jane Doe',
+      subject: 'Invoice 8/2026 - Jane Doe',
       body: 'body text',
       pdfBase64: 'AAAA',
       pdfFilename: 'invoice.pdf',
@@ -48,6 +48,29 @@ describe('buildMimeMessage', () => {
     expect(mime).toContain('Content-Disposition: attachment; filename="my-invoice.pdf"');
     expect(mime).toContain('Content-Transfer-Encoding: base64');
     expect(mime).toContain('dGVzdA==');
+  });
+
+  it('RFC 2047-encodes subject with non-ASCII characters', () => {
+    const mime = buildMimeMessage({
+      to: 'a@b.com',
+      subject: 'Invoice 8/2026 - Müller',
+      body: 'hi',
+      pdfBase64: 'AAAA',
+      pdfFilename: 'f.pdf',
+    });
+    expect(mime).toContain('Subject: =?UTF-8?B?');
+    expect(mime).not.toContain('Subject: Invoice 8/2026 - Müller');
+  });
+
+  it('leaves ASCII-only subject unencoded', () => {
+    const mime = buildMimeMessage({
+      to: 'a@b.com',
+      subject: 'Invoice 8/2026 - Jane Doe',
+      body: 'hi',
+      pdfBase64: 'AAAA',
+      pdfFilename: 'f.pdf',
+    });
+    expect(mime).toContain('Subject: Invoice 8/2026 - Jane Doe');
   });
 
   it('has proper MIME multipart structure with boundary', () => {
