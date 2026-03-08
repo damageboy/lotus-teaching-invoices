@@ -27,6 +27,8 @@ tauri-plugin-dialog = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-log = "2"
 log = "0.4"
+libc = "0.2"
+url = "2"
 tauri-plugin-webdriver = { version = "0.2", optional = true }
 
 [features]
