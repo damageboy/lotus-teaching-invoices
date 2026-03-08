@@ -78,6 +78,12 @@ const TeacherInfoSchema = z
 const StudioConfigSchema = z.object({
   fullName: z.string().default(''),
   address: z.string().default(''),
+  invoiceEmail: z
+    .string()
+    .default('')
+    .refine((v) => v === '' || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), {
+      message: 'invoiceEmail must be a valid email address or empty',
+    }),
   rateTiers: z
     .array(RateTierSchema, { required_error: 'must have a rateTiers array' })
     .min(1, 'has no rate tiers defined')
