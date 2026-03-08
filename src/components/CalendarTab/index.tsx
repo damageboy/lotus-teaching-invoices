@@ -62,6 +62,18 @@ export function CalendarTab({ classes, studios = {}, onAddStudio }: Props) {
     [studios]
   );
 
+  const studioLocations = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    for (const cls of monthClasses) {
+      if (cls.location) {
+        const set = map.get(cls.studioName) ?? new Set();
+        set.add(cls.location);
+        map.set(cls.studioName, set);
+      }
+    }
+    return map;
+  }, [monthClasses]);
+
   // Unique studios for legend — split configured vs unconfigured
   const configuredStudios = [
     ...new Set(classes.filter((c) => !c.unconfigured).map((c) => c.studioName)),
@@ -111,17 +123,21 @@ export function CalendarTab({ classes, studios = {}, onAddStudio }: Props) {
         <div className="flex gap-2 flex-wrap items-center">
           {configuredStudios.map((s) => {
             const c = studioColor(s, colorMap[s]);
+            const locations = studioLocations.get(s);
             return (
               <span
                 key={s}
-                className="text-xs px-2 py-0.5 rounded border"
+                className="text-xs px-2 py-0.5 rounded border inline-flex flex-col"
                 style={{
                   backgroundColor: c.backgroundColor,
                   color: c.color,
                   borderColor: c.borderColor,
                 }}
               >
-                {s}
+                <span>{s}</span>
+                {locations && (
+                  <span className="text-[10px] opacity-60">{[...locations].sort().join(', ')}</span>
+                )}
               </span>
             );
           })}
