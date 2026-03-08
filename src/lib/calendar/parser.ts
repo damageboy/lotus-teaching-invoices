@@ -60,14 +60,25 @@ export function extractClasses(
   const warnings: ParseWarning[] = [];
 
   for (const event of events) {
-    const slashIndex = event.summary.indexOf('/');
-    if (slashIndex === -1) {
+    const parts = event.summary.split('/');
+
+    if (parts.length < 2 || parts.length > 3) {
       warnings.push({ code: 'NO_SEPARATOR', event: event.summary });
       continue;
     }
 
-    const rawStudioName = event.summary.slice(0, slashIndex).trim();
-    const classType = event.summary.slice(slashIndex + 1).trim();
+    let rawStudioName: string;
+    let classType: string;
+    let location: string | undefined;
+
+    if (parts.length === 3) {
+      rawStudioName = parts[0].trim();
+      location = parts[1].trim();
+      classType = parts[2].trim();
+    } else {
+      rawStudioName = parts[0].trim();
+      classType = parts[1].trim();
+    }
 
     if (!rawStudioName || !classType) {
       warnings.push({ code: 'MISSING_CLASS_TYPE', event: event.summary });
@@ -83,6 +94,7 @@ export function extractClasses(
       classes.push({
         studioName: rawStudioName,
         classType,
+        ...(location ? { location } : {}),
         date: formatDate(event.start),
         startTime: formatTime(event.start),
         endTime: formatTime(event.end),
@@ -110,6 +122,7 @@ export function extractClasses(
     classes.push({
       studioName,
       classType,
+      ...(location ? { location } : {}),
       date: formatDate(event.start),
       startTime: formatTime(event.start),
       endTime: formatTime(event.end),

@@ -9,7 +9,7 @@ const icsData = readFileSync(join(fixturesDir, 'sample.ics'), 'utf-8');
 describe('parseCalendarEvents', () => {
   it('parses all VEVENT entries from ICS', () => {
     const events = parseCalendarEvents(icsData);
-    expect(events).toHaveLength(8);
+    expect(events).toHaveLength(10);
   });
 
   it('extracts summary and description', () => {
@@ -63,5 +63,32 @@ describe('extractClasses', () => {
     const events = parseCalendarEvents(icsData);
     const { warnings } = extractClasses(events, knownStudios);
     expect(warnings.some((w) => w.code === 'MISSING_STUDENT_COUNT')).toBe(true);
+  });
+
+  it('parses multi-location events (2 slashes)', () => {
+    const events = parseCalendarEvents(icsData);
+    const studios = new Map([
+      ['zen yoga', 'Zen Yoga'],
+      ['power house', 'Power House'],
+      ['yfd', 'YFD'],
+    ]);
+    const { classes } = extractClasses(events, studios);
+    const yfdClasses = classes.filter((c) => c.studioName === 'YFD');
+    expect(yfdClasses).toHaveLength(2);
+    expect(yfdClasses[0].location).toBe('mitte');
+    expect(yfdClasses[0].classType).toBe('Vinyasa');
+    expect(yfdClasses[1].location).toBe('schoeneberg');
+    expect(yfdClasses[1].classType).toBe('Hatha');
+  });
+
+  it('single-location events have no location field', () => {
+    const events = parseCalendarEvents(icsData);
+    const studios = new Map([
+      ['zen yoga', 'Zen Yoga'],
+      ['power house', 'Power House'],
+    ]);
+    const { classes } = extractClasses(events, studios);
+    const zenClasses = classes.filter((c) => c.studioName === 'Zen Yoga');
+    expect(zenClasses.every((c) => c.location === undefined)).toBe(true);
   });
 });
