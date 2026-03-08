@@ -234,6 +234,12 @@ export function InvoicesTab({ classes, config, onSaveConfig }: Props) {
     }
 
     const invoiceNumber = extractInvoiceNumberFromFilename(existingFilename);
+    if (!invoiceNumber) {
+      setRowError(
+        `Could not read invoice number from existing file "${existingFilename}". Please check the Final/ folder.`
+      );
+      return;
+    }
     const pdfPath = `${config.outputDir}/Final/${existingFilename}`;
 
     const rowKey = `${row.studioName}__${row.monthKey}`;
