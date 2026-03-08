@@ -26,7 +26,9 @@ export function generateInvoice(
     if (cls.studentCount === 0) {
       warnings.push({
         code: 'ZERO_STUDENTS',
-        event: `${cls.studioName} / ${cls.classType}`,
+        event: cls.location
+          ? `${cls.studioName} / ${cls.location} / ${cls.classType}`
+          : `${cls.studioName} / ${cls.classType}`,
         date: cls.date,
       });
       continue;
@@ -38,6 +40,7 @@ export function generateInvoice(
       startTime: cls.startTime,
       endTime: cls.endTime,
       classType: cls.classType,
+      ...(cls.location ? { location: cls.location } : {}),
       studentCount: cls.studentCount,
       rateApplied: rate,
       lineTotal: rate,

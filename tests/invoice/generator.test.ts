@@ -113,4 +113,46 @@ describe('generateInvoice', () => {
     expect(warnings).toHaveLength(1);
     expect(warnings[0].code).toBe('ZERO_STUDENTS');
   });
+
+  it('preserves location in invoice line items', () => {
+    const classesWithLocation: ParsedClass[] = [
+      {
+        studioName: 'YFD',
+        classType: 'Vinyasa',
+        location: 'mitte',
+        date: '2026-01-08',
+        startTime: '17:00',
+        endTime: '18:15',
+        studentCount: 7,
+      },
+      {
+        studioName: 'YFD',
+        classType: 'Hatha',
+        location: 'schoeneberg',
+        date: '2026-01-14',
+        startTime: '17:00',
+        endTime: '18:15',
+        studentCount: 4,
+      },
+    ];
+
+    const { invoice } = generateInvoice('YFD', classesWithLocation, studioConfig, {
+      from: '2026-01-01',
+      to: '2026-01-31',
+    });
+
+    expect(invoice.classes[0].location).toBe('mitte');
+    expect(invoice.classes[0].classType).toBe('Vinyasa');
+    expect(invoice.classes[1].location).toBe('schoeneberg');
+    expect(invoice.classes[1].classType).toBe('Hatha');
+  });
+
+  it('omits location for single-location classes', () => {
+    const { invoice } = generateInvoice('Zen Yoga', classes, studioConfig, {
+      from: '2026-01-01',
+      to: '2026-01-31',
+    });
+
+    expect(invoice.classes.every((c) => c.location === undefined)).toBe(true);
+  });
 });
