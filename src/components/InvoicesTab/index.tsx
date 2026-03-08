@@ -305,9 +305,26 @@ export function InvoicesTab({ classes, config, onSaveConfig }: Props) {
             const rowKey = `${row.studioName}__${row.monthKey}`;
             const studioConfig = config.studios[row.studioName];
             const total = rowTotals.get(rowKey);
+            const todayStr = new Date().toISOString().slice(0, 10);
+            const missingCount = row.classes.filter(
+              (c) => c.studentCount === 0 && c.date < todayStr
+            ).length;
+            const blocked = missingCount > 0;
             return (
               <tr key={rowKey} className="border-b border-gray-100 hover:bg-gray-50">
-                <td className="py-2 pr-4">{row.studioName}</td>
+                <td className="py-2 pr-4">
+                  <span className="flex items-center gap-1.5">
+                    {row.studioName}
+                    {blocked && (
+                      <span
+                        title={`${missingCount} class(es) missing student count`}
+                        className="text-amber-500 cursor-help"
+                      >
+                        ⚠
+                      </span>
+                    )}
+                  </span>
+                </td>
                 <td className="py-2 pr-4">{row.label}</td>
                 <td className="py-2 pr-4 text-right">{row.classCount}</td>
                 <td className="py-2 pr-4 text-right font-mono">
@@ -321,14 +338,14 @@ export function InvoicesTab({ classes, config, onSaveConfig }: Props) {
                   <div className="flex items-center justify-end gap-2">
                     <button
                       onClick={() => handleGenerate(row)}
-                      disabled={!studioConfig || generating !== null}
+                      disabled={blocked || !studioConfig || generating !== null}
                       className="text-xs px-3 py-1 rounded bg-indigo-50 text-indigo-700 hover:bg-indigo-100 disabled:opacity-40"
                     >
                       {generating === rowKey ? 'Generating…' : 'Generate Invoice…'}
                     </button>
                     <button
                       onClick={() => handleFinalize(row)}
-                      disabled={!studioConfig || generating !== null}
+                      disabled={blocked || !studioConfig || generating !== null}
                       className="text-xs px-3 py-1 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-40"
                     >
                       {generating === rowKey ? 'Finalizing…' : 'Finalize Invoice…'}
@@ -336,7 +353,7 @@ export function InvoicesTab({ classes, config, onSaveConfig }: Props) {
                     {studioConfig?.invoiceEmail && (
                       <button
                         onClick={() => handleDraftEmail(row)}
-                        disabled={generating !== null}
+                        disabled={blocked || generating !== null}
                         className="text-xs px-3 py-1 rounded bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:opacity-40"
                       >
                         {generating === rowKey ? 'Drafting…' : 'Draft Email…'}

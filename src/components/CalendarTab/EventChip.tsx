@@ -4,10 +4,25 @@ import { studioColor } from '../../lib/studioColors';
 interface Props {
   cls: ParsedClass;
   studioHex?: string;
+  today?: string; // YYYY-MM-DD, for testing; defaults to current date
 }
 
-export function EventChip({ cls, studioHex }: Props) {
+export function EventChip({ cls, studioHex, today }: Props) {
+  const todayStr = today ?? new Date().toISOString().slice(0, 10);
   const c = studioColor(cls.studioName, studioHex);
+
+  // Past class with missing student count
+  if (!cls.unconfigured && cls.studentCount === 0 && cls.date < todayStr) {
+    return (
+      <div
+        title={`${cls.studioName} — missing student count`}
+        className="text-xs rounded px-1 py-0.5 mb-0.5 truncate border border-dashed border-amber-400 bg-amber-50 text-amber-700 opacity-90 cursor-default"
+      >
+        ⚠ {cls.startTime} {cls.classType}
+      </div>
+    );
+  }
+
   if (cls.unconfigured) {
     return (
       <div
