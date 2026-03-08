@@ -8,6 +8,7 @@ interface Props {
 }
 
 export function EventChip({ cls, studioHex, today }: Props) {
+  const chipLabel = cls.location ? `${cls.location} / ${cls.classType}` : cls.classType;
   const todayStr = today ?? new Date().toISOString().slice(0, 10);
   const c = studioColor(cls.studioName, studioHex);
 
@@ -18,7 +19,7 @@ export function EventChip({ cls, studioHex, today }: Props) {
         title={`${cls.studioName} — missing student count`}
         className="text-xs rounded px-1 py-0.5 mb-0.5 truncate border border-dashed border-amber-400 bg-amber-50 text-amber-700 opacity-90 cursor-default"
       >
-        ⚠ {cls.startTime} {cls.classType}
+        ⚠ {cls.startTime} {chipLabel}
       </div>
     );
   }
@@ -30,7 +31,7 @@ export function EventChip({ cls, studioHex, today }: Props) {
         style={{ ...c, opacity: 0.7, borderStyle: 'dashed' }}
         className="text-xs rounded px-1 py-0.5 mb-0.5 truncate border cursor-default"
       >
-        ⚠ {cls.startTime} {cls.classType}
+        ⚠ {cls.startTime} {chipLabel}
       </div>
     );
   }
@@ -40,7 +41,7 @@ export function EventChip({ cls, studioHex, today }: Props) {
         title={`${cls.studioName} — ambiguous student count`}
         className="text-xs rounded px-1 py-0.5 mb-0.5 truncate border border-dashed border-red-400 bg-red-50 text-red-700 opacity-90 cursor-default"
       >
-        ❓ {cls.startTime} {cls.classType}
+        ❓ {cls.startTime} {chipLabel}
       </div>
     );
   }
@@ -50,7 +51,7 @@ export function EventChip({ cls, studioHex, today }: Props) {
       style={c}
       className="text-xs rounded px-1 py-0.5 mb-0.5 truncate border cursor-default"
     >
-      {cls.startTime} {cls.classType}
+      {cls.startTime} {chipLabel}
     </div>
   );
 }
