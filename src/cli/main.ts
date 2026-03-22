@@ -3,7 +3,6 @@
 import { readFileSync } from 'node:fs';
 import { parseArgs } from './args.js';
 import { loadConfig } from '../lib/config/loader.js';
-import { fetchCalendar } from '../lib/calendar/fetcher.js';
 import { parseCalendarEvents, extractClasses } from '../lib/calendar/parser.js';
 import { groupByStudio, filterByDateRange, filterByStudio } from '../lib/invoice/grouper.js';
 import { generateInvoice } from '../lib/invoice/generator.js';
@@ -17,15 +16,14 @@ async function main(): Promise<void> {
   // Load config
   const config = loadConfig(opts.config);
 
-  // Fetch or read calendar
-  if (!opts.file && !config.calendarId) {
-    throw new AppError('No calendarId configured. Set it in config.yaml.', 'MISSING_CALENDAR');
+  // Read calendar from local ICS file (Calendar API requires the desktop app)
+  if (!opts.file) {
+    throw new AppError(
+      'CLI requires --file flag. Use the desktop app for Google Calendar API access.',
+      'MISSING_FILE'
+    );
   }
-  const icsData = opts.file
-    ? readFileSync(opts.file, 'utf-8')
-    : await fetchCalendar(
-        `https://calendar.google.com/calendar/ical/${encodeURIComponent(config.calendarId!)}/basic.ics`
-      );
+  const icsData = readFileSync(opts.file, 'utf-8');
 
   // Parse events
   const events = parseCalendarEvents(icsData);
