@@ -4,7 +4,7 @@ export const GOOGLE_CLIENT_SECRET = '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';
 
 export const OAUTH_SCOPES = [
   'https://www.googleapis.com/auth/gmail.compose',
-  'https://www.googleapis.com/auth/calendar.events',
+  'https://www.googleapis.com/auth/calendar.readonly',
 ].join(' ');
 
 export const OAUTH_AUTH_URL = 'https://accounts.google.com/o/oauth2/auth';

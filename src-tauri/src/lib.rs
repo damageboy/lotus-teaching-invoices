@@ -30,6 +30,18 @@ pub fn run() {
         .plugin(
             tauri_plugin_log::Builder::new()
                 .level(log::LevelFilter::Debug)
+                .format(|out, message, record| {
+                    out.finish(format_args!(
+                        "[{}][{}] {}",
+                        record.level(),
+                        record
+                            .target()
+                            .split_once('@')
+                            .map(|(t, _)| t)
+                            .unwrap_or(record.target()),
+                        message
+                    ))
+                })
                 .targets([
                     tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
                     tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir {

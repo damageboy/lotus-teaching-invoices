@@ -53,7 +53,9 @@ export function CalendarGrid({ year, month, classes, colorMap = {} }: Props) {
           return <div key={`empty-${i}`} className="bg-gray-50 min-h-[240px]" />;
         }
         const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-        const dayClasses = byDate.get(dateStr) ?? [];
+        const dayClasses = (byDate.get(dateStr) ?? []).sort((a, b) =>
+          a.startTime.localeCompare(b.startTime)
+        );
         const isToday =
           today.getFullYear() === year && today.getMonth() === month && today.getDate() === day;
 
