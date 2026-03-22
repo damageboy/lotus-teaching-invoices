@@ -10,7 +10,8 @@
       "allow": [
         { "url": "https://calendar.google.com/**" },
         { "url": "https://oauth2.googleapis.com/**" },
-        { "url": "https://gmail.googleapis.com/**" }
+        { "url": "https://gmail.googleapis.com/**" },
+        { "url": "https://www.googleapis.com/**" }
       ]
     },
     "fs:default",
