@@ -23,6 +23,7 @@
     "src/lib/pdf",
     "src/lib/gmail",
     "src/lib/config/defaults.ts",
-    "src/lib/version.ts"
+    "src/lib/version.ts",
+    "src/lib/calendar/calendar-api.ts"
   ]
 }
