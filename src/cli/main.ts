@@ -1,79 +1,16 @@
 #!/usr/bin/env node
 
-import { readFileSync } from 'node:fs';
 import { parseArgs } from './args.js';
-import { loadConfig } from '../lib/config/loader.js';
-import { parseCalendarEvents, extractClasses } from '../lib/calendar/parser.js';
-import { groupByStudio, filterByDateRange, filterByStudio } from '../lib/invoice/grouper.js';
-import { generateInvoice } from '../lib/invoice/generator.js';
-import { writeInvoice, printInvoice } from '../lib/output/writer.js';
-import { printWarningReport } from '../lib/output/reporter.js';
-import { AppError, InvoicePeriod, ParseWarning } from '../lib/types.js';
+import { AppError } from '../lib/types.js';
 
 async function main(): Promise<void> {
-  const opts = parseArgs(process.argv);
+  parseArgs(process.argv);
 
-  // Load config
-  const config = loadConfig(opts.config);
-
-  // Read calendar from local ICS file (Calendar API requires the desktop app)
-  if (!opts.file) {
-    throw new AppError(
-      'CLI requires --file flag. Use the desktop app for Google Calendar API access.',
-      'MISSING_FILE'
-    );
-  }
-  const icsData = readFileSync(opts.file, 'utf-8');
-
-  // Parse events
-  const events = parseCalendarEvents(icsData);
-  const knownStudios = new Map(
-    Object.keys(config.studios).map((name) => [name.toLowerCase(), name])
+  // Calendar API requires the desktop app — CLI no longer supports direct calendar access
+  throw new AppError(
+    'CLI no longer supports calendar fetching. Use the desktop app for Google Calendar API access.',
+    'NOT_SUPPORTED'
   );
-  const { classes, warnings } = extractClasses(events, knownStudios);
-  const allWarnings: ParseWarning[] = [...warnings];
-
-  // Filter by date range
-  let filtered = filterByDateRange(classes, opts.from, opts.to);
-
-  // Filter by studio if specified
-  if (opts.studio) {
-    if (!config.studios[opts.studio]) {
-      throw new AppError(`Studio "${opts.studio}" not found in config`, 'UNKNOWN_STUDIO');
-    }
-    filtered = filterByStudio(filtered, opts.studio);
-  }
-
-  if (filtered.length === 0) {
-    console.error('[WARN] No events found for the specified period');
-    process.exit(2);
-  }
-
-  // Group and generate invoices
-  const grouped = groupByStudio(filtered);
-  const period: InvoicePeriod = { from: opts.from, to: opts.to };
-
-  for (const [studioName, studioClasses] of grouped) {
-    const studioConfig = config.studios[studioName];
-    if (!studioConfig) continue; // already filtered out unknown studios
-
-    const { invoice, warnings: genWarnings } = generateInvoice(
-      studioName,
-      studioClasses,
-      studioConfig,
-      period
-    );
-    allWarnings.push(...genWarnings);
-
-    if (opts.dryRun) {
-      printInvoice(invoice);
-    } else {
-      const filePath = writeInvoice(invoice, opts.output);
-      console.log(`Written: ${filePath}`);
-    }
-  }
-
-  printWarningReport(allWarnings);
 }
 
 main().catch((err) => {

@@ -1,4 +1,3 @@
-import ICAL from 'ical.js';
 import { CalendarEvent, ParsedClass, ParseWarning } from '../types.js';
 
 function formatDate(d: Date): string {
@@ -23,33 +22,6 @@ function parseStudentCount(description: string | undefined): {
   if (matches.length === 0) return { count: null, ambiguous: false };
   if (matches.length === 1) return { count: parseInt(matches[0][1], 10), ambiguous: false };
   return { count: null, ambiguous: true };
-}
-
-export function parseCalendarEvents(icsData: string): CalendarEvent[] {
-  let jcal: ReturnType<typeof ICAL.parse>;
-  try {
-    jcal = ICAL.parse(icsData);
-  } catch (e) {
-    throw new Error(`Failed to parse ICS data: ${(e as Error).message}`);
-  }
-  const comp = new ICAL.Component(jcal);
-  const vevents = comp.getAllSubcomponents('vevent');
-  const events: CalendarEvent[] = [];
-
-  for (const vevent of vevents) {
-    const event = new ICAL.Event(vevent);
-    if (!event.summary || !event.startDate || !event.endDate) continue;
-
-    events.push({
-      uid: (vevent.getFirstPropertyValue('uid') as string) ?? '',
-      summary: event.summary,
-      description: (vevent.getFirstPropertyValue('description') as string) ?? '',
-      start: event.startDate.toJSDate(),
-      end: event.endDate.toJSDate(),
-    });
-  }
-
-  return events;
 }
 
 export function extractClasses(
