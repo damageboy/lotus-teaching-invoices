@@ -3,6 +3,7 @@ import { AppConfig, RateTier, StudioConfig, TeacherInfo, BankDetails } from '../
 import { ColorPickerPopup } from '../ColorPickerPopup';
 import { effectiveHex, nextUnusedColor } from '../../lib/studioColors';
 import { APP_VERSION, APP_IS_OFFICIAL } from '../../lib/version';
+import { listCalendars } from '../../lib/calendar/calendar-api';
 
 interface Props {
   config: AppConfig;
@@ -211,6 +212,28 @@ function StudioCard({
 }
 
 export function RatesTab({ config, isDirty, saveError, onUpdate, onSave }: Props) {
+  const [calendars, setCalendars] = useState<{ id: string; summary: string }[] | null>(null);
+  const [calendarLoading, setCalendarLoading] = useState(false);
+  const [calendarError, setCalendarError] = useState<string | null>(null);
+
+  async function handlePickCalendar() {
+    setCalendarLoading(true);
+    setCalendarError(null);
+    try {
+      const list = await listCalendars();
+      setCalendars(list);
+    } catch (e) {
+      setCalendarError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCalendarLoading(false);
+    }
+  }
+
+  function handleSelectCalendar(id: string, name: string) {
+    onUpdate({ ...config, calendarId: id, calendarName: name });
+    setCalendars(null);
+  }
+
   function updateTeacher(key: keyof Omit<TeacherInfo, 'bankDetails'>, value: string) {
     onUpdate({ ...config, teacher: { ...config.teacher, [key]: value } });
   }
@@ -398,9 +421,51 @@ export function RatesTab({ config, isDirty, saveError, onUpdate, onSave }: Props
         </label>
 
         <h3 className="text-sm font-medium text-gray-700 mt-2">Calendar</h3>
-        <p className="text-xs text-gray-500">
-          {config.calendarName ? `Selected: ${config.calendarName}` : 'No calendar selected'}
-        </p>
+        <div className="flex flex-col gap-2">
+          {config.calendarId ? (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-800">
+                {config.calendarName || config.calendarId}
+              </span>
+              <button
+                onClick={handlePickCalendar}
+                disabled={calendarLoading}
+                className="text-xs text-indigo-500 hover:text-indigo-700"
+              >
+                {calendarLoading ? 'Loading…' : 'Change…'}
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={handlePickCalendar}
+              disabled={calendarLoading}
+              className="self-start px-3 py-1.5 rounded border border-gray-300 text-sm text-gray-600 hover:border-indigo-400 hover:text-indigo-600"
+            >
+              {calendarLoading ? 'Loading…' : 'Pick Calendar…'}
+            </button>
+          )}
+          {calendarError && <span className="text-xs text-red-500">{calendarError}</span>}
+          {calendars && (
+            <div className="flex flex-col gap-1 p-2 rounded border border-gray-200 bg-gray-50 max-h-48 overflow-y-auto">
+              {calendars.map((cal) => (
+                <button
+                  key={cal.id}
+                  onClick={() => handleSelectCalendar(cal.id, cal.summary)}
+                  className={`text-left text-sm px-2 py-1 rounded hover:bg-indigo-50 ${
+                    config.calendarId === cal.id
+                      ? 'bg-indigo-100 text-indigo-700 font-medium'
+                      : 'text-gray-700'
+                  }`}
+                >
+                  {cal.summary}
+                </button>
+              ))}
+              {calendars.length === 0 && (
+                <span className="text-xs text-gray-400">No calendars found</span>
+              )}
+            </div>
+          )}
+        </div>
 
         <h3 className="text-sm font-medium text-gray-700 mt-2">Invoicing</h3>
         <label className="flex flex-col gap-1">
