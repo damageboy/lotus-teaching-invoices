@@ -6,7 +6,8 @@ teacher:
     accountOwner: "Your Name"
     iban: "DE89 3704 0044 0532 0130 00"
     bic: "COBADEFFXXX"
-calendarUrl: "https://calendar.google.com/calendar/ical/YOUR_CALENDAR_ID/basic.ics"
+calendarId: "YOUR_CALENDAR_ID@group.calendar.google.com"
+calendarName: "My Teaching Calendar"
 outputDir: ""
 lastInvoice: ""
 studios:

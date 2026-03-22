@@ -96,7 +96,8 @@ const StudioConfigSchema = z.object({
 
 const ConfigSchema = z.object({
   teacher: TeacherInfoSchema,
-  calendarUrl: z.string().default(''),
+  calendarId: z.string().optional(),
+  calendarName: z.string().optional(),
   outputDir: z.string().default(''),
   lastInvoice: z
     .string()
@@ -146,7 +147,8 @@ export function validateConfig(raw: unknown): AppConfig {
   const configData = result.data;
   const config: AppConfig = {
     teacher: configData.teacher as TeacherInfo,
-    calendarUrl: configData.calendarUrl,
+    calendarId: configData.calendarId,
+    calendarName: configData.calendarName,
     outputDir: configData.outputDir,
     lastInvoice: configData.lastInvoice,
     studios: {},

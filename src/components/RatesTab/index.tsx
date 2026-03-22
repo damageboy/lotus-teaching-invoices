@@ -220,9 +220,6 @@ export function RatesTab({ config, isDirty, saveError, onUpdate, onSave }: Props
       teacher: { ...config.teacher, bankDetails: { ...config.teacher.bankDetails, [key]: value } },
     });
   }
-  function updateCalendarUrl(value: string) {
-    onUpdate({ ...config, calendarUrl: value });
-  }
   function updateLastInvoice(value: string) {
     onUpdate({ ...config, lastInvoice: value });
   }
@@ -401,14 +398,9 @@ export function RatesTab({ config, isDirty, saveError, onUpdate, onSave }: Props
         </label>
 
         <h3 className="text-sm font-medium text-gray-700 mt-2">Calendar</h3>
-        <label className="flex flex-col gap-1">
-          <span className="text-xs text-gray-500">Calendar URL (ICS)</span>
-          <input
-            className="border border-gray-200 rounded px-2 py-1 text-sm font-mono"
-            value={config.calendarUrl}
-            onChange={(e) => updateCalendarUrl(e.target.value)}
-          />
-        </label>
+        <p className="text-xs text-gray-500">
+          {config.calendarName ? `Selected: ${config.calendarName}` : 'No calendar selected'}
+        </p>
 
         <h3 className="text-sm font-medium text-gray-700 mt-2">Invoicing</h3>
         <label className="flex flex-col gap-1">

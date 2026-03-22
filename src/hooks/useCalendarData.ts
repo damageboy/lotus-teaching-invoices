@@ -21,15 +21,16 @@ export function useCalendarData(config: AppConfig): CalendarData {
   const studioKeys = Object.keys(config.studios).sort().join(',');
 
   const refresh = useCallback(async () => {
-    if (!config.calendarUrl) {
-      setError('No calendar URL configured. Set it in the Rates tab.');
+    if (!config.calendarId) {
+      setError('No calendar selected. Set it in the Rates tab.');
       return;
     }
     setIsLoading(true);
     setError(null);
     logInfo('Fetching calendar…');
     try {
-      const response = await fetch(config.calendarUrl);
+      const calendarUrl = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(config.calendarId)}/events`;
+      const response = await fetch(calendarUrl);
       const icsData = await response.text();
       const events = parseCalendarEvents(icsData);
       const knownStudios = new Map(
@@ -42,7 +43,10 @@ export function useCalendarData(config: AppConfig): CalendarData {
       logInfo(
         `Calendar loaded: ${parsed.length - unconfiguredCount} classes, ${unconfiguredCount} unconfigured, ${warns.length} warnings`
       );
-      warns.forEach((w) => logWarn(`Unmatched event: ${w.event}`));
+      const now = new Date().toISOString().slice(0, 10);
+      warns
+        .filter((w) => !w.date || w.date <= now)
+        .forEach((w) => logWarn(`${w.code}: ${w.event}${w.date ? ` (${w.date})` : ''}`));
     } catch (e) {
       const msg = `Failed to fetch calendar: ${e instanceof Error ? e.message : String(e)}`;
       logError(msg);
@@ -50,7 +54,7 @@ export function useCalendarData(config: AppConfig): CalendarData {
     } finally {
       setIsLoading(false);
     }
-  }, [config.calendarUrl, studioKeys]);
+  }, [config.calendarId, studioKeys]);
 
   return { classes, warnings, isLoading, error, refresh };
 }

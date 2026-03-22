@@ -11,7 +11,6 @@ export const DEFAULT_CONFIG: AppConfig = {
       bic: '',
     },
   },
-  calendarUrl: '',
   outputDir: '',
   lastInvoice: '',
   studios: {

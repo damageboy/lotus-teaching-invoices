@@ -27,7 +27,8 @@ export interface StudioConfig {
 
 export interface AppConfig {
   teacher: TeacherInfo;
-  calendarUrl: string;
+  calendarId?: string; // Google Calendar ID (e.g. "abc@group.calendar.google.com")
+  calendarName?: string; // Display name of the selected calendar
   outputDir: string;
   lastInvoice: string; // "N/YYYY" e.g. "7/2026", or "" if unset
   studios: Record<string, StudioConfig>;

@@ -1,4 +1,5 @@
-calendarUrl: "https://calendar.google.com/calendar/ical/example/basic.ics"
+calendarId: "example@group.calendar.google.com"
+calendarName: "Teaching Schedule"
 lastInvoice: ""
 studios:
   "Zen Yoga":

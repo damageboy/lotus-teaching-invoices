@@ -8,7 +8,8 @@ const fixturesDir = join(import.meta.dirname, '..', 'fixtures');
 describe('loadConfig', () => {
   it('loads and validates the test fixture config', () => {
     const config = loadConfig(join(fixturesDir, 'config.yaml'));
-    expect(config.calendarUrl).toBe('https://calendar.google.com/calendar/ical/example/basic.ics');
+    expect(config.calendarId).toBe('example@group.calendar.google.com');
+    expect(config.calendarName).toBe('Teaching Schedule');
     expect(config.teacher.name).toBe('');
     expect(config.teacher.taxNumber).toBe('');
     expect(config.teacher.bankDetails.iban).toBe('');
@@ -31,17 +32,15 @@ describe('validateConfig', () => {
     expect(() => validateConfig('string')).toThrow('Config must be an object');
   });
 
-  it('accepts missing calendarUrl (defaults to empty string)', () => {
+  it('accepts missing calendarId', () => {
     const cfg = validateConfig({
       studios: { Foo: { rateTiers: [{ minStudents: 1, maxStudents: null, rate: 80 }] } },
     });
-    expect(cfg.calendarUrl).toBe('');
+    expect(cfg.calendarId).toBeUndefined();
   });
 
   it('rejects empty studios', () => {
-    expect(() => validateConfig({ calendarUrl: 'http://x', studios: {} })).toThrow(
-      'at least one studio'
-    );
+    expect(() => validateConfig({ studios: {} })).toThrow('at least one studio');
   });
 });
 
@@ -49,7 +48,6 @@ describe('validateRateTiers (via validateConfig)', () => {
   it('accepts valid contiguous tiers', () => {
     expect(() =>
       validateConfig({
-        calendarUrl: 'url',
         studios: {
           Test: {
             rateTiers: [
@@ -65,7 +63,6 @@ describe('validateRateTiers (via validateConfig)', () => {
   it('rejects empty tiers', () => {
     expect(() =>
       validateConfig({
-        calendarUrl: 'url',
         studios: {
           Test: {
             rateTiers: [],
@@ -78,7 +75,6 @@ describe('validateRateTiers (via validateConfig)', () => {
   it('rejects gap between tiers', () => {
     expect(() =>
       validateConfig({
-        calendarUrl: 'url',
         studios: {
           Test: {
             rateTiers: [
@@ -94,7 +90,6 @@ describe('validateRateTiers (via validateConfig)', () => {
   it('rejects non-terminal unbounded tier', () => {
     expect(() =>
       validateConfig({
-        calendarUrl: 'url',
         studios: {
           Test: {
             rateTiers: [
@@ -110,7 +105,6 @@ describe('validateRateTiers (via validateConfig)', () => {
   it('rejects bounded last tier', () => {
     expect(() =>
       validateConfig({
-        calendarUrl: 'url',
         studios: {
           Test: {
             rateTiers: [{ minStudents: 1, maxStudents: 5, rate: 80 }],
@@ -124,7 +118,6 @@ describe('validateRateTiers (via validateConfig)', () => {
 describe('lastInvoice field', () => {
   it('defaults to empty string when absent', () => {
     const cfg = validateConfig({
-      calendarUrl: 'https://example.com/cal.ics',
       studios: { Foo: { rateTiers: [{ minStudents: 1, maxStudents: null, rate: 80 }] } },
     });
     expect(cfg.lastInvoice).toBe('');
@@ -132,7 +125,6 @@ describe('lastInvoice field', () => {
 
   it('accepts a valid N/YYYY string', () => {
     const cfg = validateConfig({
-      calendarUrl: 'https://example.com/cal.ics',
       lastInvoice: '7/2026',
       studios: { Foo: { rateTiers: [{ minStudents: 1, maxStudents: null, rate: 80 }] } },
     });
@@ -142,7 +134,6 @@ describe('lastInvoice field', () => {
   it('rejects an invalid format', () => {
     expect(() =>
       validateConfig({
-        calendarUrl: 'https://example.com/cal.ics',
         lastInvoice: 'bad',
         studios: { Foo: { rateTiers: [{ minStudents: 1, maxStudents: null, rate: 80 }] } },
       })

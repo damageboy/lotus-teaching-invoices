@@ -14,8 +14,8 @@ const SAMPLE_CONFIG: AppConfig = {
       bic: 'COBADEFFXXX',
     },
   },
-  calendarUrl:
-    'https://calendar.google.com/calendar/ical/example%40group.calendar.google.com/basic.ics',
+  calendarId: 'example@group.calendar.google.com',
+  calendarName: 'Teaching Schedule',
   outputDir: '/tmp/invoices',
   studios: {
     Yogibar: {
@@ -42,7 +42,8 @@ describe('config serialization', () => {
     expect(reparsed.teacher.bankDetails.iban).toBe(SAMPLE_CONFIG.teacher.bankDetails.iban);
     expect(reparsed.studios.Yogibar.fullName).toBe('Yogibar Yoga Studio GmbH');
     expect(reparsed.studios.Yogibar.address).toBe('456 Yoga Lane\nMunich');
-    expect(reparsed.calendarUrl).toBe(SAMPLE_CONFIG.calendarUrl);
+    expect(reparsed.calendarId).toBe(SAMPLE_CONFIG.calendarId);
+    expect(reparsed.calendarName).toBe(SAMPLE_CONFIG.calendarName);
     expect(reparsed.outputDir).toBe(SAMPLE_CONFIG.outputDir);
     expect(Object.keys(reparsed.studios)).toEqual(Object.keys(SAMPLE_CONFIG.studios));
     expect(reparsed.studios.Yogibar.rateTiers).toHaveLength(3);

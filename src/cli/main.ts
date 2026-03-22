@@ -18,9 +18,14 @@ async function main(): Promise<void> {
   const config = loadConfig(opts.config);
 
   // Fetch or read calendar
+  if (!opts.file && !config.calendarId) {
+    throw new AppError('No calendarId configured. Set it in config.yaml.', 'MISSING_CALENDAR');
+  }
   const icsData = opts.file
     ? readFileSync(opts.file, 'utf-8')
-    : await fetchCalendar(config.calendarUrl);
+    : await fetchCalendar(
+        `https://calendar.google.com/calendar/ical/${encodeURIComponent(config.calendarId!)}/basic.ics`
+      );
 
   // Parse events
   const events = parseCalendarEvents(icsData);

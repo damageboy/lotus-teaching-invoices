@@ -51,12 +51,12 @@ export default function App() {
     return () => unlisten();
   }, []);
 
-  // Fetch calendar once config is loaded and whenever calendarUrl or the set of studios changes.
-  // refresh is safe to include: it only changes when calendarUrl/studioKeys change, and calling
+  // Fetch calendar once config is loaded and whenever calendarId or the set of studios changes.
+  // refresh is safe to include: it only changes when calendarId/studioKeys change, and calling
   // it doesn't mutate either, so there is no loop.
   useEffect(() => {
-    if (!configLoading && config.calendarUrl) refresh();
-  }, [configLoading, config.calendarUrl, refresh]);
+    if (!configLoading && config.calendarId) refresh();
+  }, [configLoading, config.calendarId, refresh]);
 
   if (configLoading) {
     return <div className="flex items-center justify-center h-screen text-gray-500">Loading…</div>;
