@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { confirm, open as openDialog } from '@tauri-apps/plugin-dialog';
 import { ParsedClass, AppConfig, InvoicePeriod } from '../../lib/types';
 import { generateInvoice } from '../../lib/invoice/generator';
@@ -78,7 +78,10 @@ export function InvoicesTab({ classes, config, onSaveConfig }: Props) {
   const [generating, setGenerating] = useState<string | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
 
-  const rows = useMemo(() => buildRows(classes), [classes]);
+  const rows = useMemo(() => {
+    const currentMonth = new Date().toISOString().slice(0, 7); // "YYYY-MM"
+    return buildRows(classes).filter((row) => row.monthKey <= currentMonth);
+  }, [classes]);
 
   // Compute totals once per rows+config change, not on every render
   const rowTotals = useMemo(() => {
@@ -301,67 +304,80 @@ export function InvoicesTab({ classes, config, onSaveConfig }: Props) {
               </td>
             </tr>
           )}
-          {rows.map((row) => {
+          {rows.map((row, i) => {
             const rowKey = `${row.studioName}__${row.monthKey}`;
             const studioConfig = config.studios[row.studioName];
             const total = rowTotals.get(rowKey);
             const todayStr = new Date().toISOString().slice(0, 10);
+            const currentMonth = todayStr.slice(0, 7);
             const missingCount = row.classes.filter(
               (c) => c.studentCount === 0 && c.date < todayStr
             ).length;
             const blocked = missingCount > 0;
+            const prevRow = rows[i - 1];
+            const showSeparator =
+              prevRow && prevRow.monthKey >= currentMonth && row.monthKey < currentMonth;
             return (
-              <tr key={rowKey} className="border-b border-gray-100 hover:bg-gray-50">
-                <td className="py-2 pr-4">
-                  <span className="flex items-center gap-1.5">
-                    {row.studioName}
-                    {blocked && (
-                      <span
-                        title={`${missingCount} class(es) missing student count`}
-                        className="text-amber-500 cursor-help"
-                      >
-                        ⚠
-                      </span>
+              <React.Fragment key={rowKey}>
+                {showSeparator && (
+                  <tr>
+                    <td colSpan={5} className="py-1">
+                      <div className="border-t-2 border-gray-300" />
+                    </td>
+                  </tr>
+                )}
+                <tr className="border-b border-gray-100 hover:bg-gray-50">
+                  <td className="py-2 pr-4">
+                    <span className="flex items-center gap-1.5">
+                      {row.studioName}
+                      {blocked && (
+                        <span
+                          title={`${missingCount} class(es) missing student count`}
+                          className="text-amber-500 cursor-help"
+                        >
+                          ⚠
+                        </span>
+                      )}
+                    </span>
+                  </td>
+                  <td className="py-2 pr-4">{row.label}</td>
+                  <td className="py-2 pr-4 text-right">{row.classCount}</td>
+                  <td className="py-2 pr-4 text-right font-mono">
+                    {total !== undefined ? (
+                      `€${total.toFixed(2)}`
+                    ) : (
+                      <span className="text-gray-400">—</span>
                     )}
-                  </span>
-                </td>
-                <td className="py-2 pr-4">{row.label}</td>
-                <td className="py-2 pr-4 text-right">{row.classCount}</td>
-                <td className="py-2 pr-4 text-right font-mono">
-                  {total !== undefined ? (
-                    `€${total.toFixed(2)}`
-                  ) : (
-                    <span className="text-gray-400">—</span>
-                  )}
-                </td>
-                <td className="py-2 text-right">
-                  <div className="flex items-center justify-end gap-2">
-                    <button
-                      onClick={() => handleGenerate(row)}
-                      disabled={blocked || !studioConfig || generating !== null}
-                      className="text-xs px-3 py-1 rounded bg-indigo-50 text-indigo-700 hover:bg-indigo-100 disabled:opacity-40"
-                    >
-                      {generating === rowKey ? 'Generating…' : 'Generate Invoice…'}
-                    </button>
-                    <button
-                      onClick={() => handleFinalize(row)}
-                      disabled={blocked || !studioConfig || generating !== null}
-                      className="text-xs px-3 py-1 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-40"
-                    >
-                      {generating === rowKey ? 'Finalizing…' : 'Finalize Invoice…'}
-                    </button>
-                    {studioConfig?.invoiceEmail && (
+                  </td>
+                  <td className="py-2 text-right">
+                    <div className="flex items-center justify-end gap-2">
                       <button
-                        onClick={() => handleDraftEmail(row)}
-                        disabled={blocked || generating !== null}
-                        className="text-xs px-3 py-1 rounded bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:opacity-40"
+                        onClick={() => handleGenerate(row)}
+                        disabled={blocked || !studioConfig || generating !== null}
+                        className="text-xs px-3 py-1 rounded bg-indigo-50 text-indigo-700 hover:bg-indigo-100 disabled:opacity-40"
                       >
-                        {generating === rowKey ? 'Drafting…' : 'Draft Email…'}
+                        {generating === rowKey ? 'Generating…' : 'Generate Invoice…'}
                       </button>
-                    )}
-                  </div>
-                </td>
-              </tr>
+                      <button
+                        onClick={() => handleFinalize(row)}
+                        disabled={blocked || !studioConfig || generating !== null}
+                        className="text-xs px-3 py-1 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-40"
+                      >
+                        {generating === rowKey ? 'Finalizing…' : 'Finalize Invoice…'}
+                      </button>
+                      {studioConfig?.invoiceEmail && (
+                        <button
+                          onClick={() => handleDraftEmail(row)}
+                          disabled={blocked || generating !== null}
+                          className="text-xs px-3 py-1 rounded bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:opacity-40"
+                        >
+                          {generating === rowKey ? 'Drafting…' : 'Draft Email…'}
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              </React.Fragment>
             );
           })}
         </tbody>

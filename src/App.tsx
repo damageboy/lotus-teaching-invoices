@@ -41,6 +41,35 @@ export default function App() {
     setActiveTab('rates');
   }
 
+  // Cmd+Plus / Cmd+Minus zoom
+  useEffect(() => {
+    const STEP = 0.1;
+    const MIN = 0.5;
+    const MAX = 2.0;
+
+    function handleKeyDown(e: KeyboardEvent) {
+      if (!e.metaKey) return;
+      if (e.key === '=' || e.key === '+') {
+        e.preventDefault();
+        const cur = parseFloat(
+          document.documentElement.style.getPropertyValue('--app-zoom') || '1'
+        );
+        document.documentElement.style.setProperty('--app-zoom', String(Math.min(cur + STEP, MAX)));
+      } else if (e.key === '-') {
+        e.preventDefault();
+        const cur = parseFloat(
+          document.documentElement.style.getPropertyValue('--app-zoom') || '1'
+        );
+        document.documentElement.style.setProperty('--app-zoom', String(Math.max(cur - STEP, MIN)));
+      } else if (e.key === '0') {
+        e.preventDefault();
+        document.documentElement.style.setProperty('--app-zoom', '1');
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   // Start listening to Rust log events
   useEffect(() => {
     logInfo('App started');

@@ -1,1 +1,9 @@
 @import 'tailwindcss';
+
+:root {
+  --app-zoom: 1;
+}
+
+html {
+  zoom: var(--app-zoom);
+}
