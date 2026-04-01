@@ -50,6 +50,7 @@ export interface ParsedClass {
   startTime: string; // HH:mm
   endTime: string; // HH:mm
   studentCount: number;
+  rateOverride?: number; // e.g. "9/30EUR" → 30; overrides rate tier lookup
   unconfigured?: boolean; // true when studio has no rate config
   ambiguousStudentCount?: boolean;
 }

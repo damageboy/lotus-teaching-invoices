@@ -140,6 +140,13 @@ export function InvoiceDocument({ invoice, config }: Props) {
         <View style={s.total}>
           <Text>Total: € {invoice.totalAmount}</Text>
         </View>
+
+        {/* Tax note */}
+        <View style={s.footer}>
+          <Text style={s.footerValue}>
+            Als Kleinunternehmer im Sinne von § 19 Abs. 1 UStG wird keine Umsatzsteuer berechnet.
+          </Text>
+        </View>
       </Page>
     </Document>
   );

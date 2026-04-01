@@ -315,8 +315,7 @@ export function InvoicesTab({ classes, config, onSaveConfig }: Props) {
             ).length;
             const blocked = missingCount > 0;
             const prevRow = rows[i - 1];
-            const showSeparator =
-              prevRow && prevRow.monthKey >= currentMonth && row.monthKey < currentMonth;
+            const showSeparator = prevRow && prevRow.monthKey !== row.monthKey;
             return (
               <React.Fragment key={rowKey}>
                 {showSeparator && (

@@ -15,13 +15,26 @@ function formatTime(d: Date): string {
 
 function parseStudentCount(description: string | undefined): {
   count: number | null;
+  rateOverride: number | undefined;
   ambiguous: boolean;
 } {
-  if (!description) return { count: null, ambiguous: false };
+  if (!description) return { count: null, rateOverride: undefined, ambiguous: false };
+
+  // Check for rate override pattern: "N/PEUR" (e.g. "9/30EUR")
+  const overrideMatch = description.match(/^(\d+)\s*\/\s*(\d+(?:\.\d+)?)\s*EUR$/i);
+  if (overrideMatch) {
+    return {
+      count: parseInt(overrideMatch[1], 10),
+      rateOverride: parseFloat(overrideMatch[2]),
+      ambiguous: false,
+    };
+  }
+
   const matches = [...description.matchAll(/(\d+)/g)];
-  if (matches.length === 0) return { count: null, ambiguous: false };
-  if (matches.length === 1) return { count: parseInt(matches[0][1], 10), ambiguous: false };
-  return { count: null, ambiguous: true };
+  if (matches.length === 0) return { count: null, rateOverride: undefined, ambiguous: false };
+  if (matches.length === 1)
+    return { count: parseInt(matches[0][1], 10), rateOverride: undefined, ambiguous: false };
+  return { count: null, rateOverride: undefined, ambiguous: true };
 }
 
 export function extractClasses(
@@ -71,6 +84,9 @@ export function extractClasses(
         startTime: formatTime(event.start),
         endTime: formatTime(event.end),
         studentCount: studentCount ?? 0,
+        ...(studentCountResult.rateOverride !== undefined
+          ? { rateOverride: studentCountResult.rateOverride }
+          : {}),
         unconfigured: true,
         ambiguousStudentCount: studentCountResult.ambiguous,
       });
@@ -99,6 +115,9 @@ export function extractClasses(
       startTime: formatTime(event.start),
       endTime: formatTime(event.end),
       studentCount: studentCount ?? 0,
+      ...(studentCountResult.rateOverride !== undefined
+        ? { rateOverride: studentCountResult.rateOverride }
+        : {}),
       ambiguousStudentCount: studentCountResult.ambiguous,
     });
   }

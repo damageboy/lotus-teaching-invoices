@@ -34,7 +34,7 @@ export function generateInvoice(
       continue;
     }
 
-    const rate = findRate(studioConfig.rateTiers, cls.studentCount);
+    const rate = cls.rateOverride ?? findRate(studioConfig.rateTiers, cls.studentCount);
     lineItems.push({
       date: cls.date,
       startTime: cls.startTime,

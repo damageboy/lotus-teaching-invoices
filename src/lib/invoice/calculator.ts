@@ -25,7 +25,7 @@ export function computeStudioStats(
   let classCount = 0;
   for (const cls of classes) {
     if (cls.studentCount === 0) continue;
-    totalAmount += findRate(rateTiers, cls.studentCount);
+    totalAmount += cls.rateOverride ?? findRate(rateTiers, cls.studentCount);
     classCount++;
   }
   return {

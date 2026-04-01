@@ -132,4 +132,51 @@ describe('extractClasses', () => {
     const zenClasses = classes.filter((c) => c.studioName === 'Zen Yoga');
     expect(zenClasses.every((c) => c.location === undefined)).toBe(true);
   });
+
+  it('parses rate override from "N/PEUR" description', () => {
+    const events: CalendarEvent[] = [
+      {
+        uid: 'override-1',
+        summary: 'Zen Yoga / Vinyasa Flow',
+        description: '9/30EUR',
+        start: new Date('2026-01-03T09:00:00'),
+        end: new Date('2026-01-03T10:15:00'),
+      },
+    ];
+    const { classes, warnings } = extractClasses(events, knownStudios);
+    expect(classes).toHaveLength(1);
+    expect(classes[0].studentCount).toBe(9);
+    expect(classes[0].rateOverride).toBe(30);
+    expect(warnings).toHaveLength(0);
+  });
+
+  it('parses rate override with spaces and lowercase eur', () => {
+    const events: CalendarEvent[] = [
+      {
+        uid: 'override-2',
+        summary: 'Zen Yoga / Yin Yoga',
+        description: '5 / 45.50 eur',
+        start: new Date('2026-01-05T18:00:00'),
+        end: new Date('2026-01-05T19:15:00'),
+      },
+    ];
+    const { classes } = extractClasses(events, knownStudios);
+    expect(classes[0].studentCount).toBe(5);
+    expect(classes[0].rateOverride).toBe(45.5);
+  });
+
+  it('plain number description has no rateOverride', () => {
+    const events: CalendarEvent[] = [
+      {
+        uid: 'no-override',
+        summary: 'Zen Yoga / Hatha',
+        description: '7',
+        start: new Date('2026-01-06T09:00:00'),
+        end: new Date('2026-01-06T10:15:00'),
+      },
+    ];
+    const { classes } = extractClasses(events, knownStudios);
+    expect(classes[0].studentCount).toBe(7);
+    expect(classes[0].rateOverride).toBeUndefined();
+  });
 });
