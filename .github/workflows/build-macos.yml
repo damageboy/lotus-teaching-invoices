@@ -84,7 +84,8 @@ jobs:
           cd -
 
           # Sign the .tar.gz with the Tauri signing key
-          bunx tauri signer sign -k "$TAURI_SIGNING_PRIVATE_KEY" -p "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
+          # tauri signer reads TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD from env
+          bunx tauri signer sign \
             "$BUNDLE/macos/Lotus Teaching Invoices.app.tar.gz"
 
           # Copy signed artifacts
