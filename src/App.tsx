@@ -5,6 +5,7 @@ import { CalendarTab } from './components/CalendarTab';
 import { InvoicesTab } from './components/InvoicesTab';
 import { RatesTab } from './components/RatesTab';
 import { LogPanel } from './components/LogPanel';
+import { UpdateNotification } from './components/UpdateNotification';
 import { initRustLogListener, logInfo } from './lib/logger';
 import { nextUnusedColor } from './lib/studioColors';
 
@@ -99,6 +100,7 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen bg-white">
+      <UpdateNotification />
       {/* Tab bar */}
       <div className="flex border-b border-gray-200 bg-gray-50">
         {tabs.map((tab) => (
