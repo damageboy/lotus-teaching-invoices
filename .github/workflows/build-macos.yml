@@ -31,6 +31,21 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile --ignore-scripts
 
+      - name: Inject tag version into tauri.conf.json
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          node -e "
+            const fs = require('fs');
+            const p = 'src-tauri/tauri.conf.json';
+            const cfg = JSON.parse(fs.readFileSync(p, 'utf8'));
+            const parts = process.env.TAG.replace(/^v/, '').split('.');
+            while (parts.length < 3) parts.push('0');
+            cfg.version = parts.join('.');
+            fs.writeFileSync(p, JSON.stringify(cfg, null, 2) + '\n');
+          "
+        env:
+          TAG: ${{ github.ref_name }}
+
       - name: Build and release with tauri-action
         uses: tauri-apps/tauri-action@v0
         env:
