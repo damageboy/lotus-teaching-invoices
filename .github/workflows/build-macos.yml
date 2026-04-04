@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-and-release:
+  build:
     runs-on: macos-latest
     permissions:
       contents: write
@@ -46,25 +46,131 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
 
-      - name: Build with tauri-action (no release)
-        if: "!startsWith(github.ref, 'refs/tags/')"
-        uses: tauri-apps/tauri-action@v0
+      - name: Build Tauri app (universal binary)
+        run: bun run build -- --target universal-apple-darwin
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          args: --target universal-apple-darwin
-
-      - name: Build and release with tauri-action
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          CI: true
+
+      - name: Upload .app bundle
+        uses: actions/upload-artifact@v4
         with:
-          tagName: v__VERSION__
-          releaseName: 'v__VERSION__'
-          releaseBody: 'See the assets to download this version and install.'
-          releaseDraft: false
-          prerelease: false
-          args: --target universal-apple-darwin
+          name: Lotus-Teaching-Invoices-app
+          path: src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app
+          if-no-files-found: error
+
+      - name: Upload .dmg installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lotus-Teaching-Invoices-dmg
+          path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: macos-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Inject tag version into tauri.conf.json
+        run: |
+          node -e "
+            const fs = require('fs');
+            const p = 'src-tauri/tauri.conf.json';
+            const cfg = JSON.parse(fs.readFileSync(p, 'utf8'));
+            const parts = process.env.TAG.replace(/^v/, '').split('.');
+            while (parts.length < 3) parts.push('0');
+            cfg.version = parts.join('.');
+            fs.writeFileSync(p, JSON.stringify(cfg, null, 2) + '\n');
+          "
+        env:
+          TAG: ${{ github.ref_name }}
+
+      - name: Build Tauri app (universal binary)
+        run: bun run build -- --target universal-apple-darwin
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          CI: true
+
+      - name: Prepare release assets
+        run: |
+          BUNDLE=src-tauri/target/universal-apple-darwin/release/bundle
+          VERSION=$(jq -r .version src-tauri/tauri.conf.json)
+          ASSETS=release-assets
+          mkdir -p "$ASSETS"
+
+          # Copy DMG
+          cp "$BUNDLE"/dmg/*.dmg "$ASSETS/"
+
+          # Copy the signed .tar.gz and .sig (created by Tauri's build)
+          cp "$BUNDLE/macos/Lotus Teaching Invoices.app.tar.gz" "$ASSETS/"
+          cp "$BUNDLE/macos/Lotus Teaching Invoices.app.tar.gz.sig" "$ASSETS/"
+
+          # Read the signature
+          SIG=$(cat "$BUNDLE/macos/Lotus Teaching Invoices.app.tar.gz.sig")
+
+          # Build latest.json for the updater
+          cat > "$ASSETS/latest.json" <<EOF
+          {
+            "version": "$VERSION",
+            "notes": "See the assets to download this version and install.",
+            "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "platforms": {
+              "darwin-universal": {
+                "signature": "$SIG",
+                "url": "https://github.com/damageboy/lotus-teaching-invoices/releases/download/v${VERSION}/Lotus.Teaching.Invoices_universal.app.tar.gz"
+              },
+              "darwin-aarch64": {
+                "signature": "$SIG",
+                "url": "https://github.com/damageboy/lotus-teaching-invoices/releases/download/v${VERSION}/Lotus.Teaching.Invoices_universal.app.tar.gz"
+              },
+              "darwin-x86_64": {
+                "signature": "$SIG",
+                "url": "https://github.com/damageboy/lotus-teaching-invoices/releases/download/v${VERSION}/Lotus.Teaching.Invoices_universal.app.tar.gz"
+              }
+            }
+          }
+          EOF
+
+          # Rename tar.gz for consistent URL
+          mv "$ASSETS/Lotus Teaching Invoices.app.tar.gz" "$ASSETS/Lotus.Teaching.Invoices_universal.app.tar.gz"
+          mv "$ASSETS/Lotus Teaching Invoices.app.tar.gz.sig" "$ASSETS/Lotus.Teaching.Invoices_universal.app.tar.gz.sig"
+
+          echo "=== Release assets ==="
+          ls -la "$ASSETS/"
+          echo "=== latest.json ==="
+          cat "$ASSETS/latest.json"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            release-assets/*.dmg
+            release-assets/*.app.tar.gz
+            release-assets/*.app.tar.gz.sig
+            release-assets/latest.json
