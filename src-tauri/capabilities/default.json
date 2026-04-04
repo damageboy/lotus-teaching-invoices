@@ -23,6 +23,8 @@
     { "identifier": "fs:scope", "allow": [{ "path": "$HOME/**" }, { "path": "/tmp/**" }] },
     "dialog:default",
     "shell:allow-open",
-    "log:default"
+    "log:default",
+    "updater:default",
+    "process:default"
   ]
 }
