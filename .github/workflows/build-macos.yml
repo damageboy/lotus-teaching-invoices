@@ -78,7 +78,17 @@ jobs:
           # Copy DMG
           cp "$BUNDLE"/dmg/*.dmg "$ASSETS/"
 
-          # Sign the .tar.gz (tauri build already creates it)
+          # List bundle contents for debugging
+          echo "=== Bundle contents ==="
+          find "$BUNDLE" -type f | sort
+
+          # Create tar.gz if tauri didn't produce one
+          if [ ! -f "$BUNDLE/macos/Lotus Teaching Invoices.app.tar.gz" ]; then
+            echo "Creating .app.tar.gz..."
+            (cd "$BUNDLE/macos" && tar -czf "Lotus Teaching Invoices.app.tar.gz" "Lotus Teaching Invoices.app")
+          fi
+
+          # Sign the .tar.gz
           bunx tauri signer sign \
             "$BUNDLE/macos/Lotus Teaching Invoices.app.tar.gz"
 
