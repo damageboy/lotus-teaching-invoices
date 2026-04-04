@@ -81,7 +81,8 @@ jobs:
           # Sign the .tar.gz (tauri build already creates it)
           # Use node to write key to file (avoids all shell quoting issues)
           node -e "require('fs').writeFileSync('/tmp/tauri-signing.key', process.env.TAURI_SIGNING_PRIVATE_KEY)"
-          TAURI_SIGNING_PRIVATE_KEY= TAURI_SIGNING_PRIVATE_KEY_PATH=/tmp/tauri-signing.key \
+          env -u TAURI_SIGNING_PRIVATE_KEY \
+            TAURI_SIGNING_PRIVATE_KEY_PATH=/tmp/tauri-signing.key \
             bunx tauri signer sign \
             --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
             "$BUNDLE/macos/Lotus Teaching Invoices.app.tar.gz"
