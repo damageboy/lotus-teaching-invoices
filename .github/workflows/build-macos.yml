@@ -87,8 +87,8 @@ jobs:
           # Write key to file to avoid shell/env interpolation issues with -k
           printenv TAURI_SIGNING_PRIVATE_KEY > /tmp/tauri-signing.key
           bunx tauri signer sign \
-            -f /tmp/tauri-signing.key \
-            -p "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
+            --private-key-path /tmp/tauri-signing.key \
+            --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
             "$BUNDLE/macos/Lotus Teaching Invoices.app.tar.gz"
           rm -f /tmp/tauri-signing.key
 
