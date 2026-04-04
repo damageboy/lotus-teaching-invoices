@@ -86,6 +86,7 @@ jobs:
           # Sign the .tar.gz
           # Write key to file to avoid shell/env interpolation issues with -k
           printenv TAURI_SIGNING_PRIVATE_KEY > /tmp/tauri-signing.key
+          unset TAURI_SIGNING_PRIVATE_KEY
           bunx tauri signer sign \
             --private-key-path /tmp/tauri-signing.key \
             --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
