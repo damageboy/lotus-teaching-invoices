@@ -84,20 +84,14 @@ jobs:
           # Copy DMG
           cp "$BUNDLE"/dmg/*.dmg "$ASSETS/"
 
-          # Tauri build should have produced both .tar.gz and .sig
+          # Create .tar.gz from the .app bundle
           TAR="$BUNDLE/macos/Lotus Teaching Invoices.app.tar.gz"
+          (cd "$BUNDLE/macos" && tar -czf "Lotus Teaching Invoices.app.tar.gz" "Lotus Teaching Invoices.app")
+
+          # Sign it
+          bunx tauri signer sign "$TAR"
+
           SIG_FILE="$TAR.sig"
-
-          if [ ! -f "$TAR" ]; then
-            echo "ERROR: tauri build did not produce .app.tar.gz"
-            exit 1
-          fi
-
-          if [ ! -f "$SIG_FILE" ]; then
-            echo "ERROR: tauri build did not produce .app.tar.gz.sig"
-            echo "Check that TAURI_SIGNING_PRIVATE_KEY secret is set correctly."
-            exit 1
-          fi
 
           cp "$TAR" "$ASSETS/Lotus.Teaching.Invoices_universal.app.tar.gz"
           cp "$SIG_FILE" "$ASSETS/Lotus.Teaching.Invoices_universal.app.tar.gz.sig"
