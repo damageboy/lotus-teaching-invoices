@@ -7,8 +7,10 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-and-release:
     runs-on: macos-latest
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -29,71 +31,16 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile --ignore-scripts
 
-      - name: Inject tag version into tauri.conf.json
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          node -e "
-            const fs = require('fs');
-            const p = 'src-tauri/tauri.conf.json';
-            const cfg = JSON.parse(fs.readFileSync(p, 'utf8'));
-            const parts = process.env.TAG.replace(/^v/, '').split('.');
-            while (parts.length < 3) parts.push('0');
-            cfg.version = parts.join('.');
-            fs.writeFileSync(p, JSON.stringify(cfg, null, 2) + '\n');
-          "
+      - name: Build and release with tauri-action
+        uses: tauri-apps/tauri-action@v0
         env:
-          TAG: ${{ github.ref_name }}
-
-      - name: Build Tauri app (universal binary)
-        run: bun run build -- --target universal-apple-darwin
-        env:
-          # Disable code signing for CI builds.
-          # To enable signing, add Apple certificate secrets and set:
-          #   APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD,
-          #   APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID
-          TAURI_SIGNING_PRIVATE_KEY: ''
-          CI: true
-
-      - name: Upload .app bundle
-        uses: actions/upload-artifact@v4
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          name: Lotus-Teaching-Invoices-app
-          path: src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app
-          if-no-files-found: error
-
-      - name: Upload .dmg installer
-        uses: actions/upload-artifact@v4
-        with:
-          name: Lotus-Teaching-Invoices-dmg
-          path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
-          if-no-files-found: error
-
-  release:
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-      - name: Download .app bundle
-        uses: actions/download-artifact@v4
-        with:
-          name: Lotus-Teaching-Invoices-app
-          path: release-assets/app
-
-      - name: Download .dmg installer
-        uses: actions/download-artifact@v4
-        with:
-          name: Lotus-Teaching-Invoices-dmg
-          path: release-assets/dmg
-
-      - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          name: ${{ github.ref_name }}
-          tag_name: ${{ github.ref_name }}
-          generate_release_notes: true
-          files: |
-            release-assets/dmg/*.dmg
-            release-assets/app/*.app
+          tagName: v__VERSION__
+          releaseName: 'v__VERSION__'
+          releaseBody: 'See the assets to download this version and install.'
+          releaseDraft: false
+          prerelease: false
+          args: --target universal-apple-darwin
