@@ -79,13 +79,7 @@ jobs:
           cp "$BUNDLE"/dmg/*.dmg "$ASSETS/"
 
           # Sign the .tar.gz (tauri build already creates it)
-          # Use the Rust tauri-cli binary directly (bunx wrapper corrupts env vars)
-          SIGNER=$(find node_modules -name 'tauri-cli-*' -type f -perm +111 2>/dev/null | head -1)
-          if [ -z "$SIGNER" ]; then
-            SIGNER=$(find node_modules/.bin -name 'tauri' -type f 2>/dev/null | head -1)
-          fi
-          echo "Using signer: $SIGNER"
-          "$SIGNER" signer sign \
+          bunx tauri signer sign \
             "$BUNDLE/macos/Lotus Teaching Invoices.app.tar.gz"
 
           # Copy signed artifacts
