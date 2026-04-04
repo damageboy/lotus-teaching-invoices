@@ -67,54 +67,8 @@ jobs:
           path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
           if-no-files-found: error
 
-  release:
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/')
-    runs-on: macos-latest
-    permissions:
-      contents: write
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up bun
-        uses: oven-sh/setup-bun@v2
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile --ignore-scripts
-
-      - name: Inject tag version into tauri.conf.json
-        run: |
-          node -e "
-            const fs = require('fs');
-            const p = 'src-tauri/tauri.conf.json';
-            const cfg = JSON.parse(fs.readFileSync(p, 'utf8'));
-            const parts = process.env.TAG.replace(/^v/, '').split('.');
-            while (parts.length < 3) parts.push('0');
-            cfg.version = parts.join('.');
-            fs.writeFileSync(p, JSON.stringify(cfg, null, 2) + '\n');
-          "
-        env:
-          TAG: ${{ github.ref_name }}
-
-      - name: Build Tauri app (universal binary)
-        run: bun run build -- --target universal-apple-darwin
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          CI: true
-
-      - name: Prepare release assets
+      - name: Prepare and publish release
+        if: startsWith(github.ref, 'refs/tags/')
         run: |
           BUNDLE=src-tauri/target/universal-apple-darwin/release/bundle
           VERSION=$(jq -r .version src-tauri/tauri.conf.json)
@@ -124,9 +78,18 @@ jobs:
           # Copy DMG
           cp "$BUNDLE"/dmg/*.dmg "$ASSETS/"
 
-          # Copy the signed .tar.gz and .sig (created by Tauri's build)
-          cp "$BUNDLE/macos/Lotus Teaching Invoices.app.tar.gz" "$ASSETS/"
-          cp "$BUNDLE/macos/Lotus Teaching Invoices.app.tar.gz.sig" "$ASSETS/"
+          # Create the .tar.gz from the .app bundle (what the updater needs)
+          cd "$BUNDLE/macos"
+          tar -czf "Lotus Teaching Invoices.app.tar.gz" "Lotus Teaching Invoices.app"
+          cd -
+
+          # Sign the .tar.gz with the Tauri signing key
+          bunx tauri signer sign -k "$TAURI_SIGNING_PRIVATE_KEY" -p "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
+            "$BUNDLE/macos/Lotus Teaching Invoices.app.tar.gz"
+
+          # Copy signed artifacts
+          cp "$BUNDLE/macos/Lotus Teaching Invoices.app.tar.gz" "$ASSETS/Lotus.Teaching.Invoices_universal.app.tar.gz"
+          cp "$BUNDLE/macos/Lotus Teaching Invoices.app.tar.gz.sig" "$ASSETS/Lotus.Teaching.Invoices_universal.app.tar.gz.sig"
 
           # Read the signature
           SIG=$(cat "$BUNDLE/macos/Lotus Teaching Invoices.app.tar.gz.sig")
@@ -154,16 +117,16 @@ jobs:
           }
           EOF
 
-          # Rename tar.gz for consistent URL
-          mv "$ASSETS/Lotus Teaching Invoices.app.tar.gz" "$ASSETS/Lotus.Teaching.Invoices_universal.app.tar.gz"
-          mv "$ASSETS/Lotus Teaching Invoices.app.tar.gz.sig" "$ASSETS/Lotus.Teaching.Invoices_universal.app.tar.gz.sig"
-
           echo "=== Release assets ==="
           ls -la "$ASSETS/"
           echo "=== latest.json ==="
           cat "$ASSETS/latest.json"
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ github.ref_name }}
