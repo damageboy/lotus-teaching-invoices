@@ -176,27 +176,33 @@ export function CalendarTab({ classes, studios = {}, onAddStudio }: Props) {
       <CalendarGrid year={year} month={month} classes={monthClasses} colorMap={colorMap} />
 
       {studioStats.length > 0 && (
-        <div className="flex gap-2 flex-wrap items-center pt-1">
-          {studioStats.map(({ key, stats }) => {
-            const c = studioColor(key, colorMap[key]);
-            return (
-              <span
-                key={key}
-                className="text-xs px-3 py-1 rounded border"
-                style={{
-                  backgroundColor: c.backgroundColor,
-                  color: c.color,
-                  borderColor: c.borderColor,
-                }}
-              >
-                {key}
-                <span className="mx-1.5 opacity-40">·</span>€{stats.totalAmount.toFixed(2)}
-                <span className="mx-1.5 opacity-40">·</span>
-                avg €{stats.avgPerClass.toFixed(2)}
-              </span>
-            );
-          })}
-        </div>
+        <>
+          <div className="flex gap-2 flex-wrap items-center pt-1">
+            {studioStats.map(({ key, stats }) => {
+              const c = studioColor(key, colorMap[key]);
+              return (
+                <span
+                  key={key}
+                  className="text-sm px-3 py-1 rounded border"
+                  style={{
+                    backgroundColor: c.backgroundColor,
+                    color: c.color,
+                    borderColor: c.borderColor,
+                  }}
+                >
+                  {key}
+                  <span className="mx-1.5 opacity-40">·</span>€{stats.totalAmount.toFixed(2)}
+                  <span className="mx-1.5 opacity-40">·</span>
+                  avg €{stats.avgPerClass.toFixed(2)}
+                </span>
+              );
+            })}
+          </div>
+          <div className="text-base font-semibold text-gray-700">
+            Total for {MONTH_NAMES[month]}: €
+            {studioStats.reduce((sum, { stats }) => sum + stats.totalAmount, 0).toFixed(2)}
+          </div>
+        </>
       )}
     </div>
   );
