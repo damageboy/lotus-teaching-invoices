@@ -51,6 +51,21 @@ describe('generateInvoice', () => {
     expect(invoice.generatedAt).toBeDefined();
   });
 
+  it('records the current local date as the invoice issue date', () => {
+    const { invoice } = generateInvoice(
+      'Zen Yoga',
+      classes,
+      studioConfig,
+      {
+        from: '2026-01-01',
+        to: '2026-01-31',
+      },
+      { now: new Date('2026-05-26T12:34:56.000Z') }
+    );
+
+    expect(invoice.issueDate).toBe('2026-05-26');
+  });
+
   it('applies correct rates based on student count', () => {
     const { invoice } = generateInvoice('Zen Yoga', classes, studioConfig, {
       from: '2026-01-01',

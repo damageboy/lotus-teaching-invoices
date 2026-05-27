@@ -1,4 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { message } from '@tauri-apps/plugin-dialog';
+import { exit } from '@tauri-apps/plugin-process';
 import { useConfig } from './hooks/useConfig';
 import { useCalendarData } from './hooks/useCalendarData';
 import { CalendarTab } from './components/CalendarTab';
@@ -22,6 +24,7 @@ export default function App() {
   } = useConfig();
   const { classes, isLoading: calLoading, error: calError, refresh } = useCalendarData(config);
   const [activeTab, setActiveTab] = useState<Tab>('calendar');
+  const fatalConfigHandled = useRef(false);
 
   function handleAddStudio(name: string) {
     const usedHexes = Object.values(config.studios)
@@ -85,11 +88,38 @@ export default function App() {
   // refresh is safe to include: it only changes when calendarId/studioKeys change, and calling
   // it doesn't mutate either, so there is no loop.
   useEffect(() => {
-    if (!configLoading && config.calendarId) refresh();
-  }, [configLoading, config.calendarId, refresh]);
+    if (!configLoading && !configError && config.calendarId) refresh();
+  }, [configLoading, configError, config.calendarId, refresh]);
+
+  useEffect(() => {
+    if (configLoading || !configError || fatalConfigHandled.current) return;
+    fatalConfigHandled.current = true;
+
+    async function showFatalConfigError() {
+      try {
+        await message(configError ?? 'The configuration file is invalid.', {
+          title: 'Invalid configuration',
+          kind: 'error',
+          buttons: { ok: 'Quit' },
+        });
+      } finally {
+        await exit(1);
+      }
+    }
+
+    void showFatalConfigError();
+  }, [configLoading, configError]);
 
   if (configLoading) {
     return <div className="flex items-center justify-center h-screen text-gray-500">Loading…</div>;
+  }
+
+  if (configError) {
+    return (
+      <div className="flex items-center justify-center h-screen text-red-600">
+        Invalid configuration
+      </div>
+    );
   }
 
   const tabs: { id: Tab; label: string }[] = [

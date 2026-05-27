@@ -4,6 +4,7 @@ import { ColorPickerPopup } from '../ColorPickerPopup';
 import { effectiveHex, nextUnusedColor } from '../../lib/studioColors';
 import { APP_VERSION, APP_IS_OFFICIAL } from '../../lib/version';
 import { listCalendars } from '../../lib/calendar/calendar-api';
+import { getRateTierValidation } from '../../lib/config/rateTiers';
 
 interface Props {
   config: AppConfig;
@@ -45,6 +46,14 @@ function StudioCard({
   const [isOpen, setIsOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [emailError, setEmailError] = useState<string | null>(null);
+  const tierValidation = getRateTierValidation(studio.rateTiers);
+
+  function inputClass(hasError: boolean, isLocked = false): string {
+    return `w-full border rounded px-1.5 py-0.5 ${
+      hasError ? 'border-red-400 bg-red-50' : 'border-gray-200'
+    } ${isLocked ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''}`;
+  }
+
   useEffect(() => {
     setDraftName(studioName);
   }, [studioName]);
@@ -158,47 +167,69 @@ function StudioCard({
               </tr>
             </thead>
             <tbody>
-              {studio.rateTiers.map((tier, i) => (
-                <tr key={i}>
-                  <td className="pr-2 py-0.5">
-                    <input
-                      type="number"
-                      min={1}
-                      className="w-full border border-gray-200 rounded px-1.5 py-0.5"
-                      value={tier.minStudents}
-                      onChange={(e) => onUpdateTier(studioName, i, 'minStudents', e.target.value)}
-                    />
-                  </td>
-                  <td className="pr-2 py-0.5">
-                    <input
-                      type="number"
-                      placeholder="∞"
-                      className="w-full border border-gray-200 rounded px-1.5 py-0.5"
-                      value={tier.maxStudents ?? ''}
-                      onChange={(e) => onUpdateTier(studioName, i, 'maxStudents', e.target.value)}
-                    />
-                  </td>
-                  <td className="pr-2 py-0.5">
-                    <input
-                      type="number"
-                      min={0}
-                      className="w-full border border-gray-200 rounded px-1.5 py-0.5"
-                      value={tier.rate}
-                      onChange={(e) => onUpdateTier(studioName, i, 'rate', e.target.value)}
-                    />
-                  </td>
-                  <td>
-                    <button
-                      onClick={() => onRemoveTier(studioName, i)}
-                      className="text-gray-300 hover:text-red-400"
-                    >
-                      ✕
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {studio.rateTiers.map((tier, i) => {
+                const errors = tierValidation.tierErrors[i] ?? {};
+                const isFirst = i === 0;
+                const isLast = i === studio.rateTiers.length - 1;
+                return (
+                  <tr key={i}>
+                    <td className="pr-2 py-0.5">
+                      <input
+                        type="number"
+                        min={1}
+                        className={inputClass(Boolean(errors.minStudents), isFirst)}
+                        title={errors.minStudents}
+                        value={isFirst ? 1 : Number.isNaN(tier.minStudents) ? '' : tier.minStudents}
+                        disabled={isFirst}
+                        onChange={(e) => onUpdateTier(studioName, i, 'minStudents', e.target.value)}
+                      />
+                    </td>
+                    <td className="pr-2 py-0.5">
+                      <input
+                        type="number"
+                        placeholder="∞"
+                        className={inputClass(Boolean(errors.maxStudents), isLast)}
+                        title={errors.maxStudents}
+                        value={
+                          isLast
+                            ? ''
+                            : tier.maxStudents === null || Number.isNaN(tier.maxStudents)
+                              ? ''
+                              : tier.maxStudents
+                        }
+                        disabled={isLast}
+                        onChange={(e) => onUpdateTier(studioName, i, 'maxStudents', e.target.value)}
+                      />
+                    </td>
+                    <td className="pr-2 py-0.5">
+                      <input
+                        type="number"
+                        min={0}
+                        className={inputClass(Boolean(errors.rate))}
+                        title={errors.rate}
+                        value={Number.isNaN(tier.rate) ? '' : tier.rate}
+                        onChange={(e) => onUpdateTier(studioName, i, 'rate', e.target.value)}
+                      />
+                    </td>
+                    <td>
+                      <button
+                        onClick={() => onRemoveTier(studioName, i)}
+                        disabled={studio.rateTiers.length === 1}
+                        className="text-gray-300 hover:text-red-400 disabled:opacity-30 disabled:hover:text-gray-300"
+                      >
+                        ✕
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
+          {!tierValidation.isValid && (
+            <div className="text-xs text-red-500">
+              Rate tiers must start at 1, touch without gaps, and end with no maximum.
+            </div>
+          )}
           <button
             onClick={() => onAddTier(studioName)}
             className="text-xs text-indigo-500 hover:text-indigo-700 self-start"
@@ -282,8 +313,17 @@ export function RatesTab({ config, isDirty, saveError, onUpdate, onSave }: Props
     const tiers = [...config.studios[studioName].rateTiers];
     tiers[index] = {
       ...tiers[index],
-      [field]: field === 'maxStudents' ? (raw === '' ? null : Number(raw)) : Number(raw),
+      [field]:
+        field === 'maxStudents'
+          ? raw === ''
+            ? null
+            : Number(raw)
+          : raw === ''
+            ? Number.NaN
+            : Number(raw),
     };
+    if (index === 0) tiers[index].minStudents = 1;
+    if (index === tiers.length - 1) tiers[index].maxStudents = null;
     onUpdate({
       ...config,
       studios: {
@@ -294,10 +334,27 @@ export function RatesTab({ config, isDirty, saveError, onUpdate, onSave }: Props
   }
 
   function addTier(studioName: string) {
-    const tiers = [
-      ...config.studios[studioName].rateTiers,
-      { minStudents: 1, maxStudents: null, rate: 50 },
-    ];
+    const existing = config.studios[studioName].rateTiers;
+    const tiers =
+      existing.length === 0
+        ? [{ minStudents: 1, maxStudents: null, rate: 50 }]
+        : existing.map((tier, i) =>
+            i === existing.length - 1
+              ? {
+                  ...tier,
+                  maxStudents: Math.max(tier.minStudents, tier.maxStudents ?? tier.minStudents),
+                }
+              : tier
+          );
+    const previous = tiers[tiers.length - 1];
+    tiers.push({
+      minStudents:
+        previous.maxStudents === null || Number.isNaN(previous.maxStudents)
+          ? previous.minStudents + 1
+          : previous.maxStudents + 1,
+      maxStudents: null,
+      rate: previous.rate,
+    });
     onUpdate({
       ...config,
       studios: {
@@ -309,6 +366,8 @@ export function RatesTab({ config, isDirty, saveError, onUpdate, onSave }: Props
 
   function removeTier(studioName: string, index: number) {
     const tiers = config.studios[studioName].rateTiers.filter((_, i) => i !== index);
+    if (tiers[0]) tiers[0].minStudents = 1;
+    if (tiers[tiers.length - 1]) tiers[tiers.length - 1].maxStudents = null;
     onUpdate({
       ...config,
       studios: {

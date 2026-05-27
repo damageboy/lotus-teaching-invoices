@@ -75,6 +75,7 @@ export interface Invoice {
   studioName: string;
   invoicePeriod: InvoicePeriod;
   generatedAt: string; // ISO 8601
+  issueDate: string; // YYYY-MM-DD local date shown on the invoice
   classes: InvoiceLineItem[];
   totalClasses: number;
   totalAmount: number;

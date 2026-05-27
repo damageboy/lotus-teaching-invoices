@@ -88,6 +88,30 @@ describe('computeStudioStats', () => {
     expect(stats.classCount).toBe(3);
   });
 
+  it('skips classes with no matching rate tier', () => {
+    const stats = computeStudioStats(
+      [
+        ...classFixtures,
+        {
+          studioName: 'Zen Yoga',
+          classType: 'Prenatal',
+          date: '2026-01-12',
+          startTime: '09:00',
+          endTime: '10:15',
+          studentCount: 1,
+        },
+      ],
+      [
+        { minStudents: 2, maxStudents: 5, rate: 80 },
+        { minStudents: 6, maxStudents: 10, rate: 100 },
+        { minStudents: 11, maxStudents: null, rate: 120 },
+      ]
+    );
+
+    expect(stats.totalAmount).toBe(300);
+    expect(stats.classCount).toBe(3);
+  });
+
   it('returns zeros for empty input', () => {
     const stats = computeStudioStats([], tiers);
     expect(stats.totalAmount).toBe(0);

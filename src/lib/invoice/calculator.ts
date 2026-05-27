@@ -25,7 +25,12 @@ export function computeStudioStats(
   let classCount = 0;
   for (const cls of classes) {
     if (cls.studentCount === 0) continue;
-    totalAmount += cls.rateOverride ?? findRate(rateTiers, cls.studentCount);
+    try {
+      totalAmount += cls.rateOverride ?? findRate(rateTiers, cls.studentCount);
+    } catch (e) {
+      if (e instanceof AppError && e.code === 'NO_MATCHING_TIER') continue;
+      throw e;
+    }
     classCount++;
   }
   return {

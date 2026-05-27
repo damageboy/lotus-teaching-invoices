@@ -39,6 +39,25 @@ describe('validateConfig', () => {
     expect(cfg.calendarId).toBeUndefined();
   });
 
+  it('migrates legacy Google Calendar ICS URLs to calendarId', () => {
+    const cfg = validateConfig({
+      calendarUrl:
+        'https://calendar.google.com/calendar/ical/example%40group.calendar.google.com/private-secret/basic.ics',
+      studios: { Foo: { rateTiers: [{ minStudents: 1, maxStudents: null, rate: 80 }] } },
+    });
+    expect(cfg.calendarId).toBe('example@group.calendar.google.com');
+  });
+
+  it('keeps explicit calendarId when legacy calendarUrl is also present', () => {
+    const cfg = validateConfig({
+      calendarId: 'selected@group.calendar.google.com',
+      calendarUrl:
+        'https://calendar.google.com/calendar/ical/legacy%40group.calendar.google.com/private-secret/basic.ics',
+      studios: { Foo: { rateTiers: [{ minStudents: 1, maxStudents: null, rate: 80 }] } },
+    });
+    expect(cfg.calendarId).toBe('selected@group.calendar.google.com');
+  });
+
   it('rejects empty studios', () => {
     expect(() => validateConfig({ studios: {} })).toThrow('at least one studio');
   });
@@ -58,6 +77,33 @@ describe('validateRateTiers (via validateConfig)', () => {
         },
       })
     ).not.toThrow();
+  });
+
+  it('accepts decimal rates', () => {
+    const cfg = validateConfig({
+      studios: {
+        dana: {
+          rateTiers: [{ minStudents: 1, maxStudents: null, rate: 32.5 }],
+        },
+      },
+    });
+
+    expect(cfg.studios.dana.rateTiers[0].rate).toBe(32.5);
+  });
+
+  it('rejects first tier starting above 1', () => {
+    expect(() =>
+      validateConfig({
+        studios: {
+          Test: {
+            rateTiers: [
+              { minStudents: 2, maxStudents: 5, rate: 80 },
+              { minStudents: 6, maxStudents: null, rate: 100 },
+            ],
+          },
+        },
+      })
+    ).toThrow('first tier must start at 1 student');
   });
 
   it('rejects empty tiers', () => {

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { AppConfig, RateTier, TeacherInfo, AppError } from '../types.js';
+import { getRateTierValidation } from './rateTiers.js';
 
 const RateTierSchema = z.object({
   minStudents: z
@@ -16,44 +17,39 @@ const RateTierSchema = z.object({
 });
 
 const validateContiguity = (tiers: RateTier[], ctx: z.RefinementCtx) => {
-  const sorted = [...tiers].sort((a, b) => a.minStudents - b.minStudents);
-
-  for (let i = 0; i < sorted.length; i++) {
-    const tier = sorted[i];
-
-    if (tier.maxStudents !== null && tier.maxStudents < tier.minStudents) {
+  const validation = getRateTierValidation(tiers);
+  for (let i = 0; i < validation.tierErrors.length; i++) {
+    const errors = validation.tierErrors[i];
+    if (errors.minStudents) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: `tier maxStudents (${tier.maxStudents}) < minStudents (${tier.minStudents})`,
+        path: [i, 'minStudents'],
+        message:
+          errors.minStudents === 'First tier must start at 1 student'
+            ? 'first tier must start at 1 student'
+            : errors.minStudents.startsWith('Must be ') && tiers[i - 1]?.maxStudents !== undefined
+              ? `gap or overlap between tiers at ${tiers[i - 1].maxStudents} → ${tiers[i].minStudents}`
+              : errors.minStudents,
       });
-      return;
     }
-
-    if (i > 0) {
-      const prev = sorted[i - 1];
-      if (prev.maxStudents === null) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'unbounded tier (maxStudents: null) must be the last tier',
-        });
-        return;
-      }
-      if (tier.minStudents !== prev.maxStudents + 1) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `gap or overlap between tiers at ${prev.maxStudents} → ${tier.minStudents}`,
-        });
-        return;
-      }
-    }
-
-    // Only fail if it's the absolute LAST tier and it is bounded.
-    if (i === sorted.length - 1 && tier.maxStudents !== null) {
+    if (errors.maxStudents) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'last tier must be unbounded (maxStudents: null)',
+        path: [i, 'maxStudents'],
+        message:
+          errors.maxStudents === 'Last tier must be unbounded'
+            ? 'last tier must be unbounded (maxStudents: null)'
+            : errors.maxStudents === 'Only the last tier can have no maximum'
+              ? 'unbounded tier (maxStudents: null) must be the last tier'
+              : errors.maxStudents,
       });
-      return;
+    }
+    if (errors.rate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [i, 'rate'],
+        message: errors.rate,
+      });
     }
   }
 };
@@ -98,6 +94,7 @@ const ConfigSchema = z.object({
   teacher: TeacherInfoSchema,
   calendarId: z.string().optional(),
   calendarName: z.string().optional(),
+  calendarUrl: z.string().optional(),
   outputDir: z.string().default(''),
   lastInvoice: z
     .string()
@@ -112,6 +109,24 @@ const ConfigSchema = z.object({
       'Config must have at least one studio'
     ),
 });
+
+function extractCalendarIdFromLegacyUrl(calendarUrl: string | undefined): string | undefined {
+  if (!calendarUrl) return undefined;
+
+  try {
+    const url = new URL(calendarUrl);
+    if (url.hostname !== 'calendar.google.com') return undefined;
+
+    const parts = url.pathname.split('/').filter(Boolean);
+    const icalIndex = parts.indexOf('ical');
+    const encodedCalendarId = parts[icalIndex + 1];
+    if (icalIndex === -1 || !encodedCalendarId) return undefined;
+
+    return decodeURIComponent(encodedCalendarId);
+  } catch {
+    return undefined;
+  }
+}
 
 export function validateConfig(raw: unknown): AppConfig {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
@@ -147,7 +162,7 @@ export function validateConfig(raw: unknown): AppConfig {
   const configData = result.data;
   const config: AppConfig = {
     teacher: configData.teacher as TeacherInfo,
-    calendarId: configData.calendarId,
+    calendarId: configData.calendarId ?? extractCalendarIdFromLegacyUrl(configData.calendarUrl),
     calendarName: configData.calendarName,
     outputDir: configData.outputDir,
     lastInvoice: configData.lastInvoice,

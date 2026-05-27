@@ -13,14 +13,27 @@ export interface GenerateResult {
   warnings: ParseWarning[];
 }
 
+interface GenerateOptions {
+  now?: Date;
+}
+
+function formatLocalDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export function generateInvoice(
   studioName: string,
   classes: ParsedClass[],
   studioConfig: StudioConfig,
-  period: InvoicePeriod
+  period: InvoicePeriod,
+  options: GenerateOptions = {}
 ): GenerateResult {
   const lineItems: InvoiceLineItem[] = [];
   const warnings: ParseWarning[] = [];
+  const generatedAt = options.now ?? new Date();
 
   for (const cls of classes) {
     if (cls.studentCount === 0) {
@@ -53,7 +66,8 @@ export function generateInvoice(
     invoice: {
       studioName,
       invoicePeriod: period,
-      generatedAt: new Date().toISOString(),
+      generatedAt: generatedAt.toISOString(),
+      issueDate: formatLocalDate(generatedAt),
       classes: lineItems,
       totalClasses: lineItems.length,
       totalAmount,

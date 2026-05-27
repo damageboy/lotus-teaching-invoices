@@ -81,7 +81,7 @@ export function useConfig() {
 
     logInfo(`Saving config to ${CONFIG_FILE}`);
     try {
-      const toSave: AppConfig = JSON.parse(JSON.stringify(raw));
+      const toSave = validateConfig(raw);
       const configPath = await invoke<string | null>('get_config_path');
       if (configPath) {
         await writeTextFile(configPath, stringifyYaml(toSave));

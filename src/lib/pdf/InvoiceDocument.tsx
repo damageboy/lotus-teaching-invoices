@@ -5,6 +5,7 @@ const s = StyleSheet.create({
   page: { padding: 48, fontFamily: 'Helvetica', fontSize: 10, color: '#111' },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 32 },
   addressBlock: { flex: 1 },
+  headerMeta: { minWidth: 120, alignItems: 'flex-end' },
   title: { fontSize: 18, fontWeight: 'bold', marginBottom: 4 },
   addressText: { fontSize: 9, color: '#444', lineHeight: 1.5 },
   section: { marginBottom: 20 },
@@ -49,6 +50,7 @@ export function InvoiceDocument({ invoice, config }: Props) {
   const studio = config.studios[invoice.studioName];
   const studioDisplay = studio?.fullName || invoice.studioName;
   const studioAddress = studio?.address || '';
+  const issueDate = invoice.issueDate || invoice.generatedAt.slice(0, 10);
 
   return (
     <Document>
@@ -91,6 +93,10 @@ export function InvoiceDocument({ invoice, config }: Props) {
               </Text>
               {studioAddress ? <Text style={s.addressText}>{studioAddress}</Text> : null}
             </View>
+          </View>
+          <View style={s.headerMeta}>
+            <Text style={s.label}>Invoice date</Text>
+            <Text style={s.value}>{issueDate}</Text>
           </View>
         </View>
 
