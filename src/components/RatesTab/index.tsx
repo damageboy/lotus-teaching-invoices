@@ -11,7 +11,21 @@ interface Props {
   isDirty: boolean;
   saveError: string | null;
   onUpdate: (c: AppConfig) => void;
-  onSave: () => Promise<void>;
+  onSave: (next?: AppConfig) => Promise<void>;
+}
+
+export async function selectCalendar(
+  config: AppConfig,
+  id: string,
+  name: string,
+  onUpdate: (c: AppConfig) => void,
+  onSave: (next?: AppConfig) => Promise<void>,
+  closeCalendarList: (next: { id: string; summary: string }[] | null) => void
+): Promise<void> {
+  const next = { ...config, calendarId: id, calendarName: name };
+  onUpdate(next);
+  await onSave(next);
+  closeCalendarList(null);
 }
 
 // Isolated card so studio name edits don't unmount the card on each keystroke
@@ -260,9 +274,8 @@ export function RatesTab({ config, isDirty, saveError, onUpdate, onSave }: Props
     }
   }
 
-  function handleSelectCalendar(id: string, name: string) {
-    onUpdate({ ...config, calendarId: id, calendarName: name });
-    setCalendars(null);
+  async function handleSelectCalendar(id: string, name: string) {
+    await selectCalendar(config, id, name, onUpdate, onSave, setCalendars);
   }
 
   function updateTeacher(key: keyof Omit<TeacherInfo, 'bankDetails'>, value: string) {
