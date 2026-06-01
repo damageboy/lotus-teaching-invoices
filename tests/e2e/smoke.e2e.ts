@@ -8,9 +8,10 @@ describe('Boot', () => {
     await browser.pause(2000);
   });
 
-  it('renders the three tab buttons', async () => {
+  it('renders the tab buttons', async () => {
     await expect($('button=Calendar')).toBeDisplayed();
     await expect($('button=Invoices')).toBeDisplayed();
+    await expect($('button=Income')).toBeDisplayed();
     await expect($('button=Rates & Config')).toBeDisplayed();
   });
 });

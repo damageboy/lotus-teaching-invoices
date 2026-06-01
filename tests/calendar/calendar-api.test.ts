@@ -55,6 +55,7 @@ describe('mapEventsResponse', () => {
       description: '12',
       start: new Date('2026-03-10T09:00:00+01:00'),
       end: new Date('2026-03-10T10:30:00+01:00'),
+      status: 'confirmed',
     });
     expect(result[1]).toEqual({
       uid: 'evt-2',
@@ -62,6 +63,7 @@ describe('mapEventsResponse', () => {
       description: '8',
       start: new Date('2026-03-11T18:00:00+01:00'),
       end: new Date('2026-03-11T19:00:00+01:00'),
+      status: 'confirmed',
     });
   });
 
@@ -113,7 +115,7 @@ describe('mapEventsResponse', () => {
     expect(mapEventsResponse({})).toEqual([]);
   });
 
-  it('skips cancelled events', () => {
+  it('keeps cancelled timed events for sync deletion handling', () => {
     const data = {
       items: [
         {
@@ -135,7 +137,35 @@ describe('mapEventsResponse', () => {
       ],
     };
     const result = mapEventsResponse(data);
-    expect(result).toHaveLength(1);
-    expect(result[0].uid).toBe('active-1');
+    expect(result.map((event) => event.uid)).toEqual(['cancelled-1', 'active-1']);
+    expect(result[0].status).toBe('cancelled');
+  });
+
+  it('preserves status and updated timestamp for sync handling', () => {
+    const data = {
+      items: [
+        {
+          id: 'cancelled-with-time',
+          summary: 'Studio A / Cancelled Class',
+          description: '10',
+          start: { dateTime: '2026-03-10T09:00:00+01:00' },
+          end: { dateTime: '2026-03-10T10:00:00+01:00' },
+          status: 'cancelled',
+          updated: '2026-03-09T20:00:00.000Z',
+        },
+      ],
+    };
+
+    expect(mapEventsResponse(data)).toEqual([
+      {
+        uid: 'cancelled-with-time',
+        summary: 'Studio A / Cancelled Class',
+        description: '10',
+        start: new Date('2026-03-10T09:00:00+01:00'),
+        end: new Date('2026-03-10T10:00:00+01:00'),
+        status: 'cancelled',
+        updated: '2026-03-09T20:00:00.000Z',
+      },
+    ]);
   });
 });

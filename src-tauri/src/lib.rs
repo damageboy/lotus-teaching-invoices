@@ -1,8 +1,29 @@
 use tauri::Manager;
 
+mod calendar_store;
+mod calendar_sync;
 mod oauth;
 
 struct ConfigPath(Option<String>);
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CalendarEventDto {
+    uid: String,
+    summary: String,
+    description: String,
+    start: String,
+    end: String,
+    status: String,
+    updated: Option<String>,
+}
+
+fn calendar_store(app: &tauri::AppHandle) -> Result<calendar_store::CalendarStore, String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&app_data_dir).map_err(|e| e.to_string())?;
+    calendar_store::CalendarStore::open(app_data_dir.join("calendar-cache.sqlite"))
+        .map_err(|e| e.to_string())
+}
 
 #[tauri::command]
 fn get_config_path(state: tauri::State<ConfigPath>) -> Option<String> {
@@ -18,11 +39,48 @@ fn open_file(path: String) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+async fn sync_calendar(
+    app: tauri::AppHandle,
+    calendar_id: String,
+    access_token: String,
+) -> Result<calendar_sync::SyncResult, String> {
+    let store = calendar_store(&app)?;
+    calendar_sync::sync_calendar(&store, &calendar_id, &access_token).await
+}
+
+#[tauri::command]
+fn list_calendar_events(
+    app: tauri::AppHandle,
+    calendar_id: String,
+) -> Result<Vec<CalendarEventDto>, String> {
+    let store = calendar_store(&app)?;
+    let events = store.list_events(&calendar_id).map_err(|e| e.to_string())?;
+    Ok(events
+        .into_iter()
+        .map(|event| CalendarEventDto {
+            uid: event.event_id,
+            summary: event.summary,
+            description: event.description,
+            start: event.start_ts,
+            end: event.end_ts,
+            status: event.status,
+            updated: event.updated_ts,
+        })
+        .collect())
+}
+
+#[tauri::command]
+fn clear_calendar_cache(app: tauri::AppHandle, calendar_id: String) -> Result<(), String> {
+    let store = calendar_store(&app)?;
+    store
+        .clear_calendar(&calendar_id)
+        .map_err(|e| e.to_string())
+}
+
 pub fn run() {
     // Parse --config <path> from CLI args (used by e2e tests for config isolation)
-    let config_path: Option<String> = std::env::args()
-        .skip_while(|a| a != "--config")
-        .nth(1);
+    let config_path: Option<String> = std::env::args().skip_while(|a| a != "--config").nth(1);
 
     let builder = tauri::Builder::default()
         .manage(ConfigPath(config_path))
@@ -71,6 +129,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             open_file,
             get_config_path,
+            sync_calendar,
+            list_calendar_events,
+            clear_calendar_cache,
             oauth::start_oauth_server,
             oauth::wait_oauth_code
         ])

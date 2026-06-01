@@ -5,13 +5,14 @@ import { useConfig } from './hooks/useConfig';
 import { useCalendarData } from './hooks/useCalendarData';
 import { CalendarTab } from './components/CalendarTab';
 import { InvoicesTab } from './components/InvoicesTab';
+import { IncomeTab } from './components/IncomeTab';
 import { RatesTab } from './components/RatesTab';
 import { LogPanel } from './components/LogPanel';
 import { UpdateNotification } from './components/UpdateNotification';
 import { initRustLogListener, logInfo } from './lib/logger';
 import { nextUnusedColor } from './lib/studioColors';
 
-type Tab = 'calendar' | 'invoices' | 'rates';
+type Tab = 'calendar' | 'invoices' | 'income' | 'rates';
 
 export default function App() {
   const {
@@ -125,6 +126,7 @@ export default function App() {
   const tabs: { id: Tab; label: string }[] = [
     { id: 'calendar', label: 'Calendar' },
     { id: 'invoices', label: 'Invoices' },
+    { id: 'income', label: 'Income' },
     { id: 'rates', label: 'Rates & Config' },
   ];
 
@@ -174,6 +176,7 @@ export default function App() {
         {activeTab === 'invoices' && (
           <InvoicesTab classes={classes} config={config} onSaveConfig={save} />
         )}
+        {activeTab === 'income' && <IncomeTab classes={classes} config={config} />}
         {activeTab === 'rates' && (
           <RatesTab
             config={config}

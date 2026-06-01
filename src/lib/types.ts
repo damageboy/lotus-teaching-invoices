@@ -40,6 +40,8 @@ export interface CalendarEvent {
   description: string;
   start: Date;
   end: Date;
+  status?: string;
+  updated?: string;
 }
 
 export interface ParsedClass {

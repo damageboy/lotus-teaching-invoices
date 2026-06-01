@@ -9,8 +9,8 @@ import {
   OAUTH_AUTH_URL,
   OAUTH_TOKEN_URL,
   TOKEN_FILE,
-} from './constants';
-import { logInfo, logError } from '../logger';
+} from './constants.js';
+import { logInfo, logError } from '../logger.js';
 
 interface StoredTokens {
   access_token: string;

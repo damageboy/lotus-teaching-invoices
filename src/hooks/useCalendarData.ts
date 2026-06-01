@@ -1,7 +1,7 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { extractClasses } from '../lib/calendar/parser';
-import { fetchEvents } from '../lib/calendar/calendar-api';
-import { ParsedClass, ParseWarning, AppConfig } from '../lib/types';
+import { listCachedCalendarEvents, syncCalendar } from '../lib/calendar/cache';
+import { CalendarEvent, ParsedClass, ParseWarning, AppConfig } from '../lib/types';
 import { logInfo, logWarn, logError } from '../lib/logger';
 
 export interface CalendarData {
@@ -12,20 +12,8 @@ export interface CalendarData {
   refresh: () => Promise<void>;
 }
 
-/** Time range: 6 months back, 3 months forward from today. */
-function defaultTimeRange(): { timeMin: string; timeMax: string } {
-  const now = new Date();
-  const min = new Date(now);
-  min.setMonth(min.getMonth() - 6);
-  const max = new Date(now);
-  max.setMonth(max.getMonth() + 3);
-  return {
-    timeMin: min.toISOString(),
-    timeMax: max.toISOString(),
-  };
-}
-
 export function useCalendarData(config: AppConfig): CalendarData {
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [classes, setClasses] = useState<ParsedClass[]>([]);
   const [warnings, setWarnings] = useState<ParseWarning[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -33,21 +21,12 @@ export function useCalendarData(config: AppConfig): CalendarData {
 
   const studioKeys = Object.keys(config.studios).sort().join(',');
 
-  const refresh = useCallback(async () => {
-    if (!config.calendarId) {
-      setError('No calendar selected. Pick one in the Rates tab.');
-      return;
-    }
-    setIsLoading(true);
-    setError(null);
-    logInfo('Fetching calendar events…');
-    try {
-      const { timeMin, timeMax } = defaultTimeRange();
-      const events = await fetchEvents(config.calendarId, timeMin, timeMax);
+  const parseEvents = useCallback(
+    (nextEvents: CalendarEvent[]) => {
       const knownStudios = new Map(
         Object.keys(config.studios).map((name) => [name.toLowerCase(), name])
       );
-      const { classes: parsed, warnings: warns } = extractClasses(events, knownStudios);
+      const { classes: parsed, warnings: warns } = extractClasses(nextEvents, knownStudios);
       setClasses(parsed);
       setWarnings(warns);
       const unconfiguredCount = parsed.filter((c) => c.unconfigured).length;
@@ -58,14 +37,38 @@ export function useCalendarData(config: AppConfig): CalendarData {
       warns
         .filter((w) => !w.date || w.date <= now)
         .forEach((w) => logWarn(`${w.code}: ${w.event}${w.date ? ` (${w.date})` : ''}`));
+    },
+    [studioKeys]
+  );
+
+  const refresh = useCallback(async () => {
+    if (!config.calendarId) {
+      setError('No calendar selected. Pick one in the Rates tab.');
+      return;
+    }
+    setIsLoading(true);
+    setError(null);
+    logInfo('Syncing calendar events…');
+    try {
+      const result = await syncCalendar(config.calendarId);
+      logInfo(
+        `Calendar sync complete: ${result.fetched} fetched, ${result.upserted} upserted, ${result.deleted} deleted`
+      );
+      const cachedEvents = await listCachedCalendarEvents(config.calendarId);
+      setEvents(cachedEvents);
+      parseEvents(cachedEvents);
     } catch (e) {
-      const msg = `Failed to fetch calendar: ${e instanceof Error ? e.message : String(e)}`;
+      const msg = `Failed to sync calendar: ${e instanceof Error ? e.message : String(e)}`;
       logError(msg);
       setError(msg);
     } finally {
       setIsLoading(false);
     }
-  }, [config.calendarId, studioKeys]);
+  }, [config.calendarId, parseEvents]);
+
+  useEffect(() => {
+    parseEvents(events);
+  }, [events, parseEvents]);
 
   return { classes, warnings, isLoading, error, refresh };
 }

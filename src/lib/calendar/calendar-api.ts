@@ -48,8 +48,6 @@ export function mapEventsResponse(data: any): CalendarEvent[] {
   if (!Array.isArray(items)) return [];
   const result: CalendarEvent[] = [];
   for (const item of items) {
-    // Skip cancelled events
-    if (item.status === 'cancelled') continue;
     // Skip all-day events (no dateTime on start or end)
     if (!item.start?.dateTime || !item.end?.dateTime) continue;
     result.push({
@@ -58,6 +56,8 @@ export function mapEventsResponse(data: any): CalendarEvent[] {
       description: item.description ?? '',
       start: new Date(item.start.dateTime),
       end: new Date(item.end.dateTime),
+      ...(item.status ? { status: item.status } : {}),
+      ...(item.updated ? { updated: item.updated } : {}),
     });
   }
   return result;
