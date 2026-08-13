@@ -61,6 +61,41 @@ describe('validateConfig', () => {
   it('rejects empty studios', () => {
     expect(() => validateConfig({ studios: {} })).toThrow('at least one studio');
   });
+
+  it('trims leading and trailing whitespace from studio names', () => {
+    const cfg = validateConfig({
+      studios: {
+        '  Test Studio  ': {
+          rateTiers: [{ minStudents: 1, maxStudents: null, rate: 80 }],
+        },
+      },
+    });
+
+    expect(Object.keys(cfg.studios)).toEqual(['Test Studio']);
+  });
+
+  it('rejects studio names that are empty after trimming', () => {
+    expect(() =>
+      validateConfig({
+        studios: {
+          '   ': { rateTiers: [{ minStudents: 1, maxStudents: null, rate: 80 }] },
+        },
+      })
+    ).toThrow('Studio name cannot be empty.');
+  });
+
+  it('rejects studio names that duplicate another name after trimming', () => {
+    const studio = { rateTiers: [{ minStudents: 1, maxStudents: null, rate: 80 }] };
+
+    expect(() =>
+      validateConfig({
+        studios: {
+          Studio: studio,
+          ' Studio ': studio,
+        },
+      })
+    ).toThrow('A studio named "Studio" already exists.');
+  });
 });
 
 describe('validateRateTiers (via validateConfig)', () => {

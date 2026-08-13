@@ -170,11 +170,19 @@ export function validateConfig(raw: unknown): AppConfig {
   };
 
   for (const [name, studioRaw] of Object.entries(configData.studios)) {
+    const normalizedName = name.trim();
+    if (!normalizedName) {
+      throw new AppError('Studio name cannot be empty.', 'INVALID_CONFIG');
+    }
+    if (Object.hasOwn(config.studios, normalizedName)) {
+      throw new AppError(`A studio named "${normalizedName}" already exists.`, 'INVALID_CONFIG');
+    }
+
     const studio = studioRaw as any;
     const sortedTiers = [...studio.rateTiers].sort(
       (a: any, b: any) => a.minStudents - b.minStudents
     );
-    config.studios[name] = {
+    config.studios[normalizedName] = {
       ...studio,
       rateTiers: sortedTiers,
       color: studio.color,

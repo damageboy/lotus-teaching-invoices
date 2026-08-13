@@ -79,4 +79,20 @@ describe('config serialization', () => {
     const reparsed = validateConfig(parseYaml(yaml));
     expect(Object.keys(reparsed.studios)).toContain('MySenses');
   });
+
+  it('persists normalized studio names after validation', () => {
+    const validated = validateConfig({
+      ...SAMPLE_CONFIG,
+      studios: {
+        '  Test Studio  ': SAMPLE_CONFIG.studios.Yogibar,
+      },
+    });
+
+    const yaml = stringifyYaml(validated);
+    const reparsed = validateConfig(parseYaml(yaml));
+
+    expect(yaml).toContain('Test Studio:');
+    expect(yaml).not.toContain('  Test Studio  ');
+    expect(Object.keys(reparsed.studios)).toEqual(['Test Studio']);
+  });
 });
