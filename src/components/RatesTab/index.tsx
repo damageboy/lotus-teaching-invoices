@@ -5,6 +5,7 @@ import { effectiveHex, nextUnusedColor } from '../../lib/studioColors';
 import { APP_VERSION, APP_IS_OFFICIAL } from '../../lib/version';
 import { listCalendars } from '../../lib/calendar/calendar-api';
 import { getRateTierValidation } from '../../lib/config/rateTiers';
+import { renameStudio, StudioRenameResult } from '../../lib/config/studioNames';
 
 interface Props {
   config: AppConfig;
@@ -32,7 +33,7 @@ export async function selectCalendar(
 interface StudioCardProps {
   studioName: string;
   studio: StudioConfig;
-  onRename: (oldName: string, newName: string) => void;
+  onRename: (oldName: string, newName: string) => StudioRenameResult;
   onDelete: (name: string) => void;
   onUpdateTier: (studioName: string, index: number, field: keyof RateTier, raw: string) => void;
   onAddTier: (studioName: string) => void;
@@ -59,6 +60,7 @@ function StudioCard({
   const [draftName, setDraftName] = useState(studioName);
   const [isOpen, setIsOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [nameError, setNameError] = useState<string | null>(null);
   const [emailError, setEmailError] = useState<string | null>(null);
   const tierValidation = getRateTierValidation(studio.rateTiers);
 
@@ -116,16 +118,26 @@ function StudioCard({
       {/* Body — only when open */}
       {isOpen && (
         <div className="px-4 pb-4 flex flex-col gap-3 border-t border-gray-100">
-          <div className="flex items-center gap-2 pt-3">
+          <div className="flex flex-col gap-1 pt-3">
             <input
-              className="flex-1 border border-gray-200 rounded px-2 py-1 text-sm font-medium"
+              aria-label={`Studio name: ${studioName}`}
+              className={`flex-1 border rounded px-2 py-1 text-sm font-medium ${
+                nameError ? 'border-red-400 bg-red-50' : 'border-gray-200'
+              }`}
               value={draftName}
               onChange={(e) => setDraftName(e.target.value)}
               onBlur={() => {
-                if (draftName !== studioName) onRename(studioName, draftName);
+                const result = onRename(studioName, draftName);
+                if (result.ok) {
+                  setDraftName(result.name);
+                  setNameError(null);
+                } else {
+                  setNameError(result.error);
+                }
               }}
               onClick={(e) => e.stopPropagation()}
             />
+            {nameError && <span className="text-xs text-red-500">{nameError}</span>}
           </div>
 
           <label className="flex flex-col gap-1">
@@ -291,11 +303,12 @@ export function RatesTab({ config, isDirty, saveError, onUpdate, onSave }: Props
     onUpdate({ ...config, lastInvoice: value });
   }
 
-  function updateStudioName(oldName: string, newName: string) {
-    const studios = Object.fromEntries(
-      Object.entries(config.studios).map(([k, v]) => [k === oldName ? newName : k, v])
-    );
-    onUpdate({ ...config, studios });
+  function updateStudioName(oldName: string, newName: string): StudioRenameResult {
+    const result = renameStudio(config.studios, oldName, newName);
+    if (result.ok && result.changed) {
+      onUpdate({ ...config, studios: result.studios });
+    }
+    return result;
   }
 
   function updateStudioField(

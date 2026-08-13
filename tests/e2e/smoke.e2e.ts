@@ -109,6 +109,45 @@ describe('Rates & Config tab', () => {
     expect(after).toBe(before + 1);
   });
 
+  it('validates, trims, and persists a renamed studio', async () => {
+    const saved = readTmpConfig() as { studios: Record<string, unknown> };
+    const generatedName = Object.keys(saved.studios).find((name) => name !== 'Test Studio');
+    expect(generatedName).toBeDefined();
+
+    await $(`span=${generatedName}`).click();
+    let input = await $(`input[aria-label="Studio name: ${generatedName}"]`);
+
+    await input.click();
+    await input.setValue('   ');
+    await $('input[placeholder="e.g. Yogibar Yoga Studio GmbH"]').click();
+    await expect($('span=Studio name cannot be empty.')).toBeDisplayed();
+    await expect($(`input[aria-label="Studio name: ${generatedName}"]`)).toBeDisplayed();
+
+    input = await $(`input[aria-label="Studio name: ${generatedName}"]`);
+    await input.click();
+    await input.setValue(' Test Studio ');
+    await $('input[placeholder="e.g. Yogibar Yoga Studio GmbH"]').click();
+    await expect($('.text-red-500')).toHaveText('A studio named "Test Studio" already exists.');
+    await expect($(`input[aria-label="Studio name: ${generatedName}"]`)).toBeDisplayed();
+
+    input = await $(`input[aria-label="Studio name: ${generatedName}"]`);
+    await input.click();
+    await input.setValue('  Trimmed Studio  ');
+    await $('input[placeholder="e.g. Yogibar Yoga Studio GmbH"]').click();
+    const normalizedInput = await $('input[aria-label="Studio name: Trimmed Studio"]');
+    await expect(normalizedInput).toHaveValue('Trimmed Studio');
+    await expect($('span=Studio name cannot be empty.')).not.toBeDisplayed();
+    await expect($('.text-red-500')).not.toBeDisplayed();
+    await expect($('span=Unsaved changes')).toBeDisplayed();
+
+    await $('button=Save').click();
+    await browser.pause(1000);
+    const persisted = readTmpConfig() as { studios: Record<string, unknown> };
+    expect(Object.keys(persisted.studios)).toContain('Trimmed Studio');
+    expect(Object.keys(persisted.studios)).not.toContain('  Trimmed Studio  ');
+    expect(Object.keys(persisted.studios)).not.toContain(generatedName);
+  });
+
   it('shows the version badge', async () => {
     const badge = await $('[data-testid="version-badge"]');
     await expect(badge).toBeDisplayed();
