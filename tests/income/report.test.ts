@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildIncomeReport, buildIncomeYears } from '../../src/lib/income/report.js';
 import { AppConfig, ParsedClass } from '../../src/lib/types.js';
+import { parsedClass } from '../helpers/calendar-fixtures.js';
 
 const config: AppConfig = {
   teacher: {
@@ -28,38 +29,38 @@ const config: AppConfig = {
 };
 
 const classes: ParsedClass[] = [
-  {
+  parsedClass({
     studioName: 'Alpha',
     classType: 'Flow',
     date: '2025-01-10',
     startTime: '09:00',
     endTime: '10:00',
     studentCount: 5,
-  },
-  {
+  }),
+  parsedClass({
     studioName: 'Alpha',
     classType: 'Flow',
     date: '2026-01-10',
     startTime: '09:00',
     endTime: '10:00',
     studentCount: 5,
-  },
-  {
+  }),
+  parsedClass({
     studioName: 'Beta',
     classType: 'Yin',
     date: '2026-01-11',
     startTime: '09:00',
     endTime: '10:00',
     studentCount: 3,
-  },
-  {
+  }),
+  parsedClass({
     studioName: 'Beta',
     classType: 'Yin',
     date: '2026-02-11',
     startTime: '09:00',
     endTime: '10:00',
     studentCount: 3,
-  },
+  }),
 ];
 
 describe('buildIncomeReport', () => {
@@ -98,30 +99,30 @@ describe('buildIncomeYears', () => {
     const years = buildIncomeYears(
       [
         ...classes,
-        {
+        parsedClass({
           studioName: 'Alpha',
           classType: 'Future current year',
           date: '2026-07-10',
           startTime: '09:00',
           endTime: '10:00',
           studentCount: 5,
-        },
-        {
+        }),
+        parsedClass({
           studioName: 'Alpha',
           classType: 'Future next year',
           date: '2027-01-10',
           startTime: '09:00',
           endTime: '10:00',
           studentCount: 5,
-        },
-        {
+        }),
+        parsedClass({
           studioName: 'Alpha',
           classType: 'Old class',
           date: '2024-05-10',
           startTime: '09:00',
           endTime: '10:00',
           studentCount: 5,
-        },
+        }),
       ],
       '2026-06-01'
     );

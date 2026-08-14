@@ -2,10 +2,17 @@ export const GOOGLE_CLIENT_ID =
   '918178070743-m12oc3dv1rp40blkdomhc1767oigocpr.apps.googleusercontent.com';
 export const GOOGLE_CLIENT_SECRET = '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';
 
-export const OAUTH_SCOPES = [
-  'https://www.googleapis.com/auth/gmail.compose',
-  'https://www.googleapis.com/auth/calendar.readonly',
-].join(' ');
+export const GMAIL_COMPOSE_SCOPE = 'https://www.googleapis.com/auth/gmail.compose';
+export const CALENDAR_READONLY_SCOPE = 'https://www.googleapis.com/auth/calendar.readonly';
+export const CALENDAR_EVENTS_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
+
+export const BASE_OAUTH_SCOPES = [GMAIL_COMPOSE_SCOPE, CALENDAR_READONLY_SCOPE] as const;
+export const CALENDAR_EDIT_OAUTH_SCOPES = [...BASE_OAUTH_SCOPES, CALENDAR_EVENTS_SCOPE] as const;
+
+export const AUTHORIZATION_SCHEMA_VERSION = 1;
+
+/** @deprecated Prefer BASE_OAUTH_SCOPES so scope checks remain explicit. */
+export const OAUTH_SCOPES = BASE_OAUTH_SCOPES.join(' ');
 
 export const OAUTH_AUTH_URL = 'https://accounts.google.com/o/oauth2/auth';
 export const OAUTH_TOKEN_URL = 'https://oauth2.googleapis.com/token';

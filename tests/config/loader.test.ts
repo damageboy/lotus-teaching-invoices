@@ -37,7 +37,22 @@ describe('validateConfig', () => {
       studios: { Foo: { rateTiers: [{ minStudents: 1, maxStudents: null, rate: 80 }] } },
     });
     expect(cfg.calendarId).toBeUndefined();
+    expect(cfg.calendarAccessRole).toBeUndefined();
   });
+
+  it.each(['owner', 'writer', 'reader', 'freeBusyReader'] as const)(
+    'retains the selected calendar access role %s',
+    (calendarAccessRole) => {
+      const cfg = validateConfig({
+        calendarId: 'calendar-1',
+        calendarName: 'Teaching Calendar',
+        calendarAccessRole,
+        studios: { Foo: { rateTiers: [{ minStudents: 1, maxStudents: null, rate: 80 }] } },
+      });
+
+      expect(cfg.calendarAccessRole).toBe(calendarAccessRole);
+    }
+  );
 
   it('migrates legacy Google Calendar ICS URLs to calendarId', () => {
     const cfg = validateConfig({

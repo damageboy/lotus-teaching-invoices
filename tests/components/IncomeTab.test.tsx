@@ -2,6 +2,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { IncomeTab } from '../../src/components/IncomeTab/index.js';
 import { AppConfig, ParsedClass } from '../../src/lib/types.js';
+import { parsedClass } from '../helpers/calendar-fixtures.js';
 
 (globalThis as unknown as { React: typeof React }).React = React;
 
@@ -34,30 +35,30 @@ const config: AppConfig = {
 };
 
 const classes: ParsedClass[] = [
-  {
+  parsedClass({
     studioName: 'Alpha',
     classType: 'Flow',
     date: `${previousYear}-01-10`,
     startTime: '09:00',
     endTime: '10:00',
     studentCount: 5,
-  },
-  {
+  }),
+  parsedClass({
     studioName: 'Alpha',
     classType: 'Flow',
     date: `${currentYear}-01-10`,
     startTime: '09:00',
     endTime: '10:00',
     studentCount: 5,
-  },
-  {
+  }),
+  parsedClass({
     studioName: 'Beta',
     classType: 'Yin',
     date: `${currentYear}-01-11`,
     startTime: '09:00',
     endTime: '10:00',
     studentCount: 3,
-  },
+  }),
 ];
 
 describe('IncomeTab', () => {
@@ -80,22 +81,22 @@ describe('IncomeTab', () => {
       React.createElement(IncomeTab, {
         classes: [
           ...classes,
-          {
+          parsedClass({
             studioName: 'Alpha',
             classType: 'Future recurring',
             date: `${currentYear + 1}-01-10`,
             startTime: '09:00',
             endTime: '10:00',
             studentCount: 5,
-          },
-          {
+          }),
+          parsedClass({
             studioName: 'Alpha',
             classType: 'Old class',
             date: `${currentYear - 3}-01-10`,
             startTime: '09:00',
             endTime: '10:00',
             studentCount: 5,
-          },
+          }),
         ],
         config,
       })

@@ -1,5 +1,5 @@
 import { expect, browser, $ } from '@wdio/globals';
-import { TMP_CONFIG_PATH, readTmpConfig } from './helpers.js';
+import { readTmpConfig } from './helpers.js';
 
 // ─── Boot ────────────────────────────────────────────────────────────────────
 

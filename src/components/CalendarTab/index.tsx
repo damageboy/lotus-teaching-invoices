@@ -3,11 +3,37 @@ import { ParsedClass, StudioConfig } from '../../lib/types';
 import { CalendarGrid } from './CalendarGrid';
 import { studioColor } from '../../lib/studioColors';
 import { computeStudioStats, StudioMonthStats } from '../../lib/invoice/calculator';
+import { EventDetailsCard } from './EventDetailsCard';
+import type {
+  OccurrenceValueEditOperation,
+  OccurrenceValueEditPreflight,
+  SeriesStudioEditPreflight,
+} from '../../lib/calendar/calendar-update';
 
 interface Props {
   classes: ParsedClass[];
   studios?: Record<string, StudioConfig>;
   onAddStudio?: (name: string) => void;
+  canEdit?: boolean;
+  onReassignStudio?: (lesson: ParsedClass, studioName: string) => Promise<void>;
+  onPrepareValueEdit?: (
+    lesson: ParsedClass,
+    operation: OccurrenceValueEditOperation
+  ) => Promise<OccurrenceValueEditPreflight>;
+  onSaveValueEdit?: (
+    preflight: OccurrenceValueEditPreflight,
+    confirmUnsupportedReplacement: boolean
+  ) => Promise<void>;
+  onPrepareSeriesStudioEdit?: (
+    lesson: ParsedClass,
+    studioName: string
+  ) => Promise<SeriesStudioEditPreflight>;
+  onSaveSeriesStudioEdit?: (preflight: SeriesStudioEditPreflight) => Promise<boolean>;
+}
+
+interface SelectedLesson {
+  lesson: ParsedClass;
+  anchor: HTMLButtonElement;
 }
 
 const MONTH_NAMES = [
@@ -25,7 +51,17 @@ const MONTH_NAMES = [
   'December',
 ];
 
-export function CalendarTab({ classes, studios = {}, onAddStudio }: Props) {
+export function CalendarTab({
+  classes,
+  studios = {},
+  onAddStudio,
+  canEdit = false,
+  onReassignStudio,
+  onPrepareValueEdit,
+  onSaveValueEdit,
+  onPrepareSeriesStudioEdit,
+  onSaveSeriesStudioEdit,
+}: Props) {
   const now = new Date();
   const defaultInPrevMonth = now.getDate() <= 15;
   const defaultMonth = defaultInPrevMonth
@@ -37,6 +73,13 @@ export function CalendarTab({ classes, studios = {}, onAddStudio }: Props) {
     defaultInPrevMonth && now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
   const [year, setYear] = useState(defaultYear);
   const [month, setMonth] = useState(defaultMonth);
+  const [selected, setSelected] = useState<SelectedLesson | null>(null);
+
+  function closeDetails() {
+    const anchor = selected?.anchor;
+    setSelected(null);
+    anchor?.focus();
+  }
 
   const monthClasses = classes.filter((cls) => {
     const prefix = `${year}-${String(month + 1).padStart(2, '0')}`;
@@ -173,7 +216,28 @@ export function CalendarTab({ classes, studios = {}, onAddStudio }: Props) {
         </div>
       )}
 
-      <CalendarGrid year={year} month={month} classes={monthClasses} colorMap={colorMap} />
+      <CalendarGrid
+        year={year}
+        month={month}
+        classes={monthClasses}
+        colorMap={colorMap}
+        onSelectLesson={(lesson, anchor) => setSelected({ lesson, anchor })}
+      />
+
+      {selected && (
+        <EventDetailsCard
+          lesson={selected.lesson}
+          anchor={selected.anchor}
+          studios={studios}
+          canEdit={canEdit}
+          onClose={closeDetails}
+          onReassignStudio={onReassignStudio}
+          onPrepareValueEdit={onPrepareValueEdit}
+          onSaveValueEdit={onSaveValueEdit}
+          onPrepareSeriesStudioEdit={onPrepareSeriesStudioEdit}
+          onSaveSeriesStudioEdit={onSaveSeriesStudioEdit}
+        />
+      )}
 
       {studioStats.length > 0 && (
         <>

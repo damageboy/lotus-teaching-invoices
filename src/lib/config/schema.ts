@@ -94,6 +94,7 @@ const ConfigSchema = z.object({
   teacher: TeacherInfoSchema,
   calendarId: z.string().optional(),
   calendarName: z.string().optional(),
+  calendarAccessRole: z.enum(['owner', 'writer', 'reader', 'freeBusyReader']).optional(),
   calendarUrl: z.string().optional(),
   outputDir: z.string().default(''),
   lastInvoice: z
@@ -164,6 +165,7 @@ export function validateConfig(raw: unknown): AppConfig {
     teacher: configData.teacher as TeacherInfo,
     calendarId: configData.calendarId ?? extractCalendarIdFromLegacyUrl(configData.calendarUrl),
     calendarName: configData.calendarName,
+    calendarAccessRole: configData.calendarAccessRole,
     outputDir: configData.outputDir,
     lastInvoice: configData.lastInvoice,
     studios: {},

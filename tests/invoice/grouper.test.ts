@@ -1,40 +1,41 @@
 import { describe, it, expect } from 'vitest';
 import { groupByStudio, filterByDateRange, filterByStudio } from '../../src/lib/invoice/grouper.js';
 import { ParsedClass } from '../../src/lib/types.js';
+import { parsedClass } from '../helpers/calendar-fixtures.js';
 
 const classes: ParsedClass[] = [
-  {
+  parsedClass({
     studioName: 'Zen Yoga',
     classType: 'Vinyasa',
     date: '2026-01-05',
     startTime: '09:00',
     endTime: '10:15',
     studentCount: 8,
-  },
-  {
+  }),
+  parsedClass({
     studioName: 'Power House',
     classType: 'HIIT',
     date: '2026-01-03',
     startTime: '18:00',
     endTime: '19:15',
     studentCount: 6,
-  },
-  {
+  }),
+  parsedClass({
     studioName: 'Zen Yoga',
     classType: 'Yin',
     date: '2026-01-03',
     startTime: '10:00',
     endTime: '11:15',
     studentCount: 3,
-  },
-  {
+  }),
+  parsedClass({
     studioName: 'Power House',
     classType: 'Power Flow',
     date: '2026-01-10',
     startTime: '14:00',
     endTime: '15:15',
     studentCount: 2,
-  },
+  }),
 ];
 
 describe('groupByStudio', () => {

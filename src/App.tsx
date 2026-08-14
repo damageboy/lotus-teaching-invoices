@@ -3,12 +3,16 @@ import { message } from '@tauri-apps/plugin-dialog';
 import { exit } from '@tauri-apps/plugin-process';
 import { useConfig } from './hooks/useConfig';
 import { useCalendarData } from './hooks/useCalendarData';
+import { useGoogleAuthorization } from './hooks/useGoogleAuthorization';
+import { useCalendarEditing } from './hooks/useCalendarEditing';
+import { useInvoiceFreshness } from './hooks/useInvoiceFreshness';
 import { CalendarTab } from './components/CalendarTab';
 import { InvoicesTab } from './components/InvoicesTab';
 import { IncomeTab } from './components/IncomeTab';
 import { RatesTab } from './components/RatesTab';
 import { LogPanel } from './components/LogPanel';
 import { UpdateNotification } from './components/UpdateNotification';
+import { CalendarPermissionPrompt } from './components/CalendarPermissionPrompt';
 import { initRustLogListener, logInfo } from './lib/logger';
 import { nextUnusedColor } from './lib/studioColors';
 
@@ -23,7 +27,27 @@ export default function App() {
     updateConfig,
     save,
   } = useConfig();
-  const { classes, isLoading: calLoading, error: calError, refresh } = useCalendarData(config);
+  const {
+    classes,
+    isLoading: calLoading,
+    error: calError,
+    refresh,
+    reloadCache,
+  } = useCalendarData(config);
+  const googleAuthorization = useGoogleAuthorization();
+  const invoiceFreshness = useInvoiceFreshness(
+    configLoading ? undefined : config.calendarId,
+    configLoading ? undefined : config.outputDir
+  );
+  const calendarEditing = useCalendarEditing({
+    calendarId: configLoading ? undefined : config.calendarId,
+    outputDir: configLoading ? undefined : config.outputDir,
+    persistedAccessRole: config.calendarAccessRole,
+    hasCalendarWrite: googleAuthorization.hasCalendarWrite,
+    authorizationLoading: googleAuthorization.isLoading,
+    reloadCache,
+    reloadInvoiceFreshness: invoiceFreshness.reload,
+  });
   const [activeTab, setActiveTab] = useState<Tab>('calendar');
   const fatalConfigHandled = useRef(false);
 
@@ -133,6 +157,14 @@ export default function App() {
   return (
     <div className="flex flex-col h-screen bg-white">
       <UpdateNotification />
+      <CalendarPermissionPrompt
+        open={googleAuthorization.promptOpen}
+        reason={googleAuthorization.hasCalendarWrite ? 'calendarReadOnly' : 'scopeMissing'}
+        isAuthorizing={googleAuthorization.isAuthorizing}
+        error={googleAuthorization.error}
+        onAllow={googleAuthorization.allowCalendarEditing}
+        onDismiss={googleAuthorization.dismissCalendarEditingPrompt}
+      />
       {/* Tab bar */}
       <div className="flex border-b border-gray-200 bg-gray-50">
         {tabs.map((tab) => (
@@ -171,10 +203,29 @@ export default function App() {
       {/* Tab content */}
       <div className="flex-1 overflow-auto min-h-0">
         {activeTab === 'calendar' && (
-          <CalendarTab classes={classes} studios={config.studios} onAddStudio={handleAddStudio} />
+          <CalendarTab
+            classes={classes}
+            studios={config.studios}
+            onAddStudio={handleAddStudio}
+            canEdit={calendarEditing.canEdit}
+            onReassignStudio={calendarEditing.reassignOccurrenceStudio}
+            onPrepareValueEdit={calendarEditing.prepareOccurrenceValueEdit}
+            onSaveValueEdit={calendarEditing.saveOccurrenceValueEdit}
+            onPrepareSeriesStudioEdit={calendarEditing.prepareSeriesStudioEdit}
+            onSaveSeriesStudioEdit={calendarEditing.saveSeriesStudioEdit}
+          />
         )}
         {activeTab === 'invoices' && (
-          <InvoicesTab classes={classes} config={config} onSaveConfig={save} />
+          <InvoicesTab
+            classes={classes}
+            config={config}
+            activeFreshness={invoiceFreshness.rows}
+            activeFreshnessContext={invoiceFreshness.loadedContext}
+            freshnessVerified={invoiceFreshness.isCurrentContextVerified}
+            onAcknowledgeFreshnessClear={invoiceFreshness.acknowledgeClear}
+            onRefreshFreshness={invoiceFreshness.reload}
+            onSaveConfig={save}
+          />
         )}
         {activeTab === 'income' && <IncomeTab classes={classes} config={config} />}
         {activeTab === 'rates' && (

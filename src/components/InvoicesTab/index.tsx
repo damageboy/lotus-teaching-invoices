@@ -5,26 +5,54 @@ import { generateInvoice } from '../../lib/invoice/generator';
 import {
   generateAndOpenPdf,
   generateAndOpenFinalPdf,
+  renderFinalPdf,
+  openPdf,
   findExistingFinalInvoice,
   extractInvoiceNumberFromFilename,
 } from '../../lib/pdf/generatePdf';
 import { parseLastInvoice, formatInvoiceNumber, studioSlug } from '../../lib/invoice/finalization';
+import { buildInvoiceRows, type InvoiceRow } from '../../lib/invoice/rows';
+import {
+  prepareReFinalization,
+  prepareInvoiceEmail,
+  writeReFinalizedInvoice,
+  type InvoiceFreshnessRow,
+} from '../../lib/invoice/freshness';
+import type { InvoiceFreshnessContext } from '../../hooks/useInvoiceFreshness';
 import { logError } from '../../lib/logger';
 import { createGmailDraft } from '../../lib/gmail/drafts';
 
 interface Props {
   classes: ParsedClass[];
   config: AppConfig;
+  activeFreshness: InvoiceFreshnessRow[];
+  activeFreshnessContext: InvoiceFreshnessContext | null;
+  freshnessVerified: boolean;
+  onAcknowledgeFreshnessClear: (key: InvoiceFreshnessRow['key'], expectedRevision: number) => void;
+  onRefreshFreshness: () => Promise<void>;
   onSaveConfig: (c: AppConfig) => Promise<void>;
+  dependencies?: ReFinalizationDependencies;
 }
 
-interface InvoiceRow {
-  studioName: string;
-  monthKey: string; // "YYYY-MM"
-  label: string; // "February 2026"
-  classCount: number;
-  classes: ParsedClass[];
+export interface ReFinalizationDependencies {
+  confirm: typeof confirm;
+  prepareReFinalization: typeof prepareReFinalization;
+  renderFinalPdf: typeof renderFinalPdf;
+  writeReFinalizedInvoice: typeof writeReFinalizedInvoice;
+  openPdf: typeof openPdf;
+  prepareInvoiceEmail: typeof prepareInvoiceEmail;
+  createGmailDraft: typeof createGmailDraft;
 }
+
+const DEFAULT_REFINALIZATION_DEPENDENCIES: ReFinalizationDependencies = {
+  confirm,
+  prepareReFinalization,
+  renderFinalPdf,
+  writeReFinalizedInvoice,
+  openPdf,
+  prepareInvoiceEmail,
+  createGmailDraft,
+};
 
 const MONTH_NAMES = [
   'January',
@@ -41,31 +69,6 @@ const MONTH_NAMES = [
   'December',
 ];
 
-function buildRows(classes: ParsedClass[]): InvoiceRow[] {
-  const map = new Map<string, ParsedClass[]>();
-  for (const cls of classes) {
-    const key = `${cls.studioName}__${cls.date.slice(0, 7)}`;
-    const list = map.get(key) ?? [];
-    list.push(cls);
-    map.set(key, list);
-  }
-  return [...map.entries()]
-    .map(([key, clsList]) => {
-      const [studioName, monthKey] = key.split('__');
-      const [y, m] = monthKey.split('-');
-      return {
-        studioName,
-        monthKey,
-        label: `${MONTH_NAMES[parseInt(m) - 1]} ${y}`,
-        classCount: clsList.length,
-        classes: clsList,
-      };
-    })
-    .sort(
-      (a, b) => b.monthKey.localeCompare(a.monthKey) || a.studioName.localeCompare(b.studioName)
-    );
-}
-
 function periodForMonthKey(monthKey: string): InvoicePeriod {
   const [year, month] = monthKey.split('-');
   const from = `${year}-${month}-01`;
@@ -74,14 +77,32 @@ function periodForMonthKey(monthKey: string): InvoicePeriod {
   return { from, to };
 }
 
-export function InvoicesTab({ classes, config, onSaveConfig }: Props) {
+export function InvoicesTab({
+  classes,
+  config,
+  activeFreshness,
+  activeFreshnessContext,
+  freshnessVerified,
+  onAcknowledgeFreshnessClear,
+  onRefreshFreshness,
+  onSaveConfig,
+  dependencies = DEFAULT_REFINALIZATION_DEPENDENCIES,
+}: Props) {
   const [generating, setGenerating] = useState<string | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
 
   const rows = useMemo(() => {
     const currentMonth = new Date().toISOString().slice(0, 7); // "YYYY-MM"
-    return buildRows(classes).filter((row) => row.monthKey <= currentMonth);
-  }, [classes]);
+    const freshnessForContext =
+      activeFreshnessContext !== null &&
+      activeFreshnessContext.calendarId === config.calendarId &&
+      activeFreshnessContext.outputDir === config.outputDir
+        ? activeFreshness
+        : [];
+    return buildInvoiceRows(classes, freshnessForContext).filter(
+      (row) => row.monthKey <= currentMonth
+    );
+  }, [activeFreshness, activeFreshnessContext, classes, config.calendarId, config.outputDir]);
 
   // Compute totals once per rows+config change, not on every render
   const rowTotals = useMemo(() => {
@@ -137,6 +158,14 @@ export function InvoicesTab({ classes, config, onSaveConfig }: Props) {
   async function handleFinalize(row: InvoiceRow) {
     if (!config.outputDir) {
       setRowError('Set an output folder first.');
+      return;
+    }
+    if (!freshnessVerified) {
+      setRowError('Finalized invoice status has not been checked.');
+      return;
+    }
+    if (row.freshness) {
+      await handleReFinalize(row);
       return;
     }
     if (!config.lastInvoice) {
@@ -213,6 +242,56 @@ export function InvoicesTab({ classes, config, onSaveConfig }: Props) {
     }
   }
 
+  async function handleReFinalize(row: InvoiceRow) {
+    const active = row.freshness;
+    if (!active) return;
+    const rowKey = `${row.studioName}__${row.monthKey}`;
+    setGenerating(rowKey);
+    setRowError(null);
+    try {
+      const prepared = await dependencies.prepareReFinalization(active.key, active.revision);
+      const overwrite = await dependencies.confirm(
+        `Invoice ${prepared.invoiceNumber} is out of date for this period.\n\nOverwrite ${prepared.finalFilename}? The invoice number will be reused — the counter will not increment.`,
+        { title: 'Re-finalize invoice', kind: 'warning' }
+      );
+      if (!overwrite) return;
+
+      const studioConfig = config.studios[row.studioName];
+      if (!studioConfig) throw new Error(`No config for studio "${row.studioName}"`);
+      const { invoice } = generateInvoice(
+        row.studioName,
+        row.classes,
+        studioConfig,
+        periodForMonthKey(row.monthKey)
+      );
+      const pdfBytes = await dependencies.renderFinalPdf(invoice, config, prepared.invoiceNumber);
+      const written = await dependencies.writeReFinalizedInvoice({
+        key: prepared.key,
+        finalFilename: prepared.finalFilename,
+        invoiceNumber: prepared.invoiceNumber,
+        expectedFreshnessRevision: prepared.freshnessRevision,
+        expectedFileRevision: prepared.fileRevision,
+        pdfBytes: Array.from(pdfBytes),
+      });
+      onAcknowledgeFreshnessClear(active.key, active.revision);
+      void onRefreshFreshness().catch((error) => {
+        logError(
+          `Invoice freshness refresh failed: ${error instanceof Error ? error.message : String(error)}`
+        );
+      });
+      const opened = await dependencies.openPdf(written.outputPath);
+      if (opened.status === 'failed') {
+        setRowError(`Invoice written but could not be opened: ${opened.message}`);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logError(`Re-finalization failed for ${row.studioName}: ${message}`);
+      setRowError(message);
+    } finally {
+      setGenerating(null);
+    }
+  }
+
   async function handleDraftEmail(row: InvoiceRow) {
     const studioConfig = config.studios[row.studioName];
     if (!studioConfig?.invoiceEmail) return;
@@ -220,43 +299,39 @@ export function InvoicesTab({ classes, config, onSaveConfig }: Props) {
       setRowError('Set an output folder first.');
       return;
     }
+    if (!freshnessVerified) {
+      setRowError('Finalized invoice status has not been checked.');
+      return;
+    }
+    if (row.freshness) {
+      setRowError('Re-finalize the invoice first.');
+      return;
+    }
 
+    if (!config.calendarId) {
+      setRowError('Set a calendar first.');
+      return;
+    }
     const [periodYear, periodMonth] = row.monthKey.split('-');
-    const slug = studioSlug(row.studioName);
-
-    const existingFilename = await findExistingFinalInvoice(
-      config.outputDir,
-      slug,
-      periodYear,
-      periodMonth
-    );
-
-    if (!existingFilename) {
-      setRowError('No finalized invoice found for this period. Finalize the invoice first.');
-      return;
-    }
-
-    const invoiceNumber = extractInvoiceNumberFromFilename(existingFilename);
-    if (!invoiceNumber) {
-      setRowError(
-        `Could not read invoice number from existing file "${existingFilename}". Please check the Final/ folder.`
-      );
-      return;
-    }
-    const pdfPath = `${config.outputDir}/Final/${existingFilename}`;
 
     const rowKey = `${row.studioName}__${row.monthKey}`;
     setGenerating(rowKey);
     setRowError(null);
 
     try {
+      const prepared = await dependencies.prepareInvoiceEmail({
+        calendarId: config.calendarId,
+        outputDir: config.outputDir,
+        studioName: row.studioName,
+        monthKey: row.monthKey,
+      });
       const monthName = MONTH_NAMES[parseInt(periodMonth) - 1];
-      await createGmailDraft({
-        pdfPath,
+      await dependencies.createGmailDraft({
+        pdfBytes: new Uint8Array(prepared.pdfBytes),
         to: studioConfig.invoiceEmail,
-        subject: `Invoice ${invoiceNumber} - ${config.teacher.name}`,
+        subject: `Invoice ${prepared.invoiceNumber} - ${config.teacher.name}`,
         body: `Please find attached the invoice for ${monthName} ${periodYear}.`,
-        pdfFilename: existingFilename,
+        pdfFilename: prepared.finalFilename,
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -309,7 +384,6 @@ export function InvoicesTab({ classes, config, onSaveConfig }: Props) {
             const studioConfig = config.studios[row.studioName];
             const total = rowTotals.get(rowKey);
             const todayStr = new Date().toISOString().slice(0, 10);
-            const currentMonth = todayStr.slice(0, 7);
             const missingCount = row.classes.filter(
               (c) => c.studentCount === 0 && c.date < todayStr
             ).length;
@@ -325,10 +399,16 @@ export function InvoicesTab({ classes, config, onSaveConfig }: Props) {
                     </td>
                   </tr>
                 )}
-                <tr className="border-b border-gray-100 hover:bg-gray-50">
+                <tr
+                  data-invoice-status={row.freshness ? 'stale' : 'current'}
+                  className="border-b border-gray-100 hover:bg-gray-50"
+                >
                   <td className="py-2 pr-4">
                     <span className="flex items-center gap-1.5">
                       {row.studioName}
+                      {row.freshness && (
+                        <span className="text-xs text-red-600 font-medium">Out of date</span>
+                      )}
                       {blocked && (
                         <span
                           title={`${missingCount} class(es) missing student count`}
@@ -359,15 +439,27 @@ export function InvoicesTab({ classes, config, onSaveConfig }: Props) {
                       </button>
                       <button
                         onClick={() => handleFinalize(row)}
-                        disabled={blocked || !studioConfig || generating !== null}
+                        disabled={
+                          blocked || !studioConfig || generating !== null || !freshnessVerified
+                        }
                         className="text-xs px-3 py-1 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-40"
                       >
-                        {generating === rowKey ? 'Finalizing…' : 'Finalize Invoice…'}
+                        {generating === rowKey
+                          ? 'Finalizing…'
+                          : row.freshness
+                            ? 'Re-finalize Invoice…'
+                            : 'Finalize Invoice…'}
                       </button>
                       {studioConfig?.invoiceEmail && (
                         <button
                           onClick={() => handleDraftEmail(row)}
-                          disabled={blocked || generating !== null}
+                          disabled={
+                            blocked ||
+                            generating !== null ||
+                            !freshnessVerified ||
+                            row.freshness !== null
+                          }
+                          title={row.freshness ? 'Re-finalize the invoice first.' : undefined}
                           className="text-xs px-3 py-1 rounded bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:opacity-40"
                         >
                           {generating === rowKey ? 'Drafting…' : 'Draft Email…'}

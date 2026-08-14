@@ -20,7 +20,10 @@
     "fs:allow-read-dir",
     "fs:allow-mkdir",
     "fs:create-app-specific-dirs",
-    { "identifier": "fs:scope", "allow": [{ "path": "$HOME/**" }, { "path": "/tmp/**" }] },
+    {
+      "identifier": "fs:scope",
+      "allow": [{ "path": "$HOME/**" }, { "path": "/tmp/**" }, { "path": "$TEMP/**" }]
+    },
     "dialog:default",
     "shell:allow-open",
     "log:default",

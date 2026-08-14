@@ -1,9 +1,9 @@
 import { invoke } from '@tauri-apps/api/core';
 import { getAccessToken } from '../gmail/auth.js';
-import { CalendarEvent } from '../types.js';
+import { CalendarEvent, CalendarEventIdentity } from '../types.js';
 
 export interface CachedCalendarEventDto {
-  uid: string;
+  identity: CalendarEventIdentity;
   summary: string;
   description: string;
   start: string;
@@ -22,7 +22,7 @@ export interface SyncResult {
 
 export function mapCachedCalendarEvents(events: CachedCalendarEventDto[]): CalendarEvent[] {
   return events.map((event) => ({
-    uid: event.uid,
+    identity: event.identity,
     summary: event.summary,
     description: event.description,
     start: new Date(event.start),

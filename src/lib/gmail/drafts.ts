@@ -1,4 +1,3 @@
-import { readFile } from '@tauri-apps/plugin-fs';
 import { fetch } from '@tauri-apps/plugin-http';
 import { open } from '@tauri-apps/plugin-shell';
 import { GMAIL_API_BASE } from './constants';
@@ -76,7 +75,7 @@ function uint8ToBase64(bytes: Uint8Array): string {
  * Opens Gmail drafts page on success.
  */
 export async function createGmailDraft(params: {
-  pdfPath: string;
+  pdfBytes: Uint8Array;
   to: string;
   subject: string;
   body: string;
@@ -86,9 +85,7 @@ export async function createGmailDraft(params: {
 
   const accessToken = await getAccessToken();
 
-  // Read the PDF file
-  const pdfBytes = await readFile(params.pdfPath);
-  const pdfBase64 = uint8ToBase64(pdfBytes);
+  const pdfBase64 = uint8ToBase64(params.pdfBytes);
 
   // Build MIME message
   const mime = buildMimeMessage({

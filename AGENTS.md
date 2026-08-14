@@ -71,17 +71,21 @@ Tests live in `tests/` mirroring `src/` structure. Fixtures are in `tests/fixtur
 
 ### Testing layers — use them all
 
-| Layer       | Command                                         | What it covers                                                                          |
-| ----------- | ----------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Unit tests  | `bun test`                                      | Pure logic: calculator, parser, grouper, config schema, finalization helpers            |
-| TypeScript  | `bunx tsc --project tsconfig.app.json --noEmit` | Frontend type correctness                                                               |
-| E2E (Tauri) | `bun run e2e`                                   | Full app: real file system, HTTP, Tauri commands, dialog, PDF — run after any UI change |
-| Vite smoke  | `bun run dev:vite` + browser tools              | Quick visual iteration only — Tauri APIs not available                                  |
+| Layer       | Command                                         | What it covers                                                               |
+| ----------- | ----------------------------------------------- | ---------------------------------------------------------------------------- |
+| Unit tests  | `bun test`                                      | Pure logic: calculator, parser, grouper, config schema, finalization helpers |
+| TypeScript  | `bunx tsc --project tsconfig.app.json --noEmit` | Frontend type correctness                                                    |
+| Slice gate  | `bun run verify:calendar-editing`               | Fast calendar editing UI, format, hook, TypeScript, and focused Rust checks  |
+| E2E (Tauri) | `bun run e2e`                                   | Full app: real file system, HTTP, Tauri commands, dialog, PDF                |
+| Vite smoke  | `bun run dev:vite` + browser tools              | Quick visual iteration only — Tauri APIs not available                       |
 
-**After any UI change, always run `bun run e2e`.** It builds the real Tauri binary, starts the app with a temp config (`tests/fixtures/e2e-config.yaml` → `/tmp/lotus-e2e-config.yaml`), and exercises the full app via WebdriverIO. The Vite-only smoke test cannot verify file writes, folder creation, the dialog plugin, PDF generation, or config persistence.
+For an isolated UI change, run `bun run e2e` before completion. For a planned sequence of small calendar-editing slices, run `bun run verify:calendar-editing` after each slice and run `bun run e2e` once at the final integrated checkpoint. Do not pay for the two cold isolated Rust builds after every intermediate slice. The Vite-only smoke test cannot verify file writes, folder creation, the dialog plugin, PDF generation, or config persistence.
 
 ```bash
-# Run the full e2e suite (takes ~30s for build + binary compile)
+# Run the fast calendar-editing slice gate
+bun run verify:calendar-editing
+
+# Run the full isolated E2E suite at the integrated checkpoint
 bun run e2e
 ```
 

@@ -16,6 +16,7 @@ const SAMPLE_CONFIG: AppConfig = {
   },
   calendarId: 'example@group.calendar.google.com',
   calendarName: 'Teaching Schedule',
+  calendarAccessRole: 'writer',
   outputDir: '/tmp/invoices',
   studios: {
     Yogibar: {
@@ -44,6 +45,7 @@ describe('config serialization', () => {
     expect(reparsed.studios.Yogibar.address).toBe('456 Yoga Lane\nMunich');
     expect(reparsed.calendarId).toBe(SAMPLE_CONFIG.calendarId);
     expect(reparsed.calendarName).toBe(SAMPLE_CONFIG.calendarName);
+    expect(reparsed.calendarAccessRole).toBe(SAMPLE_CONFIG.calendarAccessRole);
     expect(reparsed.outputDir).toBe(SAMPLE_CONFIG.outputDir);
     expect(Object.keys(reparsed.studios)).toEqual(Object.keys(SAMPLE_CONFIG.studios));
     expect(reparsed.studios.Yogibar.rateTiers).toHaveLength(3);

@@ -1,0 +1,65 @@
+{
+  "pageSize": 2,
+  "calendarPageSize": 1,
+  "calendarList": [
+    {
+      "id": "teaching@example.test",
+      "summary": "Teaching Calendar",
+      "accessRole": "owner"
+    },
+    {
+      "id": "readonly@example.test",
+      "summary": "Read-only Calendar",
+      "accessRole": "reader"
+    }
+  ],
+  "events": [
+    {
+      "id": "lesson-single",
+      "etag": "\"single-v1\"",
+      "summary": "Test Studio / Pilates",
+      "description": "6",
+      "status": "confirmed",
+      "start": { "dateTime": "2026-08-18T09:00:00+02:00" },
+      "end": { "dateTime": "2026-08-18T10:00:00+02:00" },
+      "updated": "2026-08-01T10:00:00.000Z"
+    },
+    {
+      "id": "series-master",
+      "etag": "\"master-v1\"",
+      "summary": "Test Studio / Yoga",
+      "description": "8",
+      "status": "confirmed",
+      "start": { "dateTime": "2026-08-17T17:00:00+02:00" },
+      "end": { "dateTime": "2026-08-17T18:00:00+02:00" },
+      "updated": "2026-08-01T10:00:00.000Z",
+      "recurrence": ["RRULE:FREQ=WEEKLY"],
+      "e2eMaster": true
+    },
+    {
+      "id": "series-instance-1",
+      "etag": "\"instance-1-v1\"",
+      "recurringEventId": "series-master",
+      "originalStartTime": { "dateTime": "2026-08-17T17:00:00+02:00" },
+      "summary": "Test Studio / Yoga",
+      "description": "8",
+      "status": "confirmed",
+      "start": { "dateTime": "2026-08-17T17:00:00+02:00" },
+      "end": { "dateTime": "2026-08-17T18:00:00+02:00" },
+      "updated": "2026-08-01T10:00:00.000Z"
+    },
+    {
+      "id": "series-instance-2",
+      "etag": "\"instance-2-v1\"",
+      "recurringEventId": "series-master",
+      "originalStartTime": { "dateTime": "2026-08-24T17:00:00+02:00" },
+      "summary": "Cover Studio / Yoga",
+      "description": "8",
+      "status": "confirmed",
+      "start": { "dateTime": "2026-08-24T17:00:00+02:00" },
+      "end": { "dateTime": "2026-08-24T18:00:00+02:00" },
+      "updated": "2026-08-01T10:00:00.000Z",
+      "e2eExceptions": ["summary"]
+    }
+  ]
+}

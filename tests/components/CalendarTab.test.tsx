@@ -2,6 +2,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { CalendarTab } from '../../src/components/CalendarTab/index.js';
 import { ParsedClass, StudioConfig } from '../../src/lib/types.js';
+import { parsedClass } from '../helpers/calendar-fixtures.js';
 
 (globalThis as unknown as { React: typeof React }).React = React;
 
@@ -31,14 +32,14 @@ describe('CalendarTab', () => {
       },
     };
     const classes: ParsedClass[] = [
-      {
+      parsedClass({
         studioName: 'eddy',
         classType: 'prenatal',
         date: `${visibleMonthPrefix()}-26`,
         startTime: '18:00',
         endTime: '19:00',
         studentCount: 1,
-      },
+      }),
     ];
 
     expect(() =>

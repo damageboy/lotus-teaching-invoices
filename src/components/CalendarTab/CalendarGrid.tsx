@@ -6,6 +6,7 @@ interface Props {
   month: number; // 0-indexed (0 = January)
   classes: ParsedClass[];
   colorMap?: Record<string, string | undefined>;
+  onSelectLesson?: (lesson: ParsedClass, anchor: HTMLButtonElement) => void;
 }
 
 function getDaysInMonth(year: number, month: number) {
@@ -18,7 +19,7 @@ function getFirstDayOfWeek(year: number, month: number) {
   return (day + 6) % 7;
 }
 
-export function CalendarGrid({ year, month, classes, colorMap = {} }: Props) {
+export function CalendarGrid({ year, month, classes, colorMap = {}, onSelectLesson }: Props) {
   const daysInMonth = getDaysInMonth(year, month);
   const firstDow = getFirstDayOfWeek(year, month);
 
@@ -70,9 +71,10 @@ export function CalendarGrid({ year, month, classes, colorMap = {} }: Props) {
             </div>
             {dayClasses.map((cls) => (
               <EventChip
-                key={`${cls.date}-${cls.startTime}-${cls.studioName}`}
+                key={cls.eventIdentity.eventId}
                 cls={cls}
                 studioHex={colorMap[cls.studioName]}
+                onSelect={onSelectLesson}
               />
             ))}
           </div>

@@ -1,9 +1,16 @@
 import { useState, useEffect } from 'react';
-import { AppConfig, RateTier, StudioConfig, TeacherInfo, BankDetails } from '../../lib/types';
+import {
+  AppConfig,
+  CalendarAccessRole,
+  RateTier,
+  StudioConfig,
+  TeacherInfo,
+  BankDetails,
+} from '../../lib/types';
 import { ColorPickerPopup } from '../ColorPickerPopup';
 import { effectiveHex, nextUnusedColor } from '../../lib/studioColors';
 import { APP_VERSION, APP_IS_OFFICIAL } from '../../lib/version';
-import { listCalendars } from '../../lib/calendar/calendar-api';
+import { calendarErrorMessage, listCalendars } from '../../lib/calendar/calendar-api';
 import { getRateTierValidation } from '../../lib/config/rateTiers';
 
 interface Props {
@@ -14,15 +21,28 @@ interface Props {
   onSave: (next?: AppConfig) => Promise<void>;
 }
 
+export function calendarPickerErrorMessage(error: unknown): string {
+  return calendarErrorMessage(error);
+}
+
 export async function selectCalendar(
   config: AppConfig,
   id: string,
   name: string,
+  accessRole: CalendarAccessRole | undefined,
   onUpdate: (c: AppConfig) => void,
   onSave: (next?: AppConfig) => Promise<void>,
-  closeCalendarList: (next: { id: string; summary: string }[] | null) => void
+  closeCalendarList: (
+    next: { id: string; summary: string; accessRole?: CalendarAccessRole }[] | null
+  ) => void
 ): Promise<void> {
-  const next = { ...config, calendarId: id, calendarName: name };
+  const { calendarAccessRole: _previousAccessRole, ...configWithoutAccessRole } = config;
+  const next: AppConfig = {
+    ...configWithoutAccessRole,
+    calendarId: id,
+    calendarName: name,
+    ...(accessRole ? { calendarAccessRole: accessRole } : {}),
+  };
   onUpdate(next);
   await onSave(next);
   closeCalendarList(null);
@@ -257,7 +277,9 @@ function StudioCard({
 }
 
 export function RatesTab({ config, isDirty, saveError, onUpdate, onSave }: Props) {
-  const [calendars, setCalendars] = useState<{ id: string; summary: string }[] | null>(null);
+  const [calendars, setCalendars] = useState<
+    { id: string; summary: string; accessRole?: CalendarAccessRole }[] | null
+  >(null);
   const [calendarLoading, setCalendarLoading] = useState(false);
   const [calendarError, setCalendarError] = useState<string | null>(null);
 
@@ -268,14 +290,18 @@ export function RatesTab({ config, isDirty, saveError, onUpdate, onSave }: Props
       const list = await listCalendars();
       setCalendars(list);
     } catch (e) {
-      setCalendarError(e instanceof Error ? e.message : String(e));
+      setCalendarError(calendarPickerErrorMessage(e));
     } finally {
       setCalendarLoading(false);
     }
   }
 
-  async function handleSelectCalendar(id: string, name: string) {
-    await selectCalendar(config, id, name, onUpdate, onSave, setCalendars);
+  async function handleSelectCalendar(
+    id: string,
+    name: string,
+    accessRole: CalendarAccessRole | undefined
+  ) {
+    await selectCalendar(config, id, name, accessRole, onUpdate, onSave, setCalendars);
   }
 
   function updateTeacher(key: keyof Omit<TeacherInfo, 'bankDetails'>, value: string) {
@@ -522,7 +548,7 @@ export function RatesTab({ config, isDirty, saveError, onUpdate, onSave }: Props
               {calendars.map((cal) => (
                 <button
                   key={cal.id}
-                  onClick={() => handleSelectCalendar(cal.id, cal.summary)}
+                  onClick={() => handleSelectCalendar(cal.id, cal.summary, cal.accessRole)}
                   className={`text-left text-sm px-2 py-1 rounded hover:bg-indigo-50 ${
                     config.calendarId === cal.id
                       ? 'bg-indigo-100 text-indigo-700 font-medium'

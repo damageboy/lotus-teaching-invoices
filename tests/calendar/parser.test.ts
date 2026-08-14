@@ -1,73 +1,74 @@
 import { describe, it, expect } from 'vitest';
 import { extractClasses } from '../../src/lib/calendar/parser.js';
 import { CalendarEvent } from '../../src/lib/types.js';
+import { calendarEvent, calendarIdentity } from '../helpers/calendar-fixtures.js';
 
 const testEvents: CalendarEvent[] = [
   {
-    uid: 'event-1',
+    identity: calendarIdentity(),
     summary: 'Zen Yoga / Vinyasa Flow',
     description: '8',
     start: new Date('2026-01-03T09:00:00'),
     end: new Date('2026-01-03T10:15:00'),
   },
   {
-    uid: 'event-2',
+    identity: calendarIdentity(),
     summary: 'Zen Yoga / Yin Yoga',
     description: '3',
     start: new Date('2026-01-05T18:00:00'),
     end: new Date('2026-01-05T19:15:00'),
   },
   {
-    uid: 'event-3',
+    identity: calendarIdentity(),
     summary: 'Power House / HIIT Yoga',
     description: '6',
     start: new Date('2026-01-07T10:00:00'),
     end: new Date('2026-01-07T11:15:00'),
   },
   {
-    uid: 'event-4',
+    identity: calendarIdentity(),
     summary: 'Zen Yoga / Vinyasa Flow',
     description: '12',
     start: new Date('2026-01-10T09:00:00'),
     end: new Date('2026-01-10T10:15:00'),
   },
   {
-    uid: 'event-5',
+    identity: calendarIdentity(),
     summary: 'Power House / Power Flow',
     description: '2',
     start: new Date('2026-01-12T14:00:00'),
     end: new Date('2026-01-12T15:15:00'),
   },
   {
-    uid: 'event-6',
+    identity: calendarIdentity(),
     summary: 'Zen Yoga / Hatha',
     description: '',
     start: new Date('2026-01-15T09:00:00'),
     end: new Date('2026-01-15T10:15:00'),
   },
   {
-    uid: 'event-7',
+    identity: calendarIdentity(),
     summary: 'Unknown Studio / Mystery Class',
     description: '5',
     start: new Date('2026-01-20T10:00:00'),
     end: new Date('2026-01-20T11:15:00'),
   },
   {
-    uid: 'event-8',
+    identity: calendarIdentity(),
     summary: 'No Separator Here',
     description: '5',
     start: new Date('2026-01-25T09:00:00'),
     end: new Date('2026-01-25T10:15:00'),
   },
   {
-    uid: 'event-9',
+    identity: calendarIdentity(),
     summary: 'YFD / mitte / Vinyasa',
     description: '7',
     start: new Date('2026-01-08T17:00:00'),
     end: new Date('2026-01-08T18:15:00'),
   },
   {
-    uid: 'event-10',
+    identity: calendarIdentity(),
     summary: 'YFD / schoeneberg / Hatha',
     description: '4',
     start: new Date('2026-01-14T17:00:00'),
@@ -100,6 +101,44 @@ describe('extractClasses', () => {
     const { classes, warnings } = extractClasses(testEvents, knownStudios);
     expect(warnings.some((w) => w.code === 'UNKNOWN_STUDIO')).toBe(false);
     expect(classes.some((c) => c.unconfigured && c.studioName === 'Unknown Studio')).toBe(true);
+  });
+
+  it('retains exact source identity and text for configured and unconfigured classes', () => {
+    const configured = calendarEvent({
+      identity: {
+        calendarId: 'calendar-1',
+        eventId: 'configured-1',
+        recurringEventId: 'series-1',
+        originalStartTime: '2026-01-03T09:00:00+01:00',
+        etag: '"configured-etag"',
+      },
+      summary: '  Zen Yoga  /  Vinyasa Flow  ',
+      description: ' students: 9 ',
+    });
+    const unconfigured = calendarEvent({
+      identity: { calendarId: 'calendar-1', eventId: 'unconfigured-1' },
+      summary: '  New Studio  /  Mystery Class  ',
+      description: ' 7/45EUR ',
+    });
+
+    const { classes } = extractClasses([configured, unconfigured], knownStudios);
+
+    expect(classes).toHaveLength(2);
+    expect(classes[0]).toMatchObject({
+      eventIdentity: configured.identity,
+      sourceSummary: configured.summary,
+      sourceDescription: configured.description,
+      studioName: 'Zen Yoga',
+      classType: 'Vinyasa Flow',
+    });
+    expect(classes[1]).toMatchObject({
+      eventIdentity: unconfigured.identity,
+      sourceSummary: unconfigured.summary,
+      sourceDescription: unconfigured.description,
+      studioName: 'New Studio',
+      classType: 'Mystery Class',
+      unconfigured: true,
+    });
   });
 
   it('warns on missing separator', () => {
@@ -136,7 +175,7 @@ describe('extractClasses', () => {
   it('parses rate override from "N/PEUR" description', () => {
     const events: CalendarEvent[] = [
       {
-        uid: 'override-1',
+        identity: calendarIdentity(),
         summary: 'Zen Yoga / Vinyasa Flow',
         description: '9/30EUR',
         start: new Date('2026-01-03T09:00:00'),
@@ -153,7 +192,7 @@ describe('extractClasses', () => {
   it('parses rate override with spaces and lowercase eur', () => {
     const events: CalendarEvent[] = [
       {
-        uid: 'override-2',
+        identity: calendarIdentity(),
         summary: 'Zen Yoga / Yin Yoga',
         description: '5 / 45.50 eur',
         start: new Date('2026-01-05T18:00:00'),
@@ -168,7 +207,7 @@ describe('extractClasses', () => {
   it('plain number description has no rateOverride', () => {
     const events: CalendarEvent[] = [
       {
-        uid: 'no-override',
+        identity: calendarIdentity(),
         summary: 'Zen Yoga / Hatha',
         description: '7',
         start: new Date('2026-01-06T09:00:00'),
@@ -178,5 +217,36 @@ describe('extractClasses', () => {
     const { classes } = extractClasses(events, knownStudios);
     expect(classes[0].studentCount).toBe(7);
     expect(classes[0].rateOverride).toBeUndefined();
+  });
+
+  it('continues to display a single number in legacy prose', () => {
+    const events: CalendarEvent[] = [
+      {
+        identity: calendarIdentity(),
+        summary: 'Zen Yoga / Hatha',
+        description: 'students: 9',
+        start: new Date('2026-01-06T09:00:00'),
+        end: new Date('2026-01-06T10:00:00'),
+      },
+    ];
+    const { classes, warnings } = extractClasses(events, knownStudios);
+    expect(classes[0].studentCount).toBe(9);
+    expect(warnings).toHaveLength(0);
+  });
+
+  it('continues to display complete legacy overrides with more than two decimals', () => {
+    const events: CalendarEvent[] = [
+      {
+        identity: calendarIdentity(),
+        summary: 'Zen Yoga / Hatha',
+        description: '9 / 30.123 eur',
+        start: new Date('2026-01-06T09:00:00'),
+        end: new Date('2026-01-06T10:00:00'),
+      },
+    ];
+    const { classes, warnings } = extractClasses(events, knownStudios);
+    expect(classes[0].studentCount).toBe(9);
+    expect(classes[0].rateOverride).toBe(30.123);
+    expect(warnings).toHaveLength(0);
   });
 });

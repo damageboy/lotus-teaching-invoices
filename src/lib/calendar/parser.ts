@@ -1,4 +1,5 @@
 import { CalendarEvent, ParsedClass, ParseWarning } from '../types.js';
+import { parseStudentDescription } from './edit-format.js';
 
 function formatDate(d: Date): string {
   const year = d.getFullYear();
@@ -11,30 +12,6 @@ function formatTime(d: Date): string {
   const hours = String(d.getHours()).padStart(2, '0');
   const minutes = String(d.getMinutes()).padStart(2, '0');
   return `${hours}:${minutes}`;
-}
-
-function parseStudentCount(description: string | undefined): {
-  count: number | null;
-  rateOverride: number | undefined;
-  ambiguous: boolean;
-} {
-  if (!description) return { count: null, rateOverride: undefined, ambiguous: false };
-
-  // Check for rate override pattern: "N/PEUR" (e.g. "9/30EUR")
-  const overrideMatch = description.match(/^(\d+)\s*\/\s*(\d+(?:\.\d+)?)\s*EUR$/i);
-  if (overrideMatch) {
-    return {
-      count: parseInt(overrideMatch[1], 10),
-      rateOverride: parseFloat(overrideMatch[2]),
-      ambiguous: false,
-    };
-  }
-
-  const matches = [...description.matchAll(/(\d+)/g)];
-  if (matches.length === 0) return { count: null, rateOverride: undefined, ambiguous: false };
-  if (matches.length === 1)
-    return { count: parseInt(matches[0][1], 10), rateOverride: undefined, ambiguous: false };
-  return { count: null, rateOverride: undefined, ambiguous: true };
 }
 
 export function extractClasses(
@@ -71,12 +48,18 @@ export function extractClasses(
     }
 
     const studioName = knownStudios.get(rawStudioName.toLowerCase());
-    const studentCountResult = parseStudentCount(event.description);
-    const studentCount = studentCountResult.count;
+    const studentCountResult = parseStudentDescription(event.description);
+    const studentCount = studentCountResult.studentCount;
+    const source = {
+      eventIdentity: event.identity,
+      sourceSummary: event.summary,
+      sourceDescription: event.description,
+    };
 
     if (!studioName) {
       // Unknown studio: include on calendar as unconfigured so user can see it
       classes.push({
+        ...source,
         studioName: rawStudioName,
         classType,
         ...(location ? { location } : {}),
@@ -108,6 +91,7 @@ export function extractClasses(
     }
 
     classes.push({
+      ...source,
       studioName,
       classType,
       ...(location ? { location } : {}),

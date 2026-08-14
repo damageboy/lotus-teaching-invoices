@@ -1,57 +1,97 @@
 import { fetch } from '@tauri-apps/plugin-http';
+import { invoke } from '@tauri-apps/api/core';
 import { CALENDAR_API_BASE } from '../gmail/constants';
 import { getAccessToken } from '../gmail/auth';
 import { logInfo, logError } from '../logger';
-import { CalendarEvent } from '../types';
+import { CalendarAccessRole, CalendarEvent } from '../types';
 
 export interface CalendarListEntry {
   id: string;
   summary: string;
+  accessRole?: CalendarAccessRole;
 }
 
-/** Pure mapper: extracts id and summary from a calendarList API response. */
-export function mapCalendarListResponse(data: any): CalendarListEntry[] {
-  const items = data?.items;
+interface CalendarListDependencies {
+  getAccessToken: typeof getAccessToken;
+  invoke: <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
+}
+
+const calendarListDependencies: CalendarListDependencies = {
+  getAccessToken,
+  invoke,
+};
+
+function calendarAccessRole(value: unknown): CalendarAccessRole | undefined {
+  return value === 'owner' || value === 'writer' || value === 'reader' || value === 'freeBusyReader'
+    ? value
+    : undefined;
+}
+
+function mapCalendarListEntries(items: unknown): CalendarListEntry[] {
   if (!Array.isArray(items)) return [];
-  return items.map((item: any) => ({
-    id: item.id,
-    summary: item.summary,
-  }));
+  return items.map((item: any) => {
+    const accessRole = calendarAccessRole(item.accessRole);
+    return {
+      id: item.id,
+      summary: item.summary,
+      ...(accessRole ? { accessRole } : {}),
+    };
+  });
+}
+
+/** Pure mapper: extracts id, summary, and a validated role from a calendarList API response. */
+export function mapCalendarListResponse(data: any): CalendarListEntry[] {
+  return mapCalendarListEntries(data?.items);
 }
 
 /** Fetches the list of calendars visible to the authenticated user. */
-export async function listCalendars(): Promise<CalendarListEntry[]> {
-  const token = await getAccessToken();
-  const url = `${CALENDAR_API_BASE}/users/me/calendarList`;
-
+export async function listCalendars(
+  dependencies: CalendarListDependencies = calendarListDependencies
+): Promise<CalendarListEntry[]> {
+  const token = await dependencies.getAccessToken();
   logInfo('Fetching calendar list from Google Calendar API...');
-  const resp = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-
-  if (!resp.ok) {
-    const text = await resp.text();
-    const msg = `Failed to fetch calendar list (${resp.status}): ${text}`;
-    logError(msg);
-    throw new Error(msg);
+  try {
+    const response = await dependencies.invoke<unknown>('list_calendars', {
+      accessToken: token,
+    });
+    const calendars = mapCalendarListEntries(response);
+    logInfo(`Found ${calendars.length} calendars`);
+    return calendars;
+  } catch (error) {
+    logError(`Failed to fetch calendar list: ${calendarErrorMessage(error)}`);
+    throw error;
   }
+}
 
-  const data = await resp.json();
-  const calendars = mapCalendarListResponse(data);
-  logInfo(`Found ${calendars.length} calendars`);
-  return calendars;
+export function calendarErrorMessage(error: unknown): string {
+  if (typeof error === 'object' && error !== null) {
+    const message =
+      'message' in error && typeof error.message === 'string' ? error.message : undefined;
+    const code = 'code' in error && typeof error.code === 'string' ? error.code : undefined;
+    if (message && code) return `${message} (${code})`;
+    if (message) return message;
+    if (code) return `Google Calendar request failed (${code})`;
+  }
+  return String(error);
 }
 
 /** Pure mapper: converts a Calendar Events API response to CalendarEvent[]. */
-export function mapEventsResponse(data: any): CalendarEvent[] {
+export function mapEventsResponse(data: any, calendarId: string): CalendarEvent[] {
   const items = data?.items;
   if (!Array.isArray(items)) return [];
   const result: CalendarEvent[] = [];
   for (const item of items) {
     // Skip all-day events (no dateTime on start or end)
     if (!item.start?.dateTime || !item.end?.dateTime) continue;
+    const originalStartTime = item.originalStartTime?.dateTime ?? item.originalStartTime?.date;
     result.push({
-      uid: item.id,
+      identity: {
+        calendarId,
+        eventId: item.id,
+        ...(item.recurringEventId ? { recurringEventId: item.recurringEventId } : {}),
+        ...(originalStartTime ? { originalStartTime } : {}),
+        ...(item.etag ? { etag: item.etag } : {}),
+      },
       summary: item.summary,
       description: item.description ?? '',
       start: new Date(item.start.dateTime),
@@ -104,7 +144,7 @@ export async function fetchEvents(
     }
 
     const data = await resp.json();
-    allEvents.push(...mapEventsResponse(data));
+    allEvents.push(...mapEventsResponse(data, calendarId));
     pageToken = data.nextPageToken;
   } while (pageToken);
 

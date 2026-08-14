@@ -26,6 +26,25 @@ async function renderPdf(invoice: Invoice, config: AppConfig): Promise<Uint8Arra
   return new Uint8Array(await blob.arrayBuffer());
 }
 
+export async function renderFinalPdf(
+  invoice: Invoice,
+  config: AppConfig,
+  invoiceNumber: string
+): Promise<Uint8Array> {
+  return renderPdf({ ...invoice, invoiceNumber }, config);
+}
+
+export type OpenPdfResult = { status: 'opened' } | { status: 'failed'; message: string };
+
+export async function openPdf(path: string): Promise<OpenPdfResult> {
+  try {
+    await invoke('open_file', { path });
+    return { status: 'opened' };
+  } catch (error) {
+    return { status: 'failed', message: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 /** Write preview PDF to {outputDir}/Preview/ and open it. */
 export async function generateAndOpenPdf(invoice: Invoice, config: AppConfig): Promise<void> {
   const previewDir = `${config.outputDir}/Preview`;

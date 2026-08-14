@@ -17,6 +17,8 @@ export interface TeacherInfo {
   bankDetails: BankDetails;
 }
 
+export type CalendarAccessRole = 'owner' | 'writer' | 'reader' | 'freeBusyReader';
+
 export interface StudioConfig {
   fullName: string; // display name for PDF; key is still the calendar match string
   address: string;
@@ -29,13 +31,22 @@ export interface AppConfig {
   teacher: TeacherInfo;
   calendarId?: string; // Google Calendar ID (e.g. "abc@group.calendar.google.com")
   calendarName?: string; // Display name of the selected calendar
+  calendarAccessRole?: CalendarAccessRole; // Last observed CalendarList role; refreshed each session
   outputDir: string;
   lastInvoice: string; // "N/YYYY" e.g. "7/2026", or "" if unset
   studios: Record<string, StudioConfig>;
 }
 
+export interface CalendarEventIdentity {
+  calendarId: string;
+  eventId: string;
+  recurringEventId?: string | null;
+  originalStartTime?: string | null;
+  etag?: string | null;
+}
+
 export interface CalendarEvent {
-  uid: string;
+  identity: CalendarEventIdentity;
   summary: string;
   description: string;
   start: Date;
@@ -45,6 +56,9 @@ export interface CalendarEvent {
 }
 
 export interface ParsedClass {
+  eventIdentity: CalendarEventIdentity;
+  sourceSummary: string;
+  sourceDescription: string;
   studioName: string;
   classType: string;
   location?: string;

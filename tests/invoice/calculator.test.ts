@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { findRate, computeStudioStats } from '../../src/lib/invoice/calculator.js';
 import { RateTier, ParsedClass } from '../../src/lib/types.js';
+import { parsedClass } from '../helpers/calendar-fixtures.js';
 
 const tiers: RateTier[] = [
   { minStudents: 1, maxStudents: 5, rate: 80 },
@@ -33,30 +34,30 @@ describe('findRate', () => {
 });
 
 const classFixtures: ParsedClass[] = [
-  {
+  parsedClass({
     studioName: 'Zen Yoga',
     classType: 'Vinyasa',
     date: '2026-01-03',
     startTime: '09:00',
     endTime: '10:15',
     studentCount: 8,
-  }, // → 100
-  {
+  }), // → 100
+  parsedClass({
     studioName: 'Zen Yoga',
     classType: 'Yin',
     date: '2026-01-05',
     startTime: '18:00',
     endTime: '19:15',
     studentCount: 3,
-  }, // → 80
-  {
+  }), // → 80
+  parsedClass({
     studioName: 'Zen Yoga',
     classType: 'Vinyasa',
     date: '2026-01-10',
     startTime: '09:00',
     endTime: '10:15',
     studentCount: 12,
-  }, // → 120
+  }), // → 120
 ];
 
 describe('computeStudioStats', () => {
@@ -74,14 +75,14 @@ describe('computeStudioStats', () => {
   it('skips zero-student classes', () => {
     const withZero: ParsedClass[] = [
       ...classFixtures,
-      {
+      parsedClass({
         studioName: 'Zen Yoga',
         classType: 'Hatha',
         date: '2026-01-12',
         startTime: '09:00',
         endTime: '10:15',
         studentCount: 0,
-      },
+      }),
     ];
     const stats = computeStudioStats(withZero, tiers);
     expect(stats.totalAmount).toBe(300);
@@ -92,14 +93,14 @@ describe('computeStudioStats', () => {
     const stats = computeStudioStats(
       [
         ...classFixtures,
-        {
+        parsedClass({
           studioName: 'Zen Yoga',
           classType: 'Prenatal',
           date: '2026-01-12',
           startTime: '09:00',
           endTime: '10:15',
           studentCount: 1,
-        },
+        }),
       ],
       [
         { minStudents: 2, maxStudents: 5, rate: 80 },

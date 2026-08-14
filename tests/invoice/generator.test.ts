@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { generateInvoice } from '../../src/lib/invoice/generator.js';
 import { ParsedClass, StudioConfig } from '../../src/lib/types.js';
+import { parsedClass } from '../helpers/calendar-fixtures.js';
 
 const studioConfig: StudioConfig = {
   rateTiers: [
@@ -11,30 +12,30 @@ const studioConfig: StudioConfig = {
 };
 
 const classes: ParsedClass[] = [
-  {
+  parsedClass({
     studioName: 'Zen Yoga',
     classType: 'Vinyasa Flow',
     date: '2026-01-03',
     startTime: '09:00',
     endTime: '10:15',
     studentCount: 8,
-  },
-  {
+  }),
+  parsedClass({
     studioName: 'Zen Yoga',
     classType: 'Yin Yoga',
     date: '2026-01-05',
     startTime: '18:00',
     endTime: '19:15',
     studentCount: 3,
-  },
-  {
+  }),
+  parsedClass({
     studioName: 'Zen Yoga',
     classType: 'Vinyasa Flow',
     date: '2026-01-10',
     startTime: '09:00',
     endTime: '10:15',
     studentCount: 12,
-  },
+  }),
 ];
 
 describe('generateInvoice', () => {
@@ -101,22 +102,22 @@ describe('generateInvoice', () => {
 
   it('skips classes with 0 students and warns', () => {
     const classesWithZero: ParsedClass[] = [
-      {
+      parsedClass({
         studioName: 'Zen Yoga',
         classType: 'Vinyasa',
         date: '2026-01-03',
         startTime: '09:00',
         endTime: '10:15',
         studentCount: 8,
-      },
-      {
+      }),
+      parsedClass({
         studioName: 'Zen Yoga',
         classType: 'Hatha',
         date: '2026-01-05',
         startTime: '09:00',
         endTime: '10:15',
         studentCount: 0,
-      },
+      }),
     ];
 
     const { invoice, warnings } = generateInvoice('Zen Yoga', classesWithZero, studioConfig, {
@@ -131,7 +132,7 @@ describe('generateInvoice', () => {
 
   it('preserves location in invoice line items', () => {
     const classesWithLocation: ParsedClass[] = [
-      {
+      parsedClass({
         studioName: 'YFD',
         classType: 'Vinyasa',
         location: 'mitte',
@@ -139,8 +140,8 @@ describe('generateInvoice', () => {
         startTime: '17:00',
         endTime: '18:15',
         studentCount: 7,
-      },
-      {
+      }),
+      parsedClass({
         studioName: 'YFD',
         classType: 'Hatha',
         location: 'schoeneberg',
@@ -148,7 +149,7 @@ describe('generateInvoice', () => {
         startTime: '17:00',
         endTime: '18:15',
         studentCount: 4,
-      },
+      }),
     ];
 
     const { invoice } = generateInvoice('YFD', classesWithLocation, studioConfig, {
