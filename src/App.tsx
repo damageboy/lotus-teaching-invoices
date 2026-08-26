@@ -41,7 +41,6 @@ export default function App() {
     saveError: configSaveError,
     updateConfig,
     save,
-    saveOrThrow,
     saveUpdateOrThrow,
   } = useConfig();
   const calendarPicker = useCalendarPicker({ config, saveConfig: saveUpdateOrThrow });
@@ -246,7 +245,7 @@ export default function App() {
               }
               return scanFinalFolder(driveApi, stagedRoot, invoiceSources);
             }}
-            onSaveConfig={saveOrThrow}
+            onSaveConfig={saveUpdateOrThrow}
             onAuthorizeDrive={googleAuthorization.allowDrive}
           />
         )}

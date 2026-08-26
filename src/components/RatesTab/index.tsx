@@ -13,7 +13,7 @@ interface Props {
   isDirty: boolean;
   saveError: string | null;
   onUpdate: (c: AppConfig) => void;
-  onSave: (next?: AppConfig) => Promise<void>;
+  onSave: () => Promise<void>;
 }
 
 export function RatesTab({

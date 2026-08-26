@@ -53,7 +53,7 @@ interface Props {
   drive: DriveInvoicesState;
   folderService: DriveFolderBrowserService;
   scanCandidate(stagedRoot: StagedDriveRoot): Promise<DriveInvoiceScan>;
-  onSaveConfig(config: AppConfig): Promise<void>;
+  onSaveConfig(update: (current: AppConfig) => AppConfig): Promise<void>;
   onAuthorizeDrive?: () => Promise<void>;
   dependencies?: Partial<InvoiceActionDependencies>;
 }
@@ -228,10 +228,10 @@ export async function activateDriveStorage(
   drive: Pick<DriveInvoicesState, 'activateRoot'>,
   stagedRoot: StagedDriveRoot,
   config: AppConfig,
-  saveConfig: (config: AppConfig) => Promise<void>
+  saveConfig: (update: (current: AppConfig) => AppConfig) => Promise<void>
 ): Promise<void> {
   await drive.activateRoot(stagedRoot, config.lastInvoice);
-  await saveConfig(withoutLegacyInvoiceStorage(config));
+  await saveConfig(withoutLegacyInvoiceStorage);
 }
 
 export function InvoicesTab({

@@ -115,14 +115,14 @@ export function useConfig() {
   }
 
   const persist = useCallback(
-    async (next?: AppConfig, throwOnFailure = false) => {
+    async (throwOnFailure = false) => {
       return enqueueWrite(async () => {
         setSaveError(null);
         logInfo(`Saving config to ${CONFIG_FILE}`);
         try {
           const path = await configPath();
           let revision = configRevisionRef.current;
-          let toSave = validatedConfig(next ?? configRef.current);
+          let toSave = validatedConfig(configRef.current);
           while (true) {
             await writeConfig(path, toSave);
             if (revision === configRevisionRef.current) break;
@@ -156,7 +156,9 @@ export function useConfig() {
             await writeConfig(path, toSave);
             const currentRequest = update(configRef.current);
             if (currentRequest === null) {
+              setIsDirty(true);
               await repairLatestConfig(path);
+              setIsDirty(false);
               return;
             }
             if (revision !== configRevisionRef.current) continue;
@@ -174,8 +176,8 @@ export function useConfig() {
     [enqueueWrite, publishConfig]
   );
 
-  const save = useCallback((next?: AppConfig) => persist(next), [persist]);
-  const saveOrThrow = useCallback((next?: AppConfig) => persist(next, true), [persist]);
+  const save = useCallback(() => persist(), [persist]);
+  const saveOrThrow = useCallback(() => persist(true), [persist]);
 
   return {
     config,
