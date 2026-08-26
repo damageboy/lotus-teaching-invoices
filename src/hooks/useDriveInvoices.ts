@@ -179,6 +179,9 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
   });
   const refreshInFlightRef = useRef<RefreshInFlight | null>(null);
   const refreshGenerationRef = useRef(0);
+  const repairRequestedStoreRef = useRef<DriveInvoiceStoreController | null>(null);
+  const repairScheduledRef = useRef(false);
+  const repairInFlightRef = useRef(false);
   const actionErrorGenerationRef = useRef(0);
   const mutationQueueRef = useRef<Promise<void>>(Promise.resolve());
   const operationSequenceRef = useRef(0);
@@ -186,6 +189,7 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
   const [machine, setMachine] = useState<MachineState>(() =>
     initialState(options.authorizationIncarnation, signature)
   );
+  const [repairWakeup, setRepairWakeup] = useState(0);
   const machineRef = useRef(machine);
   machineRef.current = machine;
 
@@ -226,8 +230,20 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
     [contextIsCurrent, currentContext]
   );
 
-  const runRefresh: (force?: boolean, knownConfigured?: boolean) => Promise<void> = useCallback(
-    (force = false, knownConfigured = false): Promise<void> => {
+  const scheduleStoreRepair = useCallback((store: DriveInvoiceStoreController): void => {
+    if (!mountedRef.current || committedOptionsRef.current.store !== store) return;
+    repairRequestedStoreRef.current = store;
+    if (repairInFlightRef.current || repairScheduledRef.current) return;
+    repairScheduledRef.current = true;
+    setRepairWakeup((current) => current + 1);
+  }, []);
+
+  const runRefresh: (
+    force?: boolean,
+    knownConfigured?: boolean,
+    repairingStoreState?: boolean
+  ) => Promise<void> = useCallback(
+    (force = false, knownConfigured = false, repairingStoreState = false): Promise<void> => {
       const current = committedOptionsRef.current;
       const context: SemanticContext = {
         incarnation: semanticIncarnationRef.current,
@@ -280,8 +296,17 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
             snapshot = await store.bootstrap([]);
             if (!contextIsCurrent(context) || refreshGenerationRef.current !== refreshGeneration) {
               const latest = committedOptionsRef.current;
-              if (snapshot !== null && mountedRef.current && latest.store === store) {
-                return runRefresh(true, true);
+              const currentMachine = machineRef.current;
+              const currentGenerationConfigured =
+                currentMachine.authorizationIncarnation === latest.authorizationIncarnation &&
+                currentMachine.sourceSignature === latest.sourceSignature &&
+                currentMachine.snapshot !== null;
+              if (
+                mountedRef.current &&
+                latest.store === store &&
+                (snapshot !== null || currentGenerationConfigured)
+              ) {
+                scheduleStoreRepair(store);
               }
               return;
             }
@@ -290,6 +315,7 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
             }
           }
           if (!contextIsCurrent(context) || refreshGenerationRef.current !== refreshGeneration) {
+            if (repairingStoreState) scheduleStoreRepair(store);
             return;
           }
           const preserveActionError = actionErrorGenerationRef.current !== actionErrorGeneration;
@@ -353,8 +379,35 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
       );
       return promise;
     },
-    [contextIsCurrent, updateMachine]
+    [contextIsCurrent, scheduleStoreRepair, updateMachine]
   );
+
+  useEffect(() => {
+    if (repairWakeup === 0) return;
+    repairScheduledRef.current = false;
+    const store = repairRequestedStoreRef.current;
+    repairRequestedStoreRef.current = null;
+    if (store === null || !mountedRef.current || committedOptionsRef.current.store !== store) {
+      return;
+    }
+
+    repairInFlightRef.current = true;
+    void runRefresh(true, true, true)
+      .catch(() => undefined)
+      .finally(() => {
+        repairInFlightRef.current = false;
+        const pendingStore = repairRequestedStoreRef.current;
+        if (
+          pendingStore !== null &&
+          mountedRef.current &&
+          committedOptionsRef.current.store === pendingStore &&
+          !repairScheduledRef.current
+        ) {
+          repairScheduledRef.current = true;
+          setRepairWakeup((current) => current + 1);
+        }
+      });
+  }, [repairWakeup, runRefresh]);
 
   const beginOperation = useCallback(
     (key: string, context: SemanticContext): OperationToken => {
@@ -574,6 +627,8 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
       mountedRef.current = false;
       refreshGenerationRef.current += 1;
       refreshInFlightRef.current = null;
+      repairRequestedStoreRef.current = null;
+      repairScheduledRef.current = false;
       currentOperationRef.current = null;
     };
   }, []);

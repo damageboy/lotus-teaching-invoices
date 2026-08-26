@@ -686,6 +686,137 @@ describe('useDriveInvoices', () => {
     );
   });
 
+  it('repairs current store sources after a stale null bootstrap completes last', async () => {
+    const olderBootstrap = deferred<DriveStoreSnapshot | null>();
+    const newerBootstrap = deferred<DriveStoreSnapshot>();
+    const store = storeDouble();
+    let storedSourceHash = 'unset';
+    store.bootstrap
+      .mockReturnValueOnce(
+        olderBootstrap.promise.then((snapshot) => {
+          storedSourceHash = 'empty';
+          return snapshot;
+        })
+      )
+      .mockReturnValueOnce(
+        newerBootstrap.promise.then((snapshot) => {
+          storedSourceHash = 'empty';
+          return snapshot;
+        })
+      );
+    store.refresh.mockImplementation(async (sources) => {
+      storedSourceHash = sources[0]?.fingerprint.sourceSha256 ?? 'empty';
+      return snapshotFor(`reconciled-${storedSourceHash}`);
+    });
+    const view = renderHook(
+      ({ sources }) =>
+        useDriveInvoices(
+          options({ store, sources, discoveryEnabled: true, foregroundRefreshEnabled: false })
+        ),
+      { initialProps: { sources: [source('older-source')] } }
+    );
+    await waitFor(() => expect(store.bootstrap).toHaveBeenCalledOnce());
+
+    view.rerender({ sources: [source('newer-source')] });
+    await waitFor(() => expect(store.bootstrap).toHaveBeenCalledTimes(2));
+    await act(async () => {
+      newerBootstrap.resolve(snapshotFor('discovered-newer'));
+      await newerBootstrap.promise;
+    });
+    await waitFor(() => expect(store.refresh).toHaveBeenCalledOnce());
+    expect(storedSourceHash).toBe('newer-source');
+
+    await act(async () => {
+      olderBootstrap.resolve(null);
+      await olderBootstrap.promise;
+    });
+    await waitFor(() => expect(store.refresh).toHaveBeenCalledTimes(2));
+    expect(store.refresh.mock.calls[1][0][0].fingerprint.sourceSha256).toBe('newer-source');
+    expect(storedSourceHash).toBe('newer-source');
+    expect(view.result.current.snapshot?.stagedRoot.root.folderId).toBe(
+      'reconciled-newer-source-root'
+    );
+  });
+
+  it('repairs again when a store repair completes with stale sources', async () => {
+    const olderBootstrap = deferred<DriveStoreSnapshot>();
+    const newerBootstrap = deferred<DriveStoreSnapshot>();
+    const obsoleteRepair = deferred<DriveStoreSnapshot>();
+    const store = storeDouble();
+    let storedSourceHash = 'unset';
+    store.bootstrap
+      .mockReturnValueOnce(
+        olderBootstrap.promise.then((snapshot) => {
+          storedSourceHash = 'empty';
+          return snapshot;
+        })
+      )
+      .mockReturnValueOnce(
+        newerBootstrap.promise.then((snapshot) => {
+          storedSourceHash = 'empty';
+          return snapshot;
+        })
+      );
+    store.refresh
+      .mockImplementationOnce(async (sources) => {
+        storedSourceHash = sources[0]?.fingerprint.sourceSha256 ?? 'empty';
+        return snapshotFor('reconciled-newer');
+      })
+      .mockImplementationOnce((sources) => {
+        const sourceHash = sources[0]?.fingerprint.sourceSha256 ?? 'empty';
+        return obsoleteRepair.promise.then((snapshot) => {
+          storedSourceHash = sourceHash;
+          return snapshot;
+        });
+      })
+      .mockImplementationOnce(async (sources) => {
+        storedSourceHash = sources[0]?.fingerprint.sourceSha256 ?? 'empty';
+        return snapshotFor('current-newest');
+      })
+      .mockImplementationOnce(async (sources) => {
+        storedSourceHash = sources[0]?.fingerprint.sourceSha256 ?? 'empty';
+        return snapshotFor('repaired-newest');
+      });
+    const view = renderHook(
+      ({ sources }) =>
+        useDriveInvoices(
+          options({ store, sources, discoveryEnabled: true, foregroundRefreshEnabled: false })
+        ),
+      { initialProps: { sources: [source('older-source')] } }
+    );
+    await waitFor(() => expect(store.bootstrap).toHaveBeenCalledOnce());
+
+    view.rerender({ sources: [source('newer-source')] });
+    await waitFor(() => expect(store.bootstrap).toHaveBeenCalledTimes(2));
+    await act(async () => {
+      newerBootstrap.resolve(snapshotFor('discovered-newer'));
+      await newerBootstrap.promise;
+    });
+    await waitFor(() => expect(store.refresh).toHaveBeenCalledOnce());
+
+    await act(async () => {
+      olderBootstrap.resolve(snapshotFor('discovered-older'));
+      await olderBootstrap.promise;
+    });
+    await waitFor(() => expect(store.refresh).toHaveBeenCalledTimes(2));
+
+    view.rerender({ sources: [source('newest-source')] });
+    await waitFor(() => expect(store.refresh).toHaveBeenCalledTimes(3));
+    await waitFor(() =>
+      expect(view.result.current.snapshot?.stagedRoot.root.folderId).toBe('current-newest-root')
+    );
+    expect(storedSourceHash).toBe('newest-source');
+
+    await act(async () => {
+      obsoleteRepair.resolve(snapshotFor('obsolete-repair'));
+      await obsoleteRepair.promise;
+    });
+    await waitFor(() => expect(store.refresh).toHaveBeenCalledTimes(4));
+    expect(store.refresh.mock.calls[3][0][0].fingerprint.sourceSha256).toBe('newest-source');
+    expect(storedSourceHash).toBe('newest-source');
+    expect(view.result.current.snapshot?.stagedRoot.root.folderId).toBe('repaired-newest-root');
+  });
+
   it('refreshes on focus only while foreground refresh is enabled', async () => {
     const store = storeDouble();
     store.bootstrap.mockResolvedValueOnce(snapshotFor('background'));
