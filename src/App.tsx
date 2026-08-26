@@ -42,8 +42,9 @@ export default function App() {
     updateConfig,
     save,
     saveOrThrow,
+    saveUpdateOrThrow,
   } = useConfig();
-  const calendarPicker = useCalendarPicker({ config, saveConfig: saveOrThrow });
+  const calendarPicker = useCalendarPicker({ config, saveConfig: saveUpdateOrThrow });
   const {
     classes,
     isLoading: calLoading,

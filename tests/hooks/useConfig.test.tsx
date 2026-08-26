@@ -1,5 +1,6 @@
 import React from 'react';
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
+import { parse as parseYaml } from 'yaml';
 import type { AppConfig } from '../../src/lib/types.js';
 import { installReactTestEnvironment } from '../helpers/react-test-env.js';
 
@@ -23,6 +24,16 @@ vi.mock('../../src/lib/logger.js', () => ({
 const restoreDom = installReactTestEnvironment();
 const { act, cleanup, renderHook, waitFor } = await import('@testing-library/react');
 const { useConfig } = await import('../../src/hooks/useConfig.js');
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
 
 const legacyConfig: AppConfig = {
   teacher: {
@@ -99,5 +110,89 @@ describe('useConfig error boundaries', () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(result.current.loadError).toContain('invalid config bytes');
     expect(result.current.saveError).toBeNull();
+  });
+
+  it('serializes an older ordinary save before a later conditional Calendar update', async () => {
+    const firstWrite = deferred<void>();
+    const secondWrite = deferred<void>();
+    fs.writeTextFile
+      .mockImplementationOnce(() => firstWrite.promise)
+      .mockImplementationOnce(() => secondWrite.promise);
+    const { result } = renderHook(() => useConfig());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    const ratesConfig: AppConfig = {
+      ...legacyConfig,
+      teacher: { ...legacyConfig.teacher, name: 'Edited Teacher' },
+    };
+    act(() => result.current.updateConfig(ratesConfig));
+    let ratesSave!: Promise<void>;
+    let calendarSave!: Promise<void>;
+    act(() => {
+      ratesSave = result.current.save();
+      calendarSave = result.current.saveUpdateOrThrow((current) => ({
+        ...current,
+        calendarId: 'calendar-b',
+        calendarName: 'Teaching',
+        calendarAccessRole: 'writer',
+      }));
+    });
+
+    await waitFor(() => expect(fs.writeTextFile).toHaveBeenCalledTimes(1));
+    firstWrite.resolve();
+    await waitFor(() => expect(fs.writeTextFile).toHaveBeenCalledTimes(2));
+    const durableCalendarConfig = parseYaml(fs.writeTextFile.mock.calls[1][1]);
+    expect(durableCalendarConfig.teacher.name).toBe('Edited Teacher');
+    expect(durableCalendarConfig.calendarId).toBe('calendar-b');
+    secondWrite.resolve();
+    await act(() => Promise.all([ratesSave, calendarSave]));
+
+    expect(result.current.config.teacher.name).toBe('Edited Teacher');
+    expect(result.current.config.calendarId).toBe('calendar-b');
+  });
+
+  it('rejects a stale Calendar save when repairing the latest config fails', async () => {
+    const staleWrite = deferred<void>();
+    fs.writeTextFile
+      .mockImplementationOnce(() => staleWrite.promise)
+      .mockRejectedValueOnce(new Error('repair failed'));
+    const { result } = renderHook(() => useConfig());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    let active = true;
+    let calendarSave!: Promise<void>;
+    act(() => {
+      calendarSave = result.current.saveUpdateOrThrow((current) =>
+        active
+          ? {
+              ...current,
+              calendarId: 'calendar-b',
+              calendarName: 'Teaching',
+            }
+          : null
+      );
+    });
+    await waitFor(() => expect(fs.writeTextFile).toHaveBeenCalledTimes(1));
+    const latestConfig: AppConfig = {
+      ...legacyConfig,
+      teacher: { ...legacyConfig.teacher, name: 'Latest Teacher' },
+    };
+    active = false;
+    act(() => result.current.updateConfig(latestConfig));
+
+    let rejection: unknown;
+    await act(async () => {
+      staleWrite.resolve();
+      try {
+        await calendarSave;
+      } catch (error) {
+        rejection = error;
+      }
+    });
+
+    expect(rejection).toEqual(expect.objectContaining({ message: 'repair failed' }));
+    expect(fs.writeTextFile).toHaveBeenCalledTimes(2);
+    const attemptedRepair = parseYaml(fs.writeTextFile.mock.calls[1][1]);
+    expect(attemptedRepair.teacher.name).toBe('Latest Teacher');
+    expect(result.current.config).toEqual(latestConfig);
+    expect(result.current.saveError).toContain('repair failed');
   });
 });

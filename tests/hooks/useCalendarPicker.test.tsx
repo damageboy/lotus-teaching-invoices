@@ -37,23 +37,34 @@ function renderControlledPicker(
   persist: (next: AppConfig) => Promise<void>
 ) {
   return renderHook(() => {
-    const [config, setConfig] = React.useState(initialConfig);
+    const [config, setConfigState] = React.useState(initialConfig);
+    const configRef = React.useRef(initialConfig);
+    const revisionRef = React.useRef(0);
+    const setConfig = React.useCallback((next: AppConfig) => {
+      configRef.current = next;
+      revisionRef.current += 1;
+      flushSync(() => setConfigState(next));
+    }, []);
     const saveConfig = React.useCallback(
-      async (next: AppConfig) => {
-        await persist(next);
-        flushSync(() => {
-          setConfig({
-            teacher: next.teacher,
-            ...(next.calendarId ? { calendarId: next.calendarId } : {}),
-            ...(next.calendarName ? { calendarName: next.calendarName } : {}),
-            ...(next.calendarAccessRole ? { calendarAccessRole: next.calendarAccessRole } : {}),
-            ...(next.outputDir ? { outputDir: next.outputDir } : {}),
-            ...(next.lastInvoice ? { lastInvoice: next.lastInvoice } : {}),
-            studios: next.studios,
-          });
-        });
+      async (update: (current: AppConfig) => AppConfig | null) => {
+        while (true) {
+          const revision = revisionRef.current;
+          const next = update(configRef.current);
+          if (next === null) return;
+          await persist(next);
+          if (update(configRef.current) === null) {
+            while (true) {
+              const repairRevision = revisionRef.current;
+              await persist(configRef.current);
+              if (repairRevision === revisionRef.current) return;
+            }
+          }
+          if (revision !== revisionRef.current) continue;
+          setConfig(next);
+          return;
+        }
       },
-      [persist]
+      [persist, setConfig]
     );
     return {
       config,
@@ -74,7 +85,13 @@ afterAll(() => restoreDom());
 describe('useCalendarPicker', () => {
   it('does not publish a Calendar selection until durable save succeeds', async () => {
     const pending = deferred<void>();
-    const saveConfig = vi.fn(() => pending.promise);
+    let requested: AppConfig | null = null;
+    const saveConfig = vi.fn(
+      async (update: (current: AppConfig) => AppConfig | null): Promise<void> => {
+        requested = update(unconfiguredConfig);
+        await pending.promise;
+      }
+    );
     const view = renderHook(() =>
       useCalendarPicker({ config: unconfiguredConfig, saveConfig }, dependencies)
     );
@@ -88,7 +105,7 @@ describe('useCalendarPicker', () => {
       });
     });
 
-    expect(saveConfig).toHaveBeenCalledWith(
+    expect(requested).toEqual(
       expect.objectContaining({ calendarId: 'calendar-a', calendarName: 'Teaching' })
     );
     expect(view.result.current.selectedName).toBe('Selected calendar');
@@ -135,7 +152,8 @@ describe('useCalendarPicker', () => {
 
     await act(() => view.result.current.select({ id: 'calendar-a', summary: 'Teaching' }));
 
-    const selected = saveConfig.mock.calls[0][0];
+    const selected = saveConfig.mock.calls[0][0](unconfiguredConfig);
+    expect(selected).not.toBeNull();
     expect(selected).not.toHaveProperty('calendarAccessRole');
     expect(JSON.parse(JSON.stringify(selected))).not.toHaveProperty('calendarAccessRole');
   });
@@ -227,6 +245,36 @@ describe('useCalendarPicker', () => {
     expect(persist).toHaveBeenCalledTimes(2);
   });
 
+  it('keeps a failed stale-write repair visible and retryable in the current session', async () => {
+    const firstWrite = deferred<void>();
+    const persist = vi.fn(async () => {
+      if (persist.mock.calls.length === 1) {
+        await firstWrite.promise;
+        return;
+      }
+      throw new Error('repair failed');
+    });
+    const view = renderControlledPicker(unconfiguredConfig, persist);
+    await act(() => view.result.current.picker.openList());
+    let selection!: Promise<void>;
+    act(() => {
+      selection = view.result.current.picker.select({ id: 'calendar-a', summary: 'Teaching' });
+    });
+    act(() => view.result.current.picker.closeList());
+    await act(() => view.result.current.picker.openList());
+
+    await act(async () => {
+      firstWrite.resolve();
+      await selection;
+    });
+
+    expect(view.result.current.picker.error).toBe('repair failed');
+    expect(view.result.current.picker.saving).toBe(false);
+    expect(view.result.current.picker.listOpen).toBe(true);
+    expect(persist).toHaveBeenCalledTimes(2);
+    expect(persist.mock.calls[1][0]).toEqual(unconfiguredConfig);
+  });
+
   it('restores the current A incarnation when an older selection publishes after A to B to A', async () => {
     const firstWrite = deferred<void>();
     const persist = vi.fn(async () => {
@@ -257,6 +305,33 @@ describe('useCalendarPicker', () => {
     expect(view.result.current.config).toEqual(calendarA);
     expect(view.result.current.picker.listOpen).toBe(true);
     expect(persist).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not treat a controlled B matching the pending selection as its own A to B to A publish', async () => {
+    const firstWrite = deferred<void>();
+    const persist = vi.fn(() => firstWrite.promise);
+    const calendarA = { ...unconfiguredConfig, calendarId: 'calendar-a', calendarName: 'A' };
+    const calendarB = { ...unconfiguredConfig, calendarId: 'calendar-b', calendarName: 'B' };
+    const view = renderControlledPicker(calendarA, persist);
+    await act(() => view.result.current.picker.openList());
+    let selection!: Promise<void>;
+    act(() => {
+      selection = view.result.current.picker.select({ id: 'calendar-b', summary: 'B' });
+    });
+
+    act(() => view.result.current.setConfig(calendarB));
+    act(() => view.result.current.setConfig(calendarA));
+    await act(() => view.result.current.picker.openList());
+    await act(async () => {
+      firstWrite.resolve();
+      await selection;
+    });
+
+    expect(view.result.current.config).toEqual(calendarA);
+    expect(view.result.current.picker.listOpen).toBe(true);
+    expect(persist).toHaveBeenCalledTimes(2);
+    expect(persist.mock.calls[0][0]).toEqual(calendarB);
+    expect(persist.mock.calls[1][0]).toEqual(calendarA);
   });
 
   it('keeps Calendar selection persistence single-flight', async () => {

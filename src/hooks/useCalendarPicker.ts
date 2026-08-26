@@ -20,7 +20,7 @@ export interface CalendarPickerController {
 
 export interface UseCalendarPickerOptions {
   config: AppConfig;
-  saveConfig(next: AppConfig): Promise<void>;
+  saveConfig(update: (current: AppConfig) => AppConfig | null): Promise<void>;
 }
 
 export interface CalendarPickerDependencies {
@@ -30,8 +30,6 @@ export interface CalendarPickerDependencies {
 interface SelectionOperation {
   request: number;
   incarnation: number;
-  latestConfig: AppConfig;
-  submittedSignatures: Set<string>;
 }
 
 function calendarIdentity(config: AppConfig): string {
@@ -40,19 +38,6 @@ function calendarIdentity(config: AppConfig): string {
     config.calendarName?.trim() ?? null,
     config.calendarAccessRole ?? null,
   ]);
-}
-
-function configSignature(config: AppConfig): string {
-  function canonical(value: unknown): unknown {
-    if (Array.isArray(value)) return value.map(canonical);
-    if (value === null || typeof value !== 'object') return value;
-    return Object.fromEntries(
-      Object.entries(value)
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([key, child]) => [key, canonical(child)])
-    );
-  }
-  return JSON.stringify(canonical(config));
 }
 
 function configWithCalendar(config: AppConfig, calendar: CalendarListEntry): AppConfig {
@@ -84,10 +69,7 @@ export function useCalendarPicker(
   useLayoutEffect(() => {
     const identity = calendarIdentity(options.config);
     const operation = selectionOperationRef.current;
-    const signature = configSignature(options.config);
-    const ownPublish = operation?.submittedSignatures.has(signature) ?? false;
-    if (operation && !ownPublish) operation.latestConfig = options.config;
-    if (!ownPublish && identity !== committedIdentityRef.current) {
+    if (identity !== committedIdentityRef.current) {
       committedIdentityRef.current = identity;
       semanticIncarnationRef.current += 1;
       requestRef.current += 1;
@@ -154,46 +136,25 @@ export function useCalendarPicker(
   const select = useCallback(
     async (calendar: CalendarListEntry): Promise<void> => {
       if (selectionOperationRef.current !== null) return;
-      const current = committedOptionsRef.current;
-      let base = current.config;
-      let next = configWithCalendar(base, calendar);
-      const request = ++requestRef.current;
-      const incarnation = semanticIncarnationRef.current;
       const operation: SelectionOperation = {
-        request,
-        incarnation,
-        latestConfig: current.config,
-        submittedSignatures: new Set([configSignature(next)]),
+        request: ++requestRef.current,
+        incarnation: semanticIncarnationRef.current,
       };
       selectionOperationRef.current = operation;
       setLoading(false);
       setSaving(true);
       setError(null);
       try {
-        while (true) {
-          await committedOptionsRef.current.saveConfig(next);
-          if (!isCurrent(request, incarnation)) break;
-          if (configSignature(base) === configSignature(operation.latestConfig)) break;
-          base = operation.latestConfig;
-          next = configWithCalendar(base, calendar);
-          operation.submittedSignatures.add(configSignature(next));
-        }
-        if (!isCurrent(request, incarnation)) {
-          let restoredSignature: string | null = null;
-          do {
-            const restore = operation.latestConfig;
-            restoredSignature = configSignature(restore);
-            operation.submittedSignatures.add(restoredSignature);
-            await committedOptionsRef.current.saveConfig(restore);
-          } while (restoredSignature !== configSignature(operation.latestConfig));
-          return;
-        }
+        await committedOptionsRef.current.saveConfig((current) =>
+          isCurrent(operation.request, operation.incarnation)
+            ? configWithCalendar(current, calendar)
+            : null
+        );
+        if (!isCurrent(operation.request, operation.incarnation)) return;
         setListOpen(false);
-        committedIdentityRef.current = calendarIdentity(next);
-        semanticIncarnationRef.current += 1;
-        requestRef.current += 1;
       } catch (cause) {
-        if (isCurrent(request, incarnation)) setError(calendarErrorMessage(cause));
+        if (mountedRef.current && selectionOperationRef.current === operation)
+          setError(calendarErrorMessage(cause));
       } finally {
         if (selectionOperationRef.current === operation) {
           selectionOperationRef.current = null;

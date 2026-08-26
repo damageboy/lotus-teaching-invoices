@@ -19,6 +19,7 @@ const reloadCache = vi.fn();
 const updateConfig = vi.fn();
 const save = vi.fn();
 const saveOrThrow = vi.fn();
+const saveUpdateOrThrow = vi.fn();
 
 vi.mock('../../src/hooks/useConfig.js', () => ({
   useConfig: () => ({
@@ -30,6 +31,7 @@ vi.mock('../../src/hooks/useConfig.js', () => ({
     updateConfig,
     save,
     saveOrThrow,
+    saveUpdateOrThrow,
   }),
 }));
 vi.mock('../../src/hooks/useCalendarData.js', () => ({
