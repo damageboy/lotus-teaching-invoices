@@ -84,7 +84,8 @@ export default function App() {
     sources: invoiceSources,
     sourceContextKey: invoiceSourceInputKey,
     authorizationIncarnation: googleAuthorization.authorizationIncarnation,
-    active: activeTab === 'invoices' && invoiceSourcesReady,
+    discoveryEnabled: !googleAuthorization.isLoading && googleAuthorization.hasDrive,
+    foregroundRefreshEnabled: activeTab === 'invoices' && invoiceSourcesReady,
   });
 
   useEffect(() => {

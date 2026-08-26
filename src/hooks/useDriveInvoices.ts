@@ -45,7 +45,8 @@ export interface UseDriveInvoicesOptions {
   sources: readonly CurrentInvoiceSource[];
   sourceContextKey: string;
   authorizationIncarnation: number;
-  active: boolean;
+  discoveryEnabled: boolean;
+  foregroundRefreshEnabled: boolean;
 }
 
 interface MachineState {
@@ -271,9 +272,7 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
 
       const promise = (async () => {
         try {
-          const snapshot = hasSnapshot
-            ? await store.refresh(sources)
-            : await store.bootstrap(sources);
+          const snapshot = hasSnapshot ? await store.refresh(sources) : await store.bootstrap([]);
           if (!contextIsCurrent(context) || refreshGenerationRef.current !== refreshGeneration) {
             return;
           }
@@ -525,17 +524,23 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
   }, [options.authorizationIncarnation, signature]);
 
   useEffect(() => {
-    if (options.active) void runRefresh().catch(() => undefined);
-  }, [options.active, options.authorizationIncarnation, options.store, signature, runRefresh]);
+    if (options.discoveryEnabled) void runRefresh().catch(() => undefined);
+  }, [
+    options.discoveryEnabled,
+    options.authorizationIncarnation,
+    options.store,
+    signature,
+    runRefresh,
+  ]);
 
   useEffect(() => {
     const onVisibilityChange = (): void => {
-      if (committedOptionsRef.current.active && isVisible()) {
+      if (committedOptionsRef.current.foregroundRefreshEnabled && isVisible()) {
         void runRefresh().catch(() => undefined);
       }
     };
     const onFocus = (): void => {
-      if (committedOptionsRef.current.active && isVisible()) {
+      if (committedOptionsRef.current.foregroundRefreshEnabled && isVisible()) {
         void runRefresh().catch(() => undefined);
       }
     };

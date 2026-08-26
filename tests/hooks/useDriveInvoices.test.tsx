@@ -221,7 +221,8 @@ function options(
     sources: readonly CurrentInvoiceSource[];
     sourceContextKey: string;
     authorizationIncarnation: number;
-    active: boolean;
+    discoveryEnabled: boolean;
+    foregroundRefreshEnabled: boolean;
   }> = {}
 ) {
   return {
@@ -229,7 +230,8 @@ function options(
     sources: overrides.sources ?? [source()],
     sourceContextKey: overrides.sourceContextKey ?? 'calendar-input-a',
     authorizationIncarnation: overrides.authorizationIncarnation ?? 1,
-    active: overrides.active ?? true,
+    discoveryEnabled: overrides.discoveryEnabled ?? true,
+    foregroundRefreshEnabled: overrides.foregroundRefreshEnabled ?? true,
   };
 }
 
@@ -270,6 +272,7 @@ describe('useDriveInvoices', () => {
     expect(result.current.status).toBe('ready');
     expect(result.current.snapshot?.stagedRoot.root.folderId).toBe('account-a-root');
     expect(result.current.error).toBeNull();
+    expect(store.bootstrap).toHaveBeenCalledWith([]);
   });
 
   it('publishes bootstrap completion after React Strict Mode replays its effects', async () => {
@@ -504,13 +507,22 @@ describe('useDriveInvoices', () => {
     const store = storeDouble();
     store.refresh.mockReturnValueOnce(matchingRefresh.promise);
     const { result, rerender } = renderHook(
-      ({ sourceContextKey, sources, active }) =>
-        useDriveInvoices(options({ sourceContextKey, sources, active, store })),
+      ({ sourceContextKey, sources, discoveryEnabled, foregroundRefreshEnabled }) =>
+        useDriveInvoices(
+          options({
+            sourceContextKey,
+            sources,
+            discoveryEnabled,
+            foregroundRefreshEnabled,
+            store,
+          })
+        ),
       {
         initialProps: {
           sourceContextKey: 'empty-calendar-input',
           sources: [] as CurrentInvoiceSource[],
-          active: true,
+          discoveryEnabled: true,
+          foregroundRefreshEnabled: true,
         },
       }
     );
@@ -520,7 +532,8 @@ describe('useDriveInvoices', () => {
     rerender({
       sourceContextKey: 'calendar-input-with-new-class',
       sources: [],
-      active: false,
+      discoveryEnabled: false,
+      foregroundRefreshEnabled: false,
     });
 
     expect(result.current.status).toBe('loading');
@@ -529,7 +542,8 @@ describe('useDriveInvoices', () => {
     rerender({
       sourceContextKey: 'calendar-input-with-new-class',
       sources: [source('new-class')],
-      active: true,
+      discoveryEnabled: true,
+      foregroundRefreshEnabled: true,
     });
     expect(result.current.status).toBe('loading');
     expect(result.current.snapshot).toBeNull();
@@ -563,14 +577,60 @@ describe('useDriveInvoices', () => {
     });
   });
 
-  it('refreshes on invoice-tab activation, visible foreground resume, and window focus', async () => {
+  it('bootstraps an authorized root while Invoices is inactive', async () => {
     const store = storeDouble();
-    const { rerender } = renderHook(({ active }) => useDriveInvoices(options({ active, store })), {
-      initialProps: { active: false },
-    });
+    store.bootstrap.mockResolvedValueOnce(snapshotFor('background'));
+    const { result } = renderHook(() =>
+      useDriveInvoices({
+        store,
+        sources: [],
+        sourceContextKey: 'setup-discovery',
+        authorizationIncarnation: 4,
+        discoveryEnabled: true,
+        foregroundRefreshEnabled: false,
+      })
+    );
+
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(store.bootstrap).toHaveBeenCalledOnce();
+    expect(store.bootstrap).toHaveBeenCalledWith([]);
+  });
+
+  it('refreshes on focus only while foreground refresh is enabled', async () => {
+    const store = storeDouble();
+    store.bootstrap.mockResolvedValueOnce(snapshotFor('background'));
+    store.refresh.mockResolvedValue(snapshotFor('focused'));
+    const view = renderHook(
+      ({ foregroundRefreshEnabled }) =>
+        useDriveInvoices({
+          store,
+          sources: [],
+          sourceContextKey: 'setup-discovery',
+          authorizationIncarnation: 4,
+          discoveryEnabled: true,
+          foregroundRefreshEnabled,
+        }),
+      { initialProps: { foregroundRefreshEnabled: false } }
+    );
+    await waitFor(() => expect(view.result.current.status).toBe('ready'));
+
+    act(() => window.dispatchEvent(new Event('focus')));
+    expect(store.refresh).not.toHaveBeenCalled();
+    view.rerender({ foregroundRefreshEnabled: true });
+    act(() => window.dispatchEvent(new Event('focus')));
+    await waitFor(() => expect(store.refresh).toHaveBeenCalledOnce());
+  });
+
+  it('starts discovery when enabled and refreshes on visible foreground resume and focus', async () => {
+    const store = storeDouble();
+    const { rerender } = renderHook(
+      ({ discoveryEnabled, foregroundRefreshEnabled }) =>
+        useDriveInvoices(options({ discoveryEnabled, foregroundRefreshEnabled, store })),
+      { initialProps: { discoveryEnabled: false, foregroundRefreshEnabled: false } }
+    );
     expect(store.bootstrap).not.toHaveBeenCalled();
 
-    rerender({ active: true });
+    rerender({ discoveryEnabled: true, foregroundRefreshEnabled: true });
     await waitFor(() => expect(store.bootstrap).toHaveBeenCalledTimes(1));
     act(() => document.dispatchEvent(new Event('visibilitychange')));
     await waitFor(() => expect(store.refresh).toHaveBeenCalledTimes(1));
@@ -578,23 +638,27 @@ describe('useDriveInvoices', () => {
     await waitFor(() => expect(store.refresh).toHaveBeenCalledTimes(2));
   });
 
-  it('starts invoice-tab activation while reload visibility is transiently hidden', async () => {
+  it('starts discovery while reload visibility is transiently hidden', async () => {
     setVisibility('hidden');
     const store = storeDouble();
-    const { rerender } = renderHook(({ active }) => useDriveInvoices(options({ active, store })), {
-      initialProps: { active: false },
-    });
+    const { rerender } = renderHook(
+      ({ discoveryEnabled }) =>
+        useDriveInvoices(options({ discoveryEnabled, foregroundRefreshEnabled: false, store })),
+      { initialProps: { discoveryEnabled: false } }
+    );
 
-    rerender({ active: true });
+    rerender({ discoveryEnabled: true });
 
     await waitFor(() => expect(store.bootstrap).toHaveBeenCalledTimes(1));
   });
 
-  it('does not refresh for hidden or inactive lifecycle events', async () => {
+  it('does not refresh for hidden or disabled foreground lifecycle events', async () => {
     const store = storeDouble();
-    const { rerender } = renderHook(({ active }) => useDriveInvoices(options({ active, store })), {
-      initialProps: { active: true },
-    });
+    const { rerender } = renderHook(
+      ({ foregroundRefreshEnabled }) =>
+        useDriveInvoices(options({ foregroundRefreshEnabled, store })),
+      { initialProps: { foregroundRefreshEnabled: true } }
+    );
     await waitFor(() => expect(store.bootstrap).toHaveBeenCalledTimes(1));
 
     setVisibility('hidden');
@@ -602,7 +666,7 @@ describe('useDriveInvoices', () => {
       document.dispatchEvent(new Event('visibilitychange'));
       window.dispatchEvent(new Event('focus'));
     });
-    rerender({ active: false });
+    rerender({ foregroundRefreshEnabled: false });
     setVisibility('visible');
     act(() => {
       document.dispatchEvent(new Event('visibilitychange'));
