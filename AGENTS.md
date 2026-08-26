@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Follow the User's Scope
+
+Do exactly what the user asks and do not invent, infer, or perform additional work. Do not modify, format, restore, clean up, or otherwise touch files outside the requested operation. If additional work appears necessary, explain it and obtain the user's explicit approval before proceeding.
+
 ## Commands
 
 ```bash
