@@ -7,6 +7,7 @@ import {
 } from '../lib/gmail/auth.js';
 import {
   calendarEditAuthorizationState,
+  hasDriveAuthorization,
   hasRequiredScopes,
   parseStoredTokenRecord,
 } from '../lib/gmail/auth-record.js';
@@ -14,14 +15,18 @@ import {
   AUTHORIZATION_SCHEMA_VERSION,
   CALENDAR_EDIT_OAUTH_SCOPES,
 } from '../lib/gmail/constants.js';
+import { isAndroidRuntime } from '../lib/google/mobile-authorization.js';
 
 export interface GoogleAuthorizationState {
   isLoading: boolean;
   isAuthorizing: boolean;
   hasCalendarWrite: boolean;
+  hasDrive: boolean;
+  authorizationIncarnation: number;
   promptOpen: boolean;
   error: string | null;
   allowCalendarEditing: () => Promise<void>;
+  allowDrive: () => Promise<void>;
   dismissCalendarEditingPrompt: () => Promise<void>;
   openCalendarEditingPrompt: () => void;
 }
@@ -31,6 +36,7 @@ interface GoogleAuthorizationDependencies {
   getAccessToken: typeof getAccessToken;
   loadPreference: typeof loadCalendarEditPromptPreference;
   savePreference: typeof saveCalendarEditPromptPreference;
+  isAndroid?: () => boolean;
 }
 
 const googleAuthorizationDependencies: GoogleAuthorizationDependencies = {
@@ -38,6 +44,7 @@ const googleAuthorizationDependencies: GoogleAuthorizationDependencies = {
   getAccessToken,
   loadPreference: loadCalendarEditPromptPreference,
   savePreference: saveCalendarEditPromptPreference,
+  isAndroid: isAndroidRuntime,
 };
 
 function errorMessage(error: unknown): string {
@@ -57,6 +64,8 @@ export function useGoogleAuthorization(
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthorizing, setIsAuthorizing] = useState(false);
   const [hasCalendarWrite, setHasCalendarWrite] = useState(false);
+  const [hasDrive, setHasDrive] = useState(false);
+  const [authorizationIncarnation, setAuthorizationIncarnation] = useState(0);
   const [promptOpen, setPromptOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const dismissalSequenceRef = useRef(0);
@@ -66,6 +75,28 @@ export function useGoogleAuthorization(
 
     async function loadAuthorization() {
       try {
+        if (dependencies.isAndroid?.() === true) {
+          const [preference, calendarResult, driveResult] = await Promise.all([
+            dependencies.loadPreference(),
+            dependencies.getAccessToken({ requireCalendarWrite: true, interactive: false }).then(
+              () => true,
+              () => false
+            ),
+            dependencies.getAccessToken({ requireDrive: true, interactive: false }).then(
+              () => true,
+              () => false
+            ),
+          ]);
+          if (!active) return;
+          setHasCalendarWrite(calendarResult);
+          setHasDrive(driveResult);
+          setPromptOpen(
+            !calendarResult &&
+              preference?.dismissed_authorization_version !== AUTHORIZATION_SCHEMA_VERSION
+          );
+          return;
+        }
+
         const [raw, preference] = await Promise.all([
           dependencies.readAuthTokens(),
           dependencies.loadPreference(),
@@ -74,6 +105,7 @@ export function useGoogleAuthorization(
         const record = raw === null ? null : parseStoredTokenRecord(raw);
         const writeGranted = hasRequiredScopes(record, CALENDAR_EDIT_OAUTH_SCOPES);
         setHasCalendarWrite(writeGranted);
+        setHasDrive(hasDriveAuthorization(record));
         setPromptOpen(
           record !== null && calendarEditAuthorizationState(record, preference) === 'prompt'
         );
@@ -111,8 +143,9 @@ export function useGoogleAuthorization(
     setIsAuthorizing(true);
     setError(null);
     try {
-      await dependencies.getAccessToken({ requireCalendarWrite: true });
+      await dependencies.getAccessToken({ requireCalendarWrite: true, interactive: true });
       setHasCalendarWrite(true);
+      setAuthorizationIncarnation((value) => value + 1);
       setPromptOpen(false);
     } catch (authorizationError) {
       setHasCalendarWrite(false);
@@ -132,6 +165,22 @@ export function useGoogleAuthorization(
     }
   }, [dependencies, persistDismissal]);
 
+  const allowDrive = useCallback(async () => {
+    setIsAuthorizing(true);
+    setError(null);
+    try {
+      await dependencies.getAccessToken({ requireDrive: true, interactive: true });
+      setHasDrive(true);
+      setAuthorizationIncarnation((value) => value + 1);
+    } catch (authorizationError) {
+      setHasDrive(false);
+      setError(errorMessage(authorizationError));
+      throw authorizationError;
+    } finally {
+      setIsAuthorizing(false);
+    }
+  }, [dependencies]);
+
   const openCalendarEditingPrompt = useCallback(() => {
     setPromptOpen(true);
   }, []);
@@ -140,9 +189,12 @@ export function useGoogleAuthorization(
     isLoading,
     isAuthorizing,
     hasCalendarWrite,
+    hasDrive,
+    authorizationIncarnation,
     promptOpen,
     error,
     allowCalendarEditing,
+    allowDrive,
     dismissCalendarEditingPrompt,
     openCalendarEditingPrompt,
   };

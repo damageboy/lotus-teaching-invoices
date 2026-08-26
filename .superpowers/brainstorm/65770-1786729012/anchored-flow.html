@@ -1,0 +1,257 @@
+<style>
+  .flow-wrap { max-width: 980px; margin: 0 auto; }
+  .decision-strip {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin: 18px 0 24px;
+  }
+  .decision-chip {
+    padding: 6px 10px;
+    border: 1px solid #d8ddea;
+    border-radius: 999px;
+    background: #fff;
+    color: #475467;
+    font-size: 12px;
+  }
+  .flow-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+  }
+  .stage {
+    background: #fff;
+    border: 1px solid #dfe3eb;
+    border-radius: 13px;
+    overflow: hidden;
+  }
+  .stage-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    border-bottom: 1px solid #edf0f4;
+    background: #fafbfc;
+  }
+  .stage-num {
+    width: 23px;
+    height: 23px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: #4f46e5;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .stage-head h3 { margin: 0; font-size: 14px; }
+  .stage-body { min-height: 310px; padding: 18px; background: #f4f6f9; }
+  .calendar-slice {
+    position: relative;
+    height: 274px;
+    border: 1px solid #e1e5ec;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #fff;
+  }
+  .calendar-top {
+    height: 31px;
+    display: flex;
+    align-items: center;
+    padding: 0 10px;
+    border-bottom: 1px solid #e5e7eb;
+    color: #4f46e5;
+    font-size: 9px;
+    font-weight: 650;
+  }
+  .month { padding: 10px; font-size: 11px; font-weight: 650; }
+  .week {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    height: 93px;
+    margin: 0 10px;
+    border: 1px solid #e5e7eb;
+    border-radius: 5px;
+    overflow: hidden;
+  }
+  .day { padding: 5px; border-right: 1px solid #e5e7eb; font-size: 8px; color: #6b7280; }
+  .day:last-child { border-right: 0; }
+  .event {
+    margin-top: 8px;
+    border: 1px solid #a7f3d0;
+    background: #ecfdf5;
+    color: #065f46;
+    border-radius: 4px;
+    padding: 3px 4px;
+    font-size: 7px;
+    box-shadow: 0 0 0 2px rgba(79,70,229,.22);
+  }
+  .event-card {
+    position: absolute;
+    width: 235px;
+    left: 115px;
+    top: 55px;
+    border: 1px solid #dfe3ea;
+    border-radius: 9px;
+    background: #fff;
+    box-shadow: 0 14px 32px rgba(17,24,39,.20);
+    overflow: hidden;
+  }
+  .event-card-head { padding: 12px; border-bottom: 1px solid #eef0f3; }
+  .event-title { font-size: 11px; font-weight: 700; color: #111827; }
+  .event-meta { margin-top: 3px; color: #6b7280; font-size: 8px; }
+  .recurring { display: inline-block; margin-top: 7px; padding: 2px 6px; border-radius: 999px; background: #f3f4f6; color: #6b7280; font-size: 7px; }
+  .row { display: flex; align-items: center; min-height: 37px; padding: 0 12px; border-bottom: 1px solid #f1f2f4; }
+  .row:last-child { border-bottom: 0; }
+  .row-label { flex: 1; color: #4b5563; font-size: 9px; }
+  .row-value { color: #111827; font-size: 9px; font-weight: 650; }
+  .row-arrow { margin-left: 8px; color: #98a2b3; font-size: 12px; }
+  .row.disabled { background: #fafafa; }
+  .row.disabled .row-label, .row.disabled .row-value, .row.disabled .row-arrow { color: #b2b8c2; }
+  .helper { padding: 5px 12px 8px; background: #fafafa; color: #9ca3af; font-size: 7px; }
+  .panel {
+    width: 260px;
+    margin: 3px auto 0;
+    border: 1px solid #dfe3ea;
+    border-radius: 9px;
+    background: #fff;
+    box-shadow: 0 12px 28px rgba(17,24,39,.16);
+    overflow: hidden;
+  }
+  .panel-title { padding: 12px; border-bottom: 1px solid #eef0f3; font-size: 11px; font-weight: 700; color: #111827; }
+  .panel-subtitle { margin-top: 3px; font-size: 8px; font-weight: 400; color: #6b7280; }
+  .studio-choice { display: flex; align-items: center; padding: 9px 12px; border-bottom: 1px solid #f1f2f4; font-size: 9px; }
+  .studio-choice.current { color: #4f46e5; background: #f7f7ff; }
+  .check { width: 15px; color: #4f46e5; font-weight: 700; }
+  .scope-box { margin: 11px; padding: 10px; border: 1px solid #dfe3ea; border-radius: 7px; background: #fafbfc; }
+  .scope-title { color: #344054; font-size: 9px; font-weight: 650; }
+  .scope-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 8px; }
+  .small-button { border: 1px solid #cfd4dc; border-radius: 5px; padding: 6px 5px; text-align: center; color: #344054; background: #fff; font-size: 8px; font-weight: 650; }
+  .small-button.primary { border-color: #4f46e5; background: #4f46e5; color: #fff; }
+  .preserve-note { padding: 0 12px 11px; color: #667085; font-size: 8px; }
+  .modal {
+    width: 260px;
+    margin: 31px auto 0;
+    border: 1px solid #dfe3ea;
+    border-radius: 10px;
+    background: #fff;
+    box-shadow: 0 14px 32px rgba(17,24,39,.18);
+    overflow: hidden;
+  }
+  .modal-head { padding: 13px 14px; border-bottom: 1px solid #eef0f3; }
+  .modal-title { font-size: 12px; color: #111827; font-weight: 700; }
+  .modal-meta { margin-top: 3px; color: #6b7280; font-size: 8px; }
+  .modal-content { padding: 17px 14px 13px; }
+  .spinner { display: grid; grid-template-columns: 38px 1fr 38px; height: 42px; border: 1px solid #cfd4dc; border-radius: 7px; overflow: hidden; }
+  .spin-button { display: grid; place-items: center; background: #f9fafb; color: #4b5563; font-size: 18px; }
+  .spin-value { display: grid; place-items: center; border-left: 1px solid #dfe3ea; border-right: 1px solid #dfe3ea; color: #111827; font-size: 16px; font-weight: 700; }
+  .selected-only { margin-top: 8px; color: #667085; font-size: 8px; }
+  .text-action { margin-top: 12px; color: #4f46e5; font-size: 9px; font-weight: 650; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 11px 14px; border-top: 1px solid #eef0f3; }
+  .button { border: 1px solid #cfd4dc; border-radius: 6px; padding: 7px 12px; background: #fff; color: #344054; font-size: 9px; font-weight: 650; }
+  .button.primary { border-color: #4f46e5; background: #4f46e5; color: #fff; }
+  .save-lifecycle { margin-top: 18px; padding: 14px 16px; border: 1px solid #c7d7fe; border-radius: 10px; background: #f5f8ff; }
+  .save-lifecycle h3 { margin: 0; color: #344054; font-size: 13px; }
+  .save-lifecycle p { margin: 6px 0 0; color: #667085; font-size: 12px; line-height: 1.5; }
+  .approval { margin-top: 22px; }
+  @media (max-width: 850px) {
+    .flow-grid { grid-template-columns: 1fr; }
+  }
+</style>
+
+<div class="flow-wrap">
+  <h2>Anchored card: proposed editing flow</h2>
+  <p class="subtitle">The card stays beside the selected lesson. Each action saves independently to Google Calendar.</p>
+
+  <div class="decision-strip">
+    <span class="decision-chip">Legacy descriptions: 9 or 9/30EUR</span>
+    <span class="decision-chip">Studio: selected event or entire series</span>
+    <span class="decision-chip">Students and euros: selected lesson only</span>
+  </div>
+
+  <div class="flow-grid">
+    <section class="stage">
+      <div class="stage-head"><span class="stage-num">1</span><h3>Click the lesson</h3></div>
+      <div class="stage-body">
+        <div class="calendar-slice">
+          <div class="calendar-top">Calendar</div>
+          <div class="month">August 2026</div>
+          <div class="week">
+            <div class="day">Wed 12</div>
+            <div class="day">Thu 13<div class="event">18:00 Mitte / Vinyasa</div></div>
+            <div class="day">Fri 14</div>
+          </div>
+          <div class="event-card">
+            <div class="event-card-head"><div class="event-title">Mitte / Vinyasa</div><div class="event-meta">Thursday, 13 August · 18:00–19:15</div><span class="recurring">Recurring weekly</span></div>
+            <div class="row"><span class="row-label">Fix Studio</span><span class="row-value">YFD</span><span class="row-arrow">›</span></div>
+            <div class="row"><span class="row-label">Set Students</span><span class="row-value">9</span><span class="row-arrow">›</span></div>
+            <div class="row"><span class="row-label">Set Euros</span><span class="row-value">€30 override</span><span class="row-arrow">›</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="stage">
+      <div class="stage-head"><span class="stage-num">2</span><h3>Fix Studio</h3></div>
+      <div class="stage-body">
+        <div class="panel">
+          <div class="panel-title">Choose studio<div class="panel-subtitle">Configured studios only</div></div>
+          <div class="studio-choice current"><span class="check">✓</span>YFD</div>
+          <div class="studio-choice"><span class="check"></span>Zen Yoga</div>
+          <div class="studio-choice"><span class="check"></span>Power House</div>
+          <div class="scope-box">
+            <div class="scope-title">This is a recurring lesson</div>
+            <div class="scope-actions"><div class="small-button">This event</div><div class="small-button primary">Entire series</div></div>
+          </div>
+          <div class="preserve-note">Only the studio prefix changes. Location and class type are preserved.</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="stage">
+      <div class="stage-head"><span class="stage-num">3</span><h3>Set Students</h3></div>
+      <div class="stage-body">
+        <div class="modal">
+          <div class="modal-head"><div class="modal-title">Students</div><div class="modal-meta">Mitte / Vinyasa · 13 August</div></div>
+          <div class="modal-content">
+            <div class="spinner"><div class="spin-button">−</div><div class="spin-value">9</div><div class="spin-button">+</div></div>
+            <div class="selected-only">Applies only to this lesson.</div>
+          </div>
+          <div class="modal-actions"><div class="button">Cancel</div><div class="button primary">Save</div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="stage">
+      <div class="stage-head"><span class="stage-num">4</span><h3>Set or clear Euros</h3></div>
+      <div class="stage-body">
+        <div class="modal">
+          <div class="modal-head"><div class="modal-title">Lesson value</div><div class="modal-meta">9 students · selected lesson only</div></div>
+          <div class="modal-content">
+            <div class="spinner"><div class="spin-button">−</div><div class="spin-value">€30.00</div><div class="spin-button">+</div></div>
+            <div class="text-action">Use configured studio rate</div>
+          </div>
+          <div class="modal-actions"><div class="button">Cancel</div><div class="button primary">Save</div></div>
+        </div>
+        <div class="panel" style="margin-top: 12px; box-shadow: none;">
+          <div class="row disabled"><span class="row-label">Set Euros</span><span class="row-value">Unavailable</span></div>
+          <div class="helper">Set students first.</div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="save-lifecycle">
+    <h3>Save behavior</h3>
+    <p>Save updates Google first, then refreshes the local event and all Calendar, Invoice, and Income totals. While saving, the edited row is disabled. Success is shown briefly inside the card; failure keeps the old value and shows a retry message.</p>
+  </div>
+
+  <div class="approval options">
+    <div class="option" data-choice="flow-approved" onclick="toggleSelect(this)">
+      <div class="letter">A</div><div class="content"><h3>Approve this flow</h3><p>Continue to permissions, failures, and finalized-invoice behavior.</p></div>
+    </div>
+    <div class="option" data-choice="flow-needs-changes" onclick="toggleSelect(this)">
+      <div class="letter">B</div><div class="content"><h3>Needs changes</h3><p>Select this and describe what should change in the terminal.</p></div>
+    </div>
+  </div>
+</div>

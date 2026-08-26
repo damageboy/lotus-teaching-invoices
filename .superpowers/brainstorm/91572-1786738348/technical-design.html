@@ -1,0 +1,136 @@
+<style>
+  .tech-wrap { max-width: 1040px; margin: 0 auto; }
+  .approved-strip { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 23px; }
+  .approved-chip { padding: 6px 10px; border: 1px solid #cbd7f7; border-radius: 999px; background: #f5f7ff; color: #4338ca; font-size: 11px; font-weight: 600; }
+  .section-card { margin-top: 18px; padding: 19px; border: 1px solid #dde2eb; border-radius: 13px; background: #fff; }
+  .section-card h3 { margin: 0 0 5px; font-size: 16px; }
+  .section-card > p { margin: 0 0 17px; color: #667085; font-size: 12px; }
+  .lane { display: grid; grid-template-columns: repeat(5, 1fr); align-items: stretch; gap: 24px; margin-top: 13px; }
+  .flow-box { position: relative; min-height: 88px; padding: 13px 11px; border: 1px solid #d7dce6; border-radius: 9px; background: #fafbfc; }
+  .flow-box::after { content: "→"; position: absolute; top: 31px; right: -19px; color: #98a2b3; font-size: 17px; }
+  .flow-box:last-child::after { display: none; }
+  .flow-box.primary { border-color: #a5b4fc; background: #f5f6ff; }
+  .flow-box.google { border-color: #a7f3d0; background: #f1fdf7; }
+  .box-title { color: #111827; font-size: 11px; font-weight: 700; }
+  .box-copy { margin-top: 5px; color: #667085; font-size: 9px; line-height: 1.45; }
+  .lane-label { margin-top: 17px; color: #475467; font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+  .identity-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .identity-card { padding: 14px; border: 1px solid #e1e5ec; border-radius: 9px; background: #fafbfc; }
+  .identity-card h4 { margin: 0 0 9px; font-size: 12px; }
+  .field { display: flex; gap: 9px; padding: 5px 0; border-bottom: 1px solid #eceff3; font-size: 10px; }
+  .field:last-child { border-bottom: 0; }
+  .field code { width: 135px; color: #4338ca; font-size: 9px; }
+  .field span { color: #667085; }
+  .rule-table { width: 100%; border-collapse: collapse; font-size: 10px; }
+  .rule-table th { padding: 8px; border-bottom: 1px solid #dfe3ea; color: #667085; font-size: 9px; text-align: left; text-transform: uppercase; }
+  .rule-table td { padding: 9px 8px; border-bottom: 1px solid #edf0f4; color: #344054; vertical-align: top; }
+  .rule-table tr:last-child td { border-bottom: 0; }
+  .status { display: inline-block; min-width: 62px; padding: 3px 7px; border-radius: 999px; text-align: center; font-size: 8px; font-weight: 700; }
+  .status.block { background: #fff1f2; color: #be123c; }
+  .status.retry { background: #fffbeb; color: #92400e; }
+  .status.safe { background: #ecfdf5; color: #047857; }
+  .test-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 11px; }
+  .test-card { padding: 13px; border: 1px solid #e1e5ec; border-radius: 9px; background: #fafbfc; }
+  .test-card h4 { margin: 0 0 8px; font-size: 11px; color: #111827; }
+  .test-card ul { margin: 0; padding-left: 15px; color: #667085; font-size: 9px; line-height: 1.55; }
+  .approval { margin: 22px 0 35px; }
+  @media (max-width: 900px) {
+    .lane { grid-template-columns: 1fr; gap: 9px; }
+    .flow-box::after { display: none; }
+    .identity-grid, .test-grid { grid-template-columns: 1fr; }
+  }
+</style>
+
+<div class="tech-wrap">
+  <h2>Final design section: architecture and verification</h2>
+  <p class="subtitle">The existing sync remains intact. Editing adds a narrow, Google-first command path beside it.</p>
+
+  <div class="approved-strip">
+    <span class="approved-chip">Anchored event card</span>
+    <span class="approved-chip">Legacy description format</span>
+    <span class="approved-chip">Entire-series studio fixes</span>
+    <span class="approved-chip">Occurrence-only attendance and euros</span>
+    <span class="approved-chip">Stale finalized-invoice tracking</span>
+  </div>
+
+  <section class="section-card">
+    <h3>Two explicit data paths</h3>
+    <p>Reads keep using incremental synchronization. Writes reach Google before any financial total changes locally.</p>
+
+    <div class="lane-label">Existing read path</div>
+    <div class="lane">
+      <div class="flow-box google"><div class="box-title">Google Calendar</div><div class="box-copy">Expanded event occurrences and sync token</div></div>
+      <div class="flow-box"><div class="box-title">Rust sync service</div><div class="box-copy">Fetch, paginate, validate, reconcile</div></div>
+      <div class="flow-box"><div class="box-title">SQLite event cache</div><div class="box-copy">Authoritative local offline copy</div></div>
+      <div class="flow-box"><div class="box-title">Parser</div><div class="box-copy">Studio, class, students, euro override</div></div>
+      <div class="flow-box primary"><div class="box-title">App views</div><div class="box-copy">Calendar, Invoices, and Income</div></div>
+    </div>
+
+    <div class="lane-label">New write path</div>
+    <div class="lane">
+      <div class="flow-box primary"><div class="box-title">Anchored card</div><div class="box-copy">One validated edit command</div></div>
+      <div class="flow-box"><div class="box-title">Edit policy</div><div class="box-copy">Format warning, recurrence scope, finalized impact</div></div>
+      <div class="flow-box"><div class="box-title">Rust update service</div><div class="box-copy">Permission and version checks</div></div>
+      <div class="flow-box google"><div class="box-title">Google update</div><div class="box-copy">Patch occurrence or series master</div></div>
+      <div class="flow-box"><div class="box-title">Reconcile</div><div class="box-copy">Refresh cache, reparse, recalculate all views</div></div>
+    </div>
+  </section>
+
+  <section class="section-card">
+    <h3>Identity and persisted safety state</h3>
+    <p>The UI stops guessing which event it represents. Each editable lesson carries its Google identity through parsing.</p>
+    <div class="identity-grid">
+      <div class="identity-card">
+        <h4>Calendar event identity</h4>
+        <div class="field"><code>event_id</code><span>Target for this occurrence</span></div>
+        <div class="field"><code>recurring_event_id</code><span>Target for the entire series</span></div>
+        <div class="field"><code>original_start_time</code><span>Stable occurrence identity</span></div>
+        <div class="field"><code>etag</code><span>Detect changes made elsewhere</span></div>
+        <div class="field"><code>access_role</code><span>Disable edits for read-only calendars</span></div>
+      </div>
+      <div class="identity-card">
+        <h4>Finalized invoice state</h4>
+        <div class="field"><code>studio + month</code><span>Invoice-period key</span></div>
+        <div class="field"><code>invoice_number</code><span>Reused during re-finalization</span></div>
+        <div class="field"><code>stale_at</code><span>Persisted across app restarts</span></div>
+        <div class="field"><code>reason</code><span>Changed lesson or reassigned series</span></div>
+        <div class="field"><code>cleared_at</code><span>Set after successful re-finalization</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section-card">
+    <h3>Failure behavior</h3>
+    <p>No edit is presented as successful until Google accepts it.</p>
+    <table class="rule-table">
+      <thead><tr><th>Condition</th><th>App behavior</th><th>Result</th></tr></thead>
+      <tbody>
+        <tr><td>Google event changed since sync</td><td>Reload current event; preserve the user's proposed value for retry</td><td><span class="status block">No overwrite</span></td></tr>
+        <tr><td>Network or Google service failure</td><td>Keep old local value; show Retry inside the card</td><td><span class="status retry">Retry</span></td></tr>
+        <tr><td>Calendar is no longer writable</td><td>Disable editing and explain the current access role</td><td><span class="status block">Read only</span></td></tr>
+        <tr><td>Google saved, local reconciliation failed</td><td>Show “Saved to Google; refreshing…” and force a clean sync</td><td><span class="status safe">Google wins</span></td></tr>
+        <tr><td>Description is not 9 or 9/30EUR style</td><td>Show old and proposed descriptions before replacement</td><td><span class="status retry">Confirm</span></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="section-card">
+    <h3>Verification plan</h3>
+    <p>The Google account is not used by automated tests. A deterministic fake Calendar backend exercises real Tauri behavior.</p>
+    <div class="test-grid">
+      <div class="test-card"><h4>TypeScript unit</h4><ul><li>Summary rewriting preserves location and class</li><li>Legacy description serialization and warnings</li><li>Stale-invoice impact calculation</li></ul></div>
+      <div class="test-card"><h4>Rust unit/integration</h4><ul><li>Occurrence versus series targets</li><li>Permission and version conflicts</li><li>SQLite migrations and reconciliation</li></ul></div>
+      <div class="test-card"><h4>React component</h4><ul><li>Card placement and dismissal</li><li>Menus, dialogs, disabled euro state</li><li>Keyboard focus and Escape handling</li></ul></div>
+      <div class="test-card"><h4>Real Tauri E2E</h4><ul><li>Write authorization migration</li><li>All three successful edits</li><li>Failures, retry, totals, and stale invoice</li><li>Run after every UI change</li></ul></div>
+    </div>
+  </section>
+
+  <div class="approval options">
+    <div class="option" data-choice="technical-approved" onclick="toggleSelect(this)">
+      <div class="letter">A</div><div class="content"><h3>Approve the complete design</h3><p>Write the specification and run its review loop.</p></div>
+    </div>
+    <div class="option" data-choice="technical-needs-changes" onclick="toggleSelect(this)">
+      <div class="letter">B</div><div class="content"><h3>Needs changes</h3><p>Select this and describe the correction in the terminal.</p></div>
+    </div>
+  </div>
+</div>

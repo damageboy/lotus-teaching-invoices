@@ -589,6 +589,23 @@ export function loadIsolatedE2eRunFromEnvironment(
   return run;
 }
 
+export function webdriverAppEnvironment(
+  inherited: NodeJS.ProcessEnv,
+  runRoot: string,
+  calendarApiBase: string
+): NodeJS.ProcessEnv {
+  const fakeGoogleOrigin = new URL(calendarApiBase).origin;
+  return {
+    ...inherited,
+    LOTUS_E2E_RUN_ROOT: runRoot,
+    LOTUS_E2E_CALENDAR_API_BASE: calendarApiBase,
+    LOTUS_E2E_DRIVE_API_BASE: `${fakeGoogleOrigin}/drive/v3`,
+    LOTUS_E2E_DRIVE_UPLOAD_BASE: `${fakeGoogleOrigin}/upload/drive/v3`,
+    LOTUS_E2E_GMAIL_API_BASE: `${fakeGoogleOrigin}/gmail/v1`,
+    LOTUS_E2E_SUPPRESS_OPEN_FILE: '1',
+  };
+}
+
 function visitRealTree(path: string, visit: (path: string, isDirectory: boolean) => void): void {
   const metadata = lstatSync(path);
   if (metadata.isSymbolicLink()) {
@@ -637,6 +654,8 @@ const FRONTEND_E2E_SEAMS = [
   'e2e_seed_runtime',
   'e2e_runtime_status',
   'e2e_arm_failpoint',
+  'e2e_read_cached_pdf',
+  'e2e_confirm_invoice',
 ] as const;
 
 const RUST_E2E_SEAMS = [
@@ -644,11 +663,15 @@ const RUST_E2E_SEAMS = [
   '--e2e-run-marker-token',
   'LOTUS_E2E_RUN_ROOT',
   'LOTUS_E2E_CALENDAR_API_BASE',
+  'LOTUS_E2E_DRIVE_API_BASE',
+  'LOTUS_E2E_DRIVE_UPLOAD_BASE',
+  'LOTUS_E2E_GMAIL_API_BASE',
   'LOTUS_E2E_SUPPRESS_OPEN_FILE',
   'e2e_seed_runtime',
   'e2e_runtime_status',
   'e2e_arm_failpoint',
-  'freshnessAfterRemote',
+  'e2e_read_cached_pdf',
+  'e2e_confirm_invoice',
   'cacheReconcileAfterRemote',
   'LOTUS_E2E_WEBDRIVER_READY',
 ] as const;

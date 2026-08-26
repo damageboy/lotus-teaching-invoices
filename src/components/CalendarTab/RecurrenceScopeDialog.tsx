@@ -20,14 +20,14 @@ export function RecurrenceScopeDialog({
         <button
           type="button"
           onClick={onThisEvent}
-          className="rounded-md border border-gray-300 px-3 py-2 text-left text-sm font-medium text-gray-700 hover:bg-gray-50"
+          className="rounded-md border border-gray-300 px-3 py-2 text-left text-sm font-medium text-gray-700 hover:bg-gray-50 max-md:min-h-12 max-md:text-base"
         >
           This event
         </button>
         <button
           type="button"
           onClick={onEntireSeries}
-          className="rounded-md bg-indigo-600 px-3 py-2 text-left text-sm font-medium text-white hover:bg-indigo-700"
+          className="rounded-md bg-indigo-600 px-3 py-2 text-left text-sm font-medium text-white hover:bg-indigo-700 max-md:min-h-12 max-md:text-base"
         >
           Entire series
         </button>

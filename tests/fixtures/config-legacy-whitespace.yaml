@@ -1,0 +1,5 @@
+lastInvoice: '   '
+studios:
+  Foo:
+    rateTiers:
+      - { minStudents: 1, maxStudents: null, rate: 80 }

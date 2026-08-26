@@ -1,31 +1,27 @@
-import { fetch } from '@tauri-apps/plugin-http';
 import { invoke } from '@tauri-apps/api/core';
-import { open } from '@tauri-apps/plugin-shell';
+import { openUrl } from '@tauri-apps/plugin-opener';
+import { BASE_OAUTH_SCOPES, GOOGLE_CLIENT_ID, OAUTH_AUTH_URL } from './constants.js';
+import { exchangeCodeForTokens, refreshAccessToken } from './oauth-client.js';
 import {
-  BASE_OAUTH_SCOPES,
-  CALENDAR_EDIT_OAUTH_SCOPES,
-  GOOGLE_CLIENT_ID,
-  GOOGLE_CLIENT_SECRET,
-  OAUTH_AUTH_URL,
-  OAUTH_TOKEN_URL,
-} from './constants.js';
+  AuthorizationRequiredError,
+  authorizeOnAndroid,
+  clearEphemeralAccessToken,
+  isAndroidRuntime,
+  requiredScopes,
+  type GetAccessTokenOptions,
+} from '../google/mobile-authorization.js';
 import {
   acceptAuthorizationExchange,
   hasRequiredScopes,
   isVersionedStoredTokens,
-  mergeRefreshResponse,
   parseCalendarEditPromptPreference,
   parseStoredTokenRecord,
   type CalendarEditPromptPreference,
-  type OAuthTokenResponse,
   type StoredTokenRecord,
 } from './auth-record.js';
 import { logInfo, logError, logWarn } from '../logger.js';
 
-export interface GetAccessTokenOptions {
-  requireCalendarWrite?: boolean;
-  forceRefresh?: boolean;
-}
+export { clearEphemeralAccessToken, requiredScopes, type GetAccessTokenOptions };
 
 let authorizationQueue: Promise<void> = Promise.resolve();
 
@@ -132,54 +128,6 @@ export async function saveCalendarEditPromptPreference(
   acceptInstalledWrite(outcome, 'Calendar edit prompt preference');
 }
 
-async function exchangeCodeForTokens(code: string, port: number): Promise<OAuthTokenResponse> {
-  const body = new URLSearchParams({
-    code,
-    client_id: GOOGLE_CLIENT_ID,
-    client_secret: GOOGLE_CLIENT_SECRET,
-    redirect_uri: `http://127.0.0.1:${port}`,
-    grant_type: 'authorization_code',
-  });
-
-  const resp = await fetch(OAUTH_TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: body.toString(),
-  });
-
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`Token exchange failed (${resp.status}): ${text}`);
-  }
-
-  return (await resp.json()) as OAuthTokenResponse;
-}
-
-async function refreshAccessToken(existing: StoredTokenRecord): Promise<StoredTokenRecord> {
-  const body = new URLSearchParams({
-    refresh_token: existing.refresh_token,
-    client_id: GOOGLE_CLIENT_ID,
-    client_secret: GOOGLE_CLIENT_SECRET,
-    grant_type: 'refresh_token',
-  });
-
-  const resp = await fetch(OAUTH_TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: body.toString(),
-  });
-
-  if (!resp.ok) throw new Error(`Token refresh failed (${resp.status})`);
-
-  const refreshed = mergeRefreshResponse(
-    existing,
-    (await resp.json()) as OAuthTokenResponse,
-    Date.now()
-  );
-  if (!refreshed) throw new Error('Token refresh returned a malformed response');
-  return refreshed;
-}
-
 function uniqueScopes(scopes: readonly string[]): string[] {
   return [...new Set(scopes)];
 }
@@ -192,9 +140,9 @@ function createOAuthState(): string {
 
 function authorizationScopes(
   existing: StoredTokenRecord | null,
-  requireCalendarWrite: boolean
+  options: GetAccessTokenOptions
 ): string[] {
-  const required = requireCalendarWrite ? CALENDAR_EDIT_OAUTH_SCOPES : BASE_OAUTH_SCOPES;
+  const required = requiredScopes(options);
   if (!isVersionedStoredTokens(existing)) return [...required];
   return uniqueScopes([...required, ...existing.granted_scopes]);
 }
@@ -226,15 +174,15 @@ async function cancelPendingOAuth(): Promise<void> {
 async function runOAuthFlow(
   existing: StoredTokenRecord | null,
   expectedRaw: string | null,
-  requireCalendarWrite: boolean
+  options: GetAccessTokenOptions
 ): Promise<StoredTokenRecord> {
-  const requestedScopes = authorizationScopes(existing, requireCalendarWrite);
+  const requestedScopes = authorizationScopes(existing, options);
   const oauthState = createOAuthState();
   logInfo('Starting Google OAuth flow...');
   const port = await invoke<number>('start_oauth_server', { expectedState: oauthState });
   let outcome: OAuthCallbackOutcome;
   try {
-    await open(buildConsentUrl(port, oauthState, requestedScopes));
+    await openUrl(buildConsentUrl(port, oauthState, requestedScopes));
     logInfo('Waiting for authorization in browser...');
     outcome = await invoke<OAuthCallbackOutcome>('wait_oauth_code', { timeoutSecs: 120 });
   } catch (error) {
@@ -258,13 +206,20 @@ async function runOAuthFlow(
  * Calendar writes require a current, explicitly recorded write grant.
  */
 async function getAccessTokenAttempt(options: GetAccessTokenOptions): Promise<string> {
-  const requireCalendarWrite = options.requireCalendarWrite === true;
+  if (isAndroidRuntime()) {
+    return (await authorizeOnAndroid(options)).accessToken;
+  }
+
+  const requiresIncrementalGrant =
+    options.requireCalendarWrite === true || options.requireDrive === true;
+  const required = requiredScopes(options);
   const snapshot = await loadTokens();
   const stored = snapshot.record;
 
   if (stored) {
-    if (requireCalendarWrite && !hasRequiredScopes(stored, CALENDAR_EDIT_OAUTH_SCOPES)) {
-      return (await runOAuthFlow(stored, snapshot.raw, true)).access_token;
+    if (requiresIncrementalGrant && !hasRequiredScopes(stored, required)) {
+      if (options.interactive === false) throw new AuthorizationRequiredError();
+      return (await runOAuthFlow(stored, snapshot.raw, options)).access_token;
     }
 
     if (options.forceRefresh === true || isTokenExpired(stored.expires_at)) {
@@ -278,13 +233,15 @@ async function getAccessTokenAttempt(options: GetAccessTokenOptions): Promise<st
         logError(`Token refresh failed, re-authorizing: ${error}`);
       }
 
-      return (await runOAuthFlow(stored, snapshot.raw, requireCalendarWrite)).access_token;
+      if (options.interactive === false) throw new AuthorizationRequiredError();
+      return (await runOAuthFlow(stored, snapshot.raw, options)).access_token;
     }
 
     return stored.access_token;
   }
 
-  return (await runOAuthFlow(null, snapshot.raw, requireCalendarWrite)).access_token;
+  if (options.interactive === false) throw new AuthorizationRequiredError();
+  return (await runOAuthFlow(null, snapshot.raw, options)).access_token;
 }
 
 async function getAccessTokenWithStorageRetry(options: GetAccessTokenOptions): Promise<string> {

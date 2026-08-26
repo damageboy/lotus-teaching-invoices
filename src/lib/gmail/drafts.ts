@@ -1,7 +1,6 @@
-import { fetch } from '@tauri-apps/plugin-http';
-import { open } from '@tauri-apps/plugin-shell';
-import { GMAIL_API_BASE } from './constants';
-import { getAccessToken } from './auth';
+import { invoke as tauriInvoke } from '@tauri-apps/api/core';
+import { openUrl as tauriOpenUrl } from '@tauri-apps/plugin-opener';
+import { getAccessToken, type GetAccessTokenOptions } from './auth';
 import { logInfo, logError } from '../logger';
 
 interface MimeParams {
@@ -13,6 +12,21 @@ interface MimeParams {
 }
 
 const BOUNDARY = '____lotus_invoice_boundary____';
+const GMAIL_DRAFTS_URL = 'https://mail.google.com/mail/#drafts';
+
+type Invoke = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
+
+interface GmailDraftDependencies {
+  invoke: Invoke;
+  getAccessToken: (options?: GetAccessTokenOptions) => Promise<string>;
+  openUrl: (url: string) => Promise<void>;
+}
+
+const gmailDraftDependencies: GmailDraftDependencies = {
+  invoke: tauriInvoke,
+  getAccessToken,
+  openUrl: import.meta.env.VITE_LOTUS_E2E === '1' ? async () => undefined : tauriOpenUrl,
+};
 
 /** RFC 2047 encode a header value for non-ASCII safety. */
 export function rfc2047Encode(value: string): string {
@@ -74,16 +88,17 @@ function uint8ToBase64(bytes: Uint8Array): string {
  * Create a Gmail draft with the finalized PDF attached.
  * Opens Gmail drafts page on success.
  */
-export async function createGmailDraft(params: {
-  pdfBytes: Uint8Array;
-  to: string;
-  subject: string;
-  body: string;
-  pdfFilename: string;
-}): Promise<void> {
+export async function createGmailDraft(
+  params: {
+    pdfBytes: Uint8Array;
+    to: string;
+    subject: string;
+    body: string;
+    pdfFilename: string;
+  },
+  dependencies: GmailDraftDependencies = gmailDraftDependencies
+): Promise<void> {
   logInfo(`Creating Gmail draft for ${params.to}...`);
-
-  const accessToken = await getAccessToken();
 
   const pdfBase64 = uint8ToBase64(params.pdfBytes);
 
@@ -98,23 +113,36 @@ export async function createGmailDraft(params: {
 
   const raw = base64urlEncode(mime);
 
-  // Create draft via Gmail API
-  const resp = await fetch(`${GMAIL_API_BASE}/users/me/drafts`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ message: { raw } }),
-  });
+  const createDraft = (accessToken: string) =>
+    dependencies.invoke<void>('gmail_create_draft', {
+      accessToken,
+      rawMessage: raw,
+    });
 
-  if (!resp.ok) {
-    const text = await resp.text();
-    const msg = `Gmail draft creation failed (${resp.status}): ${text}`;
-    logError(msg);
-    throw new Error(msg);
+  try {
+    await createDraft(await dependencies.getAccessToken({ interactive: true }));
+  } catch (error) {
+    if (!isUnauthorizedError(error)) {
+      logError('Gmail draft creation failed');
+      throw error;
+    }
+    const refreshed = await dependencies.getAccessToken({
+      forceRefresh: true,
+      interactive: false,
+    });
+    await createDraft(refreshed);
   }
 
   logInfo('Gmail draft created successfully');
-  await open('https://mail.google.com/mail/#drafts');
+  await dependencies.openUrl(GMAIL_DRAFTS_URL);
+}
+
+function isUnauthorizedError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    !Array.isArray(error) &&
+    Reflect.get(error, 'code') === 'unauthorized' &&
+    Reflect.get(error, 'status') === 401
+  );
 }

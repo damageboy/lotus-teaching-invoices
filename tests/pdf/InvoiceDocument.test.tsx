@@ -16,7 +16,6 @@ const config: AppConfig = {
       bic: 'BYLADEM1001',
     },
   },
-  outputDir: '/tmp/invoices',
   lastInvoice: '',
   studios: {
     'Zen Yoga': {

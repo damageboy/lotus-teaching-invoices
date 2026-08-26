@@ -17,7 +17,6 @@ const SAMPLE_CONFIG: AppConfig = {
   calendarId: 'example@group.calendar.google.com',
   calendarName: 'Teaching Schedule',
   calendarAccessRole: 'writer',
-  outputDir: '/tmp/invoices',
   studios: {
     Yogibar: {
       fullName: 'Yogibar Yoga Studio GmbH',
@@ -46,7 +45,8 @@ describe('config serialization', () => {
     expect(reparsed.calendarId).toBe(SAMPLE_CONFIG.calendarId);
     expect(reparsed.calendarName).toBe(SAMPLE_CONFIG.calendarName);
     expect(reparsed.calendarAccessRole).toBe(SAMPLE_CONFIG.calendarAccessRole);
-    expect(reparsed.outputDir).toBe(SAMPLE_CONFIG.outputDir);
+    expect(reparsed).not.toHaveProperty('outputDir');
+    expect(reparsed).not.toHaveProperty('lastInvoice');
     expect(Object.keys(reparsed.studios)).toEqual(Object.keys(SAMPLE_CONFIG.studios));
     expect(reparsed.studios.Yogibar.rateTiers).toHaveLength(3);
     expect(reparsed.studios.Yogibar.rateTiers[2].maxStudents).toBeNull();
@@ -57,6 +57,14 @@ describe('config serialization', () => {
     expect(yaml).toContain('maxStudents: null');
     const reparsed = validateConfig(parseYaml(yaml));
     expect(reparsed.studios.Yogibar.rateTiers[2].maxStudents).toBeNull();
+  });
+
+  it('round-trips a normalized blank legacy invoice seed as empty', () => {
+    const normalized = validateConfig({ ...SAMPLE_CONFIG, lastInvoice: ' \t ' });
+    const reparsed = validateConfig(parseYaml(stringifyYaml(normalized)));
+
+    expect(normalized.lastInvoice).toBe('');
+    expect(reparsed.lastInvoice).toBe('');
   });
 
   it('JSON sanitization strips no data from a clean config', () => {

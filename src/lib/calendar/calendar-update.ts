@@ -67,7 +67,7 @@ export interface OccurrenceValueEditPreflight {
 export async function preflightOccurrenceStudioEdit(
   request: OccurrenceStudioEditRequest
 ): Promise<OccurrenceStudioEditPreflight> {
-  const accessToken = await getAccessToken({ requireCalendarWrite: true });
+  const accessToken = await getAccessToken({ requireCalendarWrite: true, interactive: true });
   return invoke<OccurrenceStudioEditPreflight>('preflight_calendar_occurrence_studio_edit', {
     accessToken,
     request,
@@ -75,21 +75,19 @@ export async function preflightOccurrenceStudioEdit(
 }
 
 export async function applyOccurrenceStudioEdit(
-  preflight: OccurrenceStudioEditPreflight,
-  outputDir?: string
+  preflight: OccurrenceStudioEditPreflight
 ): Promise<CalendarEditedEvent> {
-  const accessToken = await getAccessToken({ requireCalendarWrite: true });
+  const accessToken = await getAccessToken({ requireCalendarWrite: true, interactive: true });
   return invoke<CalendarEditedEvent>('apply_calendar_occurrence_studio_edit', {
     accessToken,
     preflight,
-    outputDir,
   });
 }
 
 export async function preflightSeriesStudioEdit(
   request: SeriesStudioEditRequest
 ): Promise<SeriesStudioEditPreflight> {
-  const accessToken = await getAccessToken({ requireCalendarWrite: true });
+  const accessToken = await getAccessToken({ requireCalendarWrite: true, interactive: true });
   return invoke<SeriesStudioEditPreflight>('preflight_calendar_series_studio_edit', {
     accessToken,
     request,
@@ -97,21 +95,19 @@ export async function preflightSeriesStudioEdit(
 }
 
 export async function applySeriesStudioEdit(
-  preflight: SeriesStudioEditPreflight,
-  outputDir?: string
+  preflight: SeriesStudioEditPreflight
 ): Promise<SeriesStudioEditResult> {
-  const accessToken = await getAccessToken({ requireCalendarWrite: true });
+  const accessToken = await getAccessToken({ requireCalendarWrite: true, interactive: true });
   return invoke<SeriesStudioEditResult>('apply_calendar_series_studio_edit', {
     accessToken,
     preflight,
-    outputDir,
   });
 }
 
 export async function preflightOccurrenceValueEdit(
   request: OccurrenceValueEditRequest
 ): Promise<OccurrenceValueEditPreflight> {
-  const accessToken = await getAccessToken({ requireCalendarWrite: true });
+  const accessToken = await getAccessToken({ requireCalendarWrite: true, interactive: true });
   return invoke<OccurrenceValueEditPreflight>('preflight_calendar_occurrence_value_edit', {
     accessToken,
     request,
@@ -120,14 +116,12 @@ export async function preflightOccurrenceValueEdit(
 
 export async function applyOccurrenceValueEdit(
   preflight: OccurrenceValueEditPreflight,
-  confirmUnsupportedReplacement: boolean,
-  outputDir?: string
+  confirmUnsupportedReplacement: boolean
 ): Promise<CalendarEditedEvent> {
-  const accessToken = await getAccessToken({ requireCalendarWrite: true });
+  const accessToken = await getAccessToken({ requireCalendarWrite: true, interactive: true });
   return invoke<CalendarEditedEvent>('apply_calendar_occurrence_value_edit', {
     accessToken,
     preflight,
     confirmUnsupportedReplacement,
-    outputDir,
   });
 }

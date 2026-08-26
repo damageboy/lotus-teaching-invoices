@@ -48,14 +48,42 @@ export function finalizedFilename(
   return `${n}-${year}-${slug}-${periodYear}-${periodMonth}.pdf`;
 }
 
+export interface ParsedFinalizedInvoiceFilename {
+  invoiceNumber: string;
+  sequence: number;
+  invoiceYear: number;
+  studioSlug: string;
+  monthKey: string;
+}
+
+/** Parse the complete identity encoded by the canonical finalized PDF filename. */
+export function parseFinalizedInvoiceFilename(
+  filename: string
+): ParsedFinalizedInvoiceFilename | null {
+  const match = /^([1-9]\d*)-(\d{4})-([a-z0-9]+(?:-[a-z0-9]+)*)-(\d{4})-(\d{2})\.pdf$/.exec(
+    filename
+  );
+  if (!match) return null;
+
+  const sequence = Number(match[1]);
+  const month = Number(match[5]);
+  if (!Number.isSafeInteger(sequence) || month < 1 || month > 12) return null;
+
+  return {
+    invoiceNumber: `${match[1]}/${match[2]}`,
+    sequence,
+    invoiceYear: Number(match[2]),
+    studioSlug: match[3],
+    monthKey: `${match[4]}-${match[5]}`,
+  };
+}
+
 /**
  * Extract the invoice number from a finalized filename.
  * Returns "8/2026" from "8-2026-yogibar-2026-01.pdf", or null if not a finalized file.
  */
 export function extractInvoiceNumberFromFilename(filename: string): string | null {
-  const m = /^(\d+)-(\d{4})-/.exec(filename);
-  if (!m) return null;
-  return `${m[1]}/${m[2]}`;
+  return parseFinalizedInvoiceFilename(filename)?.invoiceNumber ?? null;
 }
 
 /**
@@ -68,8 +96,10 @@ export function matchesFinalizedInvoice(
   periodYear: string,
   periodMonth: string
 ): boolean {
-  // Full-filename regex prevents false positives when one slug is a suffix of another
-  // e.g. slug "yoga" must not match "8-2026-bikram-yoga-2026-01.pdf"
-  const pattern = new RegExp(`^\\d+-\\d{4}-${slug}-${periodYear}-${periodMonth}\\.pdf$`);
-  return pattern.test(filename);
+  const parsed = parseFinalizedInvoiceFilename(filename);
+  return (
+    parsed !== null &&
+    parsed.studioSlug === slug &&
+    parsed.monthKey === `${periodYear}-${periodMonth}`
+  );
 }

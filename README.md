@@ -53,6 +53,47 @@ bunx tsc --project tsconfig.app.json --noEmit
 bun run e2e
 ```
 
+### Android APK variants
+
+The Android convenience commands build an **aarch64 (`arm64-v8a`) APK**, install it with `adb`, and launch the app. Install the Android SDK command-line tools first and enable USB debugging when using a physical device.
+
+| Variant | Physical device over USB         | Android emulator                   |
+| ------- | -------------------------------- | ---------------------------------- |
+| Debug   | `bun run android:debug:device`   | `bun run android:debug:emulator`   |
+| Release | `bun run android:release:device` | `bun run android:release:emulator` |
+
+When exactly one suitable target is available, the script selects it automatically. If multiple devices are connected, pass the desired `adb` serial after `--`:
+
+```bash
+adb devices -l
+bun run android:debug:device -- --device <adb-serial>
+bun run android:release:device -- --device <adb-serial>
+```
+
+The emulator commands use an already-running emulator when exactly one is available. Otherwise, they start the only configured Android Virtual Device (AVD). Select a specific AVD when more than one is configured:
+
+```bash
+emulator -list-avds
+bun run android:debug:emulator -- --avd <avd-name>
+bun run android:release:emulator -- --avd <avd-name>
+```
+
+If Gradle produces an unsigned release APK, the convenience script signs a local-install copy with the standard Android debug keystore at `~/.android/debug.keystore`. This local signature is not suitable for distribution; configure production release signing separately. Generated APKs are written below `src-tauri/gen/android/app/build/outputs/apk/`.
+
+Run `bash scripts/android-apk.sh --help` for the complete launcher options.
+
+## Finalized Invoices and Google Drive
+
+Google Drive is the only authority for finalized invoice PDFs in the desktop and Android apps. Choose or create one Drive root in the app; Lotus manages exactly one direct child named `Final` and identifies files by Drive ID. A refresh on another device signed into the same Google account loads the same selected root and finalized invoices.
+
+Before activating a Drive root, manually copy any existing finalized PDFs into its `Final` folder, refresh the staged scan, resolve duplicate or malformed entries, and then confirm activation. Lotus does not automatically upload, move, or delete old local invoice files. After activation, those local files remain untouched but are ignored.
+
+Lotus stores the shared root pointer and invoice-number sequence in an ordinary, visible My Drive file named `.lotus-teaching-invoices.json`. The control file uses the standard Drive property `lotusConfigSchema=1`; managed PDFs use standard Drive `properties` for invoice identity, source freshness, checksums, and operation IDs. This ordinary file and visible metadata allow the separate desktop and Android OAuth clients to share one authority.
+
+Finalized list, finalize, re-finalize, open, and draft-email actions are online-only and read verified Drive state or bytes. There is no persistent local finalized-PDF cache or offline fallback. `Preview` still renders locally, and disposable temporary copies may be created only to open or attach a verified Drive PDF.
+
+Google Cloud client registration and release validation are documented in [Google OAuth Setup](docs/google-oauth-setup.md) and the [Drive release checklist](docs/release/google-drive-invoice-storage-checklist.md).
+
 ## How It Works
 
 Calendar events must follow the format `"Studio Name / Class Type"`. The event description must contain a standalone integer for the student count. Each studio in `config.yaml` has `rateTiers` that map student counts to flat per-class rates.

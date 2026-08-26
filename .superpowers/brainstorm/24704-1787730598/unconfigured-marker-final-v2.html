@@ -1,0 +1,147 @@
+<h2>Revised month-day marker</h2>
+<p class="subtitle">Red circle with a white ×, placed in the day cell’s upper-right corner.</p>
+
+<style>
+  .phone {
+    max-width: 390px;
+    margin: 20px auto;
+    border: 1px solid #cbd5e1;
+    border-radius: 24px;
+    padding: 20px 14px 24px;
+    background: white;
+    box-shadow: 0 18px 45px rgba(15, 23, 42, 0.12);
+  }
+  .month-title {
+    text-align: center;
+    font-size: 20px;
+    font-weight: 750;
+    color: #0f172a;
+    margin-bottom: 16px;
+  }
+  .weekdays,
+  .month-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+  }
+  .weekdays span {
+    text-align: center;
+    color: #64748b;
+    font-size: 11px;
+    text-transform: uppercase;
+    padding: 7px 0;
+  }
+  .cell {
+    position: relative;
+    aspect-ratio: 1/1.08;
+    min-height: 46px;
+    border-right: 1px solid #e2e8f0;
+    border-bottom: 1px solid #e2e8f0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding-top: 7px;
+    color: #334155;
+    font-size: 13px;
+    font-weight: 650;
+  }
+  .cell:nth-child(7n + 1) {
+    border-left: 1px solid #e2e8f0;
+  }
+  .cell:nth-child(-n + 7) {
+    border-top: 1px solid #e2e8f0;
+  }
+  .empty {
+    color: transparent;
+    background: #f8fafc;
+  }
+  .bars {
+    margin-top: auto;
+    margin-bottom: 5px;
+    display: flex;
+    gap: 2px;
+  }
+  .bar {
+    width: 10px;
+    height: 4px;
+    border-radius: 9px;
+    background: #16a34a;
+  }
+  .bar.blue {
+    background: #2563eb;
+  }
+  .warning {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #dc2626;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font:
+      800 12px/1 system-ui,
+      sans-serif;
+    box-shadow: 0 0 0 1px white;
+  }
+  .note {
+    max-width: 390px;
+    margin: 12px auto 0;
+    color: #475569;
+    text-align: center;
+    font-size: 14px;
+  }
+</style>
+
+<div class="phone" data-choice="red-x-corner" onclick="toggleSelect(this)">
+  <div class="month-title">August 2026</div>
+  <div class="weekdays">
+    <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span
+    ><span>Sun</span>
+  </div>
+  <div class="month-grid">
+    <div class="cell empty">0</div>
+    <div class="cell empty">0</div>
+    <div class="cell empty">0</div>
+    <div class="cell empty">0</div>
+    <div class="cell empty">0</div>
+    <div class="cell">1</div>
+    <div class="cell">2</div>
+    <div class="cell">3</div>
+    <div class="cell">
+      4
+      <div class="bars"><i class="bar"></i></div>
+    </div>
+    <div class="cell">5</div>
+    <div class="cell">
+      6<span class="warning" aria-label="Unconfigured class">×</span>
+      <div class="bars"><i class="bar blue"></i></div>
+    </div>
+    <div class="cell">7</div>
+    <div class="cell">8</div>
+    <div class="cell">9</div>
+    <div class="cell">10</div>
+    <div class="cell">11</div>
+    <div class="cell">
+      12<span class="warning" aria-label="Unconfigured class">×</span>
+      <div class="bars"><i class="bar"></i><i class="bar blue"></i></div>
+    </div>
+    <div class="cell">13</div>
+    <div class="cell">14</div>
+    <div class="cell">15</div>
+    <div class="cell">16</div>
+    <div class="cell">17</div>
+    <div class="cell">
+      18
+      <div class="bars"><i class="bar"></i></div>
+    </div>
+    <div class="cell">19</div>
+    <div class="cell">20</div>
+    <div class="cell">21<span class="warning" aria-label="Unconfigured class">×</span></div>
+    <div class="cell">22</div>
+    <div class="cell">23</div>
+  </div>
+</div>
+<p class="note">Tap the preview to approve this marker.</p>

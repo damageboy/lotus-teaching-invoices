@@ -1,4 +1,3 @@
-outputDir: ""
 teacher:
   name: E2E Teacher
   address: "Test Street 1\nTest City 12345"

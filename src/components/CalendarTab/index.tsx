@@ -1,16 +1,21 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ParsedClass, StudioConfig } from '../../lib/types';
 import { CalendarGrid } from './CalendarGrid';
 import { studioColor } from '../../lib/studioColors';
 import { computeStudioStats, StudioMonthStats } from '../../lib/invoice/calculator';
 import { EventDetailsCard } from './EventDetailsCard';
+import { MobileCalendar } from './MobileCalendar';
 import type {
   OccurrenceValueEditOperation,
   OccurrenceValueEditPreflight,
   SeriesStudioEditPreflight,
 } from '../../lib/calendar/calendar-update';
+import type { AppLayout } from '../../hooks/useCompactLayout';
+import { useMobileCalendarNavigation } from './useMobileCalendarNavigation';
 
 interface Props {
+  layout?: AppLayout;
+  mobileActivation?: number;
   classes: ParsedClass[];
   studios?: Record<string, StudioConfig>;
   onAddStudio?: (name: string) => void;
@@ -52,6 +57,8 @@ const MONTH_NAMES = [
 ];
 
 export function CalendarTab({
+  layout = 'desktop',
+  mobileActivation = 0,
   classes,
   studios = {},
   onAddStudio,
@@ -73,18 +80,33 @@ export function CalendarTab({
     defaultInPrevMonth && now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
   const [year, setYear] = useState(defaultYear);
   const [month, setMonth] = useState(defaultMonth);
-  const [selected, setSelected] = useState<SelectedLesson | null>(null);
+  const [desktopSelected, setDesktopSelected] = useState<SelectedLesson | null>(null);
 
-  function closeDetails() {
-    const anchor = selected?.anchor;
-    setSelected(null);
-    anchor?.focus();
-  }
+  useEffect(() => {
+    if (layout === 'mobile') setDesktopSelected(null);
+  }, [layout]);
 
   const monthClasses = classes.filter((cls) => {
     const prefix = `${year}-${String(month + 1).padStart(2, '0')}`;
     return cls.date.startsWith(prefix);
   });
+  const mobileNavigation = useMobileCalendarNavigation({
+    enabled: layout === 'mobile',
+    activationKey: mobileActivation,
+    year,
+    month,
+    classes: monthClasses,
+  });
+
+  function closeDesktopDetails() {
+    const anchor = desktopSelected?.anchor;
+    setDesktopSelected(null);
+    queueMicrotask(() => anchor?.focus());
+  }
+
+  function openDesktopDetails(lesson: ParsedClass, anchor: HTMLButtonElement) {
+    setDesktopSelected({ lesson, anchor });
+  }
 
   // Per-studio stats for the displayed month (configured studios only)
   const studioStats = Object.entries(studios)
@@ -136,6 +158,47 @@ export function CalendarTab({
       setMonth(0);
       setYear((y) => y + 1);
     } else setMonth((m) => m + 1);
+  }
+
+  if (layout === 'mobile') {
+    return (
+      <>
+        <div inert={mobileNavigation.level === 'details' ? true : undefined}>
+          <MobileCalendar
+            mode={mobileNavigation.level === 'month' ? 'month' : 'agenda'}
+            year={year}
+            month={month}
+            classes={monthClasses}
+            studios={studios}
+            colorMap={colorMap}
+            studioStats={studioStats}
+            selectedDate={mobileNavigation.selectedDate}
+            agendaFocusRequest={mobileNavigation.agendaFocusRequest}
+            monthFocusRequest={mobileNavigation.monthFocusRequest}
+            onPreviousMonth={() => mobileNavigation.changeMonth(prevMonth)}
+            onNextMonth={() => mobileNavigation.changeMonth(nextMonth)}
+            onOpenAgenda={mobileNavigation.openAgenda}
+            onSelectAgendaDate={mobileNavigation.selectAgendaDate}
+            onSelectLesson={mobileNavigation.openDetails}
+          />
+        </div>
+        {mobileNavigation.selectedLesson && mobileNavigation.selectedLessonAnchor && (
+          <EventDetailsCard
+            lesson={mobileNavigation.selectedLesson}
+            anchor={mobileNavigation.selectedLessonAnchor}
+            presentation="sheet"
+            studios={studios}
+            canEdit={canEdit}
+            onClose={mobileNavigation.closeDetails}
+            onReassignStudio={onReassignStudio}
+            onPrepareValueEdit={onPrepareValueEdit}
+            onSaveValueEdit={onSaveValueEdit}
+            onPrepareSeriesStudioEdit={onPrepareSeriesStudioEdit}
+            onSaveSeriesStudioEdit={onSaveSeriesStudioEdit}
+          />
+        )}
+      </>
+    );
   }
 
   return (
@@ -221,16 +284,16 @@ export function CalendarTab({
         month={month}
         classes={monthClasses}
         colorMap={colorMap}
-        onSelectLesson={(lesson, anchor) => setSelected({ lesson, anchor })}
+        onSelectLesson={openDesktopDetails}
       />
 
-      {selected && (
+      {desktopSelected && (
         <EventDetailsCard
-          lesson={selected.lesson}
-          anchor={selected.anchor}
+          lesson={desktopSelected.lesson}
+          anchor={desktopSelected.anchor}
           studios={studios}
           canEdit={canEdit}
-          onClose={closeDetails}
+          onClose={closeDesktopDetails}
           onReassignStudio={onReassignStudio}
           onPrepareValueEdit={onPrepareValueEdit}
           onSaveValueEdit={onSaveValueEdit}

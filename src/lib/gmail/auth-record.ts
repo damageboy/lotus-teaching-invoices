@@ -1,4 +1,8 @@
-import { AUTHORIZATION_SCHEMA_VERSION, CALENDAR_EDIT_OAUTH_SCOPES } from './constants.js';
+import {
+  AUTHORIZATION_SCHEMA_VERSION,
+  CALENDAR_EDIT_OAUTH_SCOPES,
+  DRIVE_OAUTH_SCOPES,
+} from './constants.js';
 
 export interface LegacyStoredTokens {
   access_token: string;
@@ -132,6 +136,10 @@ export function hasRequiredScopes(
 
   const granted = new Set(record.granted_scopes);
   return requiredScopes.every((scope) => granted.has(scope));
+}
+
+export function hasDriveAuthorization(record: StoredTokenRecord | null): boolean {
+  return hasRequiredScopes(record, DRIVE_OAUTH_SCOPES);
 }
 
 function parseReturnedScopes(value: unknown): string[] | null {

@@ -23,7 +23,6 @@ export type CalendarEditingStatus =
 
 export interface CalendarEditingOptions {
   calendarId?: string;
-  outputDir?: string;
   persistedAccessRole?: CalendarAccessRole;
   hasCalendarWrite: boolean;
   authorizationLoading: boolean;
@@ -35,7 +34,6 @@ export interface CalendarEditingOptions {
   preflightSeriesStudioEdit?: typeof preflightSeriesStudioEditCommand;
   applySeriesStudioEdit?: typeof applySeriesStudioEditCommand;
   reloadCache?: () => Promise<void>;
-  reloadInvoiceFreshness?: () => Promise<void>;
 }
 
 interface RoleSnapshot {
@@ -96,7 +94,6 @@ function isTransientCalendarError(error: unknown): boolean {
 
 export function useCalendarEditing({
   calendarId,
-  outputDir,
   persistedAccessRole,
   hasCalendarWrite,
   authorizationLoading,
@@ -108,7 +105,6 @@ export function useCalendarEditing({
   preflightSeriesStudioEdit = preflightSeriesStudioEditCommand,
   applySeriesStudioEdit = applySeriesStudioEditCommand,
   reloadCache = async () => {},
-  reloadInvoiceFreshness = async () => {},
 }: CalendarEditingOptions): CalendarEditingState {
   const requestSequenceRef = useRef(0);
   const currentCalendarIdRef = useRef(calendarId);
@@ -242,10 +238,10 @@ export function useCalendarEditing({
           identity: lesson.eventIdentity,
           studioName,
         });
-        await applyOccurrenceStudioEdit(preflight, outputDir);
-        await Promise.all([reloadCache(), reloadInvoiceFreshness()]);
+        await applyOccurrenceStudioEdit(preflight);
+        await reloadCache();
       } catch (error) {
-        await Promise.allSettled([reloadCache(), reloadInvoiceFreshness()]);
+        await Promise.allSettled([reloadCache()]);
         const message = errorMessage(error);
         if (mountedRef.current) setSaveError(message);
         throw error;
@@ -253,14 +249,7 @@ export function useCalendarEditing({
         if (mountedRef.current) setSaving(false);
       }
     },
-    [
-      applyOccurrenceStudioEdit,
-      currentCanEdit,
-      outputDir,
-      preflightOccurrenceStudioEdit,
-      reloadCache,
-      reloadInvoiceFreshness,
-    ]
+    [applyOccurrenceStudioEdit, currentCanEdit, preflightOccurrenceStudioEdit, reloadCache]
   );
 
   const prepareOccurrenceValueEdit = useCallback(
@@ -284,10 +273,10 @@ export function useCalendarEditing({
       setSaving(true);
       setSaveError(null);
       try {
-        await applyOccurrenceValueEdit(preflight, confirmUnsupportedReplacement, outputDir);
-        await Promise.all([reloadCache(), reloadInvoiceFreshness()]);
+        await applyOccurrenceValueEdit(preflight, confirmUnsupportedReplacement);
+        await reloadCache();
       } catch (error) {
-        await Promise.allSettled([reloadCache(), reloadInvoiceFreshness()]);
+        await Promise.allSettled([reloadCache()]);
         const message = errorMessage(error);
         if (mountedRef.current) setSaveError(message);
         throw error;
@@ -295,7 +284,7 @@ export function useCalendarEditing({
         if (mountedRef.current) setSaving(false);
       }
     },
-    [applyOccurrenceValueEdit, currentCanEdit, outputDir, reloadCache, reloadInvoiceFreshness]
+    [applyOccurrenceValueEdit, currentCanEdit, reloadCache]
   );
 
   const prepareSeriesStudioEdit = useCallback(
@@ -322,11 +311,11 @@ export function useCalendarEditing({
       setSaving(true);
       setSaveError(null);
       try {
-        const result = await applySeriesStudioEdit(preflight, outputDir);
-        await Promise.all([reloadCache(), reloadInvoiceFreshness()]);
+        const result = await applySeriesStudioEdit(preflight);
+        await reloadCache();
         return result.reconciliationPending;
       } catch (error) {
-        await Promise.allSettled([reloadCache(), reloadInvoiceFreshness()]);
+        await Promise.allSettled([reloadCache()]);
         const message = errorMessage(error);
         if (mountedRef.current) setSaveError(message);
         throw error;
@@ -334,7 +323,7 @@ export function useCalendarEditing({
         if (mountedRef.current) setSaving(false);
       }
     },
-    [applySeriesStudioEdit, currentCanEdit, outputDir, reloadCache, reloadInvoiceFreshness]
+    [applySeriesStudioEdit, currentCanEdit, reloadCache]
   );
 
   return useMemo(() => {

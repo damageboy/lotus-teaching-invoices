@@ -209,6 +209,18 @@ describe('calendar occurrence editing', () => {
     expect(document.activeElement).toBe(opener);
   });
 
+  it('keeps nested lesson editing dialogs within the dynamic viewport', async () => {
+    const lesson = parsedClass({ date: visibleDate(), studentCount: 5 });
+    render(<CalendarTab classes={[lesson]} studios={{}} canEdit />);
+
+    await click(namedElement('button', /Studio.*Flow/i));
+    await click(namedElement('button', 'Set Students'));
+
+    const dialog = namedElement('dialog', 'Set students');
+    expect(dialog.className).toContain('max-h-[calc(100dvh-2rem)]');
+    expect(dialog.className).toContain('overflow-y-auto');
+  });
+
   it('warns before replacing an unsupported description', async () => {
     const lesson = parsedClass({
       date: visibleDate(),

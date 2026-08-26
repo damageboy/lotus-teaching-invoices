@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-openPdf"
+description = "Enables the openPdf command without any pre-configured scope."
+commands.allow = ["openPdf"]
+
+[[permission]]
+identifier = "deny-openPdf"
+description = "Denies the openPdf command without any pre-configured scope."
+commands.deny = ["openPdf"]

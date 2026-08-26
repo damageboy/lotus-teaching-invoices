@@ -2,6 +2,25 @@ import { defineConfig, Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { execSync } from 'child_process';
+import { fileURLToPath } from 'node:url';
+
+function oauthClientPlatformPlugin(): Plugin {
+  const platform = process.env.TAURI_ENV_PLATFORM;
+  const androidImplementation = fileURLToPath(
+    new URL('./src/lib/gmail/oauth-client.android.ts', import.meta.url)
+  );
+  return {
+    name: 'lotus-oauth-client-platform',
+    enforce: 'pre',
+    resolveId(source, importer) {
+      return platform === 'android' &&
+        source === './oauth-client.js' &&
+        importer?.endsWith('/src/lib/gmail/auth.ts')
+        ? androidImplementation
+        : null;
+    },
+  };
+}
 
 function appVersionPlugin(): Plugin {
   function getVersionInfo(): { version: string; isOfficial: boolean } {
@@ -39,7 +58,7 @@ function appVersionPlugin(): Plugin {
 
 export default defineConfig({
   base: '',
-  plugins: [react(), tailwindcss(), appVersionPlugin()],
+  plugins: [oauthClientPlatformPlugin(), react(), tailwindcss(), appVersionPlugin()],
   clearScreen: false,
   server: {
     port: 1420,

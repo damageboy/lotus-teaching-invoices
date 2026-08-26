@@ -8,8 +8,6 @@ teacher:
     bic: "COBADEFFXXX"
 calendarId: "YOUR_CALENDAR_ID@group.calendar.google.com"
 calendarName: "My Teaching Calendar"
-outputDir: ""
-lastInvoice: ""
 studios:
   "Yogibar":
     fullName: "Yogibar Yoga Studio GmbH"

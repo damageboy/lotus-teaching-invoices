@@ -1,5 +1,21 @@
-import { describe, it, expect } from 'vitest';
-import { mapCachedCalendarEvents } from '../../src/lib/calendar/cache.js';
+import { describe, it, expect, vi } from 'vitest';
+import { AuthorizationRequiredError } from '../../src/lib/google/mobile-authorization.js';
+import { mapCachedCalendarEvents, syncCalendar } from '../../src/lib/calendar/cache.js';
+
+describe('syncCalendar', () => {
+  it('surfaces authorizationRequired without invoking sync during passive startup', async () => {
+    const authorizationRequired = new AuthorizationRequiredError();
+    const getAccessToken = vi.fn().mockRejectedValueOnce(authorizationRequired);
+    const invoke = vi.fn();
+
+    await expect(syncCalendar('calendar-1', { getAccessToken, invoke })).rejects.toBe(
+      authorizationRequired
+    );
+
+    expect(getAccessToken).toHaveBeenCalledWith({ interactive: false });
+    expect(invoke).not.toHaveBeenCalled();
+  });
+});
 
 describe('mapCachedCalendarEvents', () => {
   it('converts cached Tauri DTO timestamps into CalendarEvent dates', () => {

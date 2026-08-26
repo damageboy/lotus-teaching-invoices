@@ -1,13 +1,14 @@
 export const GOOGLE_CLIENT_ID =
   '918178070743-m12oc3dv1rp40blkdomhc1767oigocpr.apps.googleusercontent.com';
-export const GOOGLE_CLIENT_SECRET = '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';
 
 export const GMAIL_COMPOSE_SCOPE = 'https://www.googleapis.com/auth/gmail.compose';
 export const CALENDAR_READONLY_SCOPE = 'https://www.googleapis.com/auth/calendar.readonly';
 export const CALENDAR_EVENTS_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
+export const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive';
 
 export const BASE_OAUTH_SCOPES = [GMAIL_COMPOSE_SCOPE, CALENDAR_READONLY_SCOPE] as const;
 export const CALENDAR_EDIT_OAUTH_SCOPES = [...BASE_OAUTH_SCOPES, CALENDAR_EVENTS_SCOPE] as const;
+export const DRIVE_OAUTH_SCOPES = [...BASE_OAUTH_SCOPES, DRIVE_SCOPE] as const;
 
 export const AUTHORIZATION_SCHEMA_VERSION = 1;
 

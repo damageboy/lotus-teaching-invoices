@@ -1,6 +1,5 @@
 calendarId: "example@group.calendar.google.com"
 calendarName: "Teaching Schedule"
-lastInvoice: ""
 studios:
   "Zen Yoga":
     fullName: "Zen Yoga Center"

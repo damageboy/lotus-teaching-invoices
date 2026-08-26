@@ -7,3 +7,31 @@
 html {
   zoom: var(--app-zoom);
 }
+
+@media (max-width: 767px) {
+  html,
+  body,
+  #root {
+    min-height: 100dvh;
+    overscroll-behavior: none;
+  }
+
+  .drive-folder-dialog--mobile,
+  .mobile-invoices {
+    padding-bottom: max(env(safe-area-inset-bottom), 1rem);
+  }
+
+  .drive-folder-dialog--mobile :is(button, input),
+  .mobile-invoices button {
+    min-block-size: 3rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

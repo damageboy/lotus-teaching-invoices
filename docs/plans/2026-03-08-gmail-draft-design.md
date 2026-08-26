@@ -106,9 +106,9 @@ Content-Disposition: attachment; filename="{filename}.pdf"
 --boundary--
 ```
 
-4. Base64url-encode the entire MIME message
-5. `POST https://gmail.googleapis.com/gmail/v1/users/me/drafts` with body `{ "message": { "raw": "{base64url}" } }`, `Authorization: Bearer {access_token}` header
-6. On success → `shell:open https://mail.google.com/mail/#drafts`
+1. Base64url-encode the entire MIME message
+2. `POST https://gmail.googleapis.com/gmail/v1/users/me/drafts` with body `{ "message": { "raw": "{base64url}" } }`, `Authorization: Bearer {access_token}` header
+3. On success → `shell:open https://mail.google.com/mail/#drafts`
 
 `From` field left empty — Gmail fills it with the authenticated user's email.
 

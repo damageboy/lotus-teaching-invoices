@@ -5,6 +5,7 @@ use std::collections::HashSet;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use tauri::Manager;
 use url::Url;
 
 const DATA_DIR_ARG: &str = "--e2e-data-dir";
@@ -14,6 +15,9 @@ const RUN_MARKER_FILE: &str = ".lotus-e2e-run";
 pub(crate) const WEBDRIVER_READY_MARKER: &str = "LOTUS_E2E_WEBDRIVER_READY http://127.0.0.1:4445";
 pub(crate) const RUN_ROOT_ENV: &str = "LOTUS_E2E_RUN_ROOT";
 pub(crate) const CALENDAR_API_BASE_ENV: &str = "LOTUS_E2E_CALENDAR_API_BASE";
+pub(crate) const DRIVE_API_BASE_ENV: &str = "LOTUS_E2E_DRIVE_API_BASE";
+pub(crate) const DRIVE_UPLOAD_BASE_ENV: &str = "LOTUS_E2E_DRIVE_UPLOAD_BASE";
+pub(crate) const GMAIL_API_BASE_ENV: &str = "LOTUS_E2E_GMAIL_API_BASE";
 pub(crate) const SUPPRESS_OPEN_FILE_ENV: &str = "LOTUS_E2E_SUPPRESS_OPEN_FILE";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,18 +26,16 @@ pub(crate) struct IsolatedStoragePaths {
     pub auth_record: PathBuf,
     pub prompt_preference: PathBuf,
     pub pending_edit_journal: PathBuf,
-    pub invoice_freshness: PathBuf,
 }
 
 impl IsolatedStoragePaths {
     #[cfg(test)]
-    pub fn all(&self) -> [&Path; 5] {
+    pub fn all(&self) -> [&Path; 4] {
         [
             &self.calendar_cache,
             &self.auth_record,
             &self.prompt_preference,
             &self.pending_edit_journal,
-            &self.invoice_freshness,
         ]
     }
 }
@@ -44,7 +46,6 @@ pub(crate) fn isolated_storage_paths(storage: &AppStorage) -> IsolatedStoragePat
         auth_record: storage.auth_tokens_path(),
         prompt_preference: storage.prompt_preference_path(),
         pending_edit_journal: storage.root().join("calendar-edit-operations.sqlite"),
-        invoice_freshness: storage.root().join("invoice-freshness.sqlite"),
     }
 }
 
@@ -134,6 +135,38 @@ pub(crate) fn validate_calendar_api_base(raw: &str) -> Result<Url, String> {
     Ok(parsed)
 }
 
+fn validate_drive_base(raw: &str, expected_path: &str, label: &str) -> Result<Url, String> {
+    let parsed = Url::parse(raw).map_err(|_| format!("Invalid E2E {label} base URL"))?;
+    let is_loopback = match parsed.host() {
+        Some(url::Host::Domain(host)) => host.eq_ignore_ascii_case("localhost"),
+        Some(url::Host::Ipv4(address)) => address.is_loopback(),
+        Some(url::Host::Ipv6(address)) => address.is_loopback(),
+        None => false,
+    };
+    let accepted = parsed.scheme() == "http"
+        && is_loopback
+        && parsed.port().is_some()
+        && parsed.username().is_empty()
+        && parsed.password().is_none()
+        && parsed.path() == expected_path
+        && parsed.query().is_none()
+        && parsed.fragment().is_none();
+    if !accepted {
+        return Err(format!(
+            "E2E {label} base must be loopback HTTP at {expected_path} without credentials"
+        ));
+    }
+    Ok(parsed)
+}
+
+pub(crate) fn validate_drive_api_base(raw: &str) -> Result<Url, String> {
+    validate_drive_base(raw, "/drive/v3", "Drive API")
+}
+
+pub(crate) fn validate_drive_upload_base(raw: &str) -> Result<Url, String> {
+    validate_drive_base(raw, "/upload/drive/v3", "Drive upload")
+}
+
 pub(crate) fn open_file_is_suppressed(raw: Option<&str>) -> bool {
     raw == Some("1")
 }
@@ -194,20 +227,17 @@ fn validate_run_marker(args: &[OsString], run_root: &Path) -> Result<(), String>
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) enum E2eFailpoint {
-    FreshnessAfterRemote,
     CacheReconcileAfterRemote,
 }
 
 #[derive(Default)]
 pub(crate) struct E2eFailpoints {
-    freshness_after_remote: AtomicBool,
     cache_reconcile_after_remote: AtomicBool,
 }
 
 impl E2eFailpoints {
     fn flag(&self, point: E2eFailpoint) -> &AtomicBool {
         match point {
-            E2eFailpoint::FreshnessAfterRemote => &self.freshness_after_remote,
             E2eFailpoint::CacheReconcileAfterRemote => &self.cache_reconcile_after_remote,
         }
     }
@@ -224,15 +254,41 @@ impl E2eFailpoints {
 pub(crate) struct E2eRuntime {
     data_root: PathBuf,
     config_path: PathBuf,
+    drive_api_base: Url,
+    drive_upload_base: Url,
+    gmail_api_base: Url,
     suppress_open_file: bool,
     failpoints: E2eFailpoints,
 }
 
 impl E2eRuntime {
+    #[cfg(test)]
     pub(crate) fn resolve(
         args: &[OsString],
         run_root: Option<&Path>,
         calendar_api_base: Option<&str>,
+        suppress_open_file: Option<&str>,
+        config_path: Option<&Path>,
+    ) -> Result<Self, String> {
+        Self::resolve_with_drive_bases(
+            args,
+            run_root,
+            calendar_api_base,
+            Some("http://127.0.0.1:43128/drive/v3"),
+            Some("http://127.0.0.1:43128/upload/drive/v3"),
+            Some("http://127.0.0.1:43128/gmail/v1"),
+            suppress_open_file,
+            config_path,
+        )
+    }
+
+    pub(crate) fn resolve_with_drive_bases(
+        args: &[OsString],
+        run_root: Option<&Path>,
+        calendar_api_base: Option<&str>,
+        drive_api_base: Option<&str>,
+        drive_upload_base: Option<&str>,
+        gmail_api_base: Option<&str>,
         suppress_open_file: Option<&str>,
         config_path: Option<&Path>,
     ) -> Result<Self, String> {
@@ -259,9 +315,18 @@ impl E2eRuntime {
         validate_calendar_api_base(
             calendar_api_base.ok_or("LOTUS_E2E_CALENDAR_API_BASE is required")?,
         )?;
+        let drive_api_base =
+            validate_drive_api_base(drive_api_base.ok_or("LOTUS_E2E_DRIVE_API_BASE is required")?)?;
+        let drive_upload_base = validate_drive_upload_base(
+            drive_upload_base.ok_or("LOTUS_E2E_DRIVE_UPLOAD_BASE is required")?,
+        )?;
+        let gmail_api_base = crate::gmail_api::validate_webdriver_gmail_base(gmail_api_base)?;
         Ok(Self {
             data_root,
             config_path: canonical_config,
+            drive_api_base,
+            drive_upload_base,
+            gmail_api_base,
             suppress_open_file: open_file_is_suppressed(suppress_open_file),
             failpoints: E2eFailpoints::default(),
         })
@@ -274,11 +339,20 @@ impl E2eRuntime {
             .map(PathBuf::from)?;
         let calendar_api_base = std::env::var(CALENDAR_API_BASE_ENV)
             .map_err(|_| "LOTUS_E2E_CALENDAR_API_BASE is required")?;
+        let drive_api_base = std::env::var(DRIVE_API_BASE_ENV)
+            .map_err(|_| "LOTUS_E2E_DRIVE_API_BASE is required")?;
+        let drive_upload_base = std::env::var(DRIVE_UPLOAD_BASE_ENV)
+            .map_err(|_| "LOTUS_E2E_DRIVE_UPLOAD_BASE is required")?;
+        let gmail_api_base = std::env::var(GMAIL_API_BASE_ENV)
+            .map_err(|_| "LOTUS_E2E_GMAIL_API_BASE is required")?;
         let suppress_open_file = std::env::var(SUPPRESS_OPEN_FILE_ENV).ok();
-        Self::resolve(
+        Self::resolve_with_drive_bases(
             &args,
             Some(&run_root),
             Some(&calendar_api_base),
+            Some(&drive_api_base),
+            Some(&drive_upload_base),
+            Some(&gmail_api_base),
             suppress_open_file.as_deref(),
             config_path,
         )
@@ -290,6 +364,18 @@ impl E2eRuntime {
 
     pub(crate) fn config_path(&self) -> &Path {
         &self.config_path
+    }
+
+    pub(crate) fn drive_api_base(&self) -> &Url {
+        &self.drive_api_base
+    }
+
+    pub(crate) fn drive_upload_base(&self) -> &Url {
+        &self.drive_upload_base
+    }
+
+    pub(crate) fn gmail_api_base(&self) -> &Url {
+        &self.gmail_api_base
     }
 
     pub(crate) fn suppress_open_file(&self) -> bool {
@@ -347,7 +433,6 @@ pub(crate) struct E2eRuntimeStatus {
     pub sync_state_present: bool,
     pub write_capable: bool,
     pub pending_edit_journal_path: PathBuf,
-    pub invoice_freshness_path: PathBuf,
 }
 
 fn validate_nonempty(value: &str, label: &str) -> Result<(), String> {
@@ -394,7 +479,6 @@ pub(crate) fn runtime_status(
             .is_some(),
         write_capable,
         pending_edit_journal_path: paths.pending_edit_journal,
-        invoice_freshness_path: paths.invoice_freshness,
     })
 }
 
@@ -495,6 +579,44 @@ fn open_store(storage: &AppStorage) -> Result<CalendarStore, String> {
     CalendarStore::open(storage.calendar_cache_path()).map_err(|error| error.to_string())
 }
 
+fn read_cached_pdf_bytes(cache_root: &Path, filename: &str) -> Result<Vec<u8>, String> {
+    crate::temp_pdfs::validate_pdf_filename(filename).map_err(|_| "Invalid PDF filename")?;
+    let cache_directory = cache_root.join("invoice-pdfs");
+    let cache_metadata = std::fs::symlink_metadata(&cache_directory)
+        .map_err(|_| "The webdriver PDF cache is unavailable")?;
+    if !cache_metadata.is_dir() || cache_metadata.file_type().is_symlink() {
+        return Err("The webdriver PDF cache is invalid".to_string());
+    }
+    let canonical_cache = cache_directory
+        .canonicalize()
+        .map_err(|_| "The webdriver PDF cache is unavailable")?;
+    let path = cache_directory.join(filename);
+    let metadata =
+        std::fs::symlink_metadata(&path).map_err(|_| "The webdriver PDF was not written")?;
+    if !metadata.is_file() || metadata.file_type().is_symlink() {
+        return Err("The webdriver PDF is not a regular file".to_string());
+    }
+    let canonical = path
+        .canonicalize()
+        .map_err(|_| "The webdriver PDF was not written")?;
+    if canonical.parent() != Some(canonical_cache.as_path()) {
+        return Err("The webdriver PDF escaped its cache".to_string());
+    }
+    std::fs::read(canonical).map_err(|_| "The webdriver PDF could not be read".to_string())
+}
+
+#[tauri::command]
+pub(crate) fn e2e_read_cached_pdf(
+    app: tauri::AppHandle,
+    filename: String,
+) -> Result<Vec<u8>, String> {
+    let cache_root = app
+        .path()
+        .app_cache_dir()
+        .map_err(|_| "The webdriver app cache is unavailable")?;
+    read_cached_pdf_bytes(&cache_root, &filename)
+}
+
 #[tauri::command]
 pub(crate) fn e2e_seed_runtime(
     runtime: tauri::State<'_, E2eRuntime>,
@@ -520,6 +642,11 @@ pub(crate) fn e2e_arm_failpoint(runtime: tauri::State<'_, E2eRuntime>, failpoint
     runtime.failpoints().arm(failpoint);
 }
 
+#[tauri::command]
+pub(crate) fn e2e_confirm_invoice() -> bool {
+    true
+}
+
 #[allow(dead_code)] // Reserved for the Task 10 edit phases that consume these webdriver seams.
 pub(crate) fn consume_failpoint(runtime: &E2eRuntime, failpoint: E2eFailpoint) -> bool {
     runtime.failpoints().consume(failpoint)
@@ -529,8 +656,9 @@ pub(crate) fn consume_failpoint(runtime: &E2eRuntime, failpoint: E2eFailpoint) -
 mod tests {
     use super::{
         isolated_storage_paths, open_file_is_suppressed, resolve_isolated_data_root, seed_runtime,
-        validate_calendar_api_base, E2eAuthorizationSeed, E2eEventSeed, E2eFailpoint,
-        E2eFailpoints, E2eRuntime, E2eSeedRequest, WEBDRIVER_READY_MARKER,
+        validate_calendar_api_base, validate_drive_api_base, validate_drive_upload_base,
+        E2eAuthorizationSeed, E2eEventSeed, E2eFailpoint, E2eFailpoints, E2eRuntime,
+        E2eSeedRequest, WEBDRIVER_READY_MARKER,
     };
     use crate::app_storage::AppStorage;
     use crate::calendar_store::CalendarStore;
@@ -543,6 +671,28 @@ mod tests {
             OsString::from("--e2e-data-dir"),
             data_dir.as_os_str().to_owned(),
         ]
+    }
+
+    #[test]
+    fn reads_only_one_regular_cached_pdf_for_viewer_checksum_assertions() {
+        let cache_root = tempfile::tempdir().unwrap();
+        let pdf_root = cache_root.path().join("invoice-pdfs");
+        std::fs::create_dir(&pdf_root).unwrap();
+        std::fs::write(pdf_root.join("invoice.pdf"), b"%PDF-1.7 test").unwrap();
+
+        assert_eq!(
+            super::read_cached_pdf_bytes(cache_root.path(), "invoice.pdf").unwrap(),
+            b"%PDF-1.7 test"
+        );
+        assert!(super::read_cached_pdf_bytes(cache_root.path(), "../invoice.pdf").is_err());
+        assert!(super::read_cached_pdf_bytes(cache_root.path(), "missing.pdf").is_err());
+
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(pdf_root.join("invoice.pdf"), pdf_root.join("linked.pdf"))
+                .unwrap();
+            assert!(super::read_cached_pdf_bytes(cache_root.path(), "linked.pdf").is_err());
+        }
     }
 
     fn runtime_args(data_dir: &Path, marker_token: &str) -> Vec<OsString> {
@@ -818,10 +968,6 @@ mod tests {
             paths.pending_edit_journal,
             root.path().join("calendar-edit-operations.sqlite")
         );
-        assert_eq!(
-            paths.invoice_freshness,
-            root.path().join("invoice-freshness.sqlite")
-        );
         for path in paths.all() {
             assert_eq!(path.parent(), Some(root.path()));
         }
@@ -848,6 +994,38 @@ mod tests {
                 "accepted {rejected}"
             );
         }
+    }
+
+    #[test]
+    fn accepts_only_loopback_drive_and_upload_bases_with_exact_paths() {
+        assert_eq!(
+            validate_drive_api_base("http://127.0.0.1:43128/drive/v3")
+                .unwrap()
+                .as_str(),
+            "http://127.0.0.1:43128/drive/v3"
+        );
+        assert_eq!(
+            validate_drive_upload_base("http://[::1]:43128/upload/drive/v3")
+                .unwrap()
+                .as_str(),
+            "http://[::1]:43128/upload/drive/v3"
+        );
+
+        for rejected in [
+            "https://127.0.0.1:43128/drive/v3",
+            "http://192.0.2.10:43128/drive/v3",
+            "http://user:secret@127.0.0.1:43128/drive/v3",
+            "http://127.0.0.1/drive/v3",
+            "http://127.0.0.1:43128/drive/v3/",
+            "http://127.0.0.1:43128/upload/drive/v3",
+            "http://127.0.0.1:43128/drive/v3?access_token=secret",
+        ] {
+            assert!(
+                validate_drive_api_base(rejected).is_err(),
+                "accepted {rejected}"
+            );
+        }
+        assert!(validate_drive_upload_base("http://127.0.0.1:43128/drive/v3").is_err());
     }
 
     #[test]
@@ -890,10 +1068,7 @@ mod tests {
     #[test]
     fn failpoints_are_named_and_consumed_exactly_once() {
         let failpoints = E2eFailpoints::default();
-        for point in [
-            E2eFailpoint::FreshnessAfterRemote,
-            E2eFailpoint::CacheReconcileAfterRemote,
-        ] {
+        for point in [E2eFailpoint::CacheReconcileAfterRemote] {
             assert!(!failpoints.consume(point));
             failpoints.arm(point);
             assert!(failpoints.consume(point));

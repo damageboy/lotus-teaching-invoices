@@ -41,7 +41,7 @@ export function StudentCountDialog({
           inputMode="numeric"
           value={value}
           onInput={(event) => setValue(event.currentTarget.value)}
-          className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 max-md:min-h-12 max-md:text-base"
         />
         {!valid && value !== '' && (
           <p role="alert" className="mt-2 text-xs text-red-600">
@@ -52,14 +52,14 @@ export function StudentCountDialog({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md px-3 py-2 text-sm text-gray-600 hover:bg-gray-100"
+            className="rounded-md px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 max-md:min-h-12 max-md:text-base"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={!valid || saving}
-            className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-45"
+            className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-45 max-md:min-h-12 max-md:text-base"
           >
             {saving ? 'Saving…' : 'Save students'}
           </button>

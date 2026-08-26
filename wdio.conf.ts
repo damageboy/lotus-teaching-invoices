@@ -9,6 +9,7 @@ import {
   stopChildProcess,
   waitForChildOutputMarker,
   waitForOwnedListeningPort,
+  webdriverAppEnvironment,
   withAvailableE2ePorts,
 } from './tests/e2e/helpers.js';
 import {
@@ -97,7 +98,11 @@ function installSignalCleanup(): void {
 
 export const config: Options.Testrunner = {
   runner: 'local',
-  specs: ['./tests/e2e/smoke.e2e.ts', './tests/e2e/calendar-editing.e2e.ts'],
+  specs: [
+    './tests/e2e/smoke.e2e.ts',
+    './tests/e2e/calendar-editing.e2e.ts',
+    './tests/e2e/drive-invoices.e2e.ts',
+  ],
   maxInstances: 1,
   hostname: '127.0.0.1',
   port: 4445,
@@ -172,12 +177,7 @@ export const config: Options.Testrunner = {
             {
               cwd: __dirname,
               stdio: ['ignore', 'pipe', 'pipe'],
-              env: {
-                ...process.env,
-                LOTUS_E2E_RUN_ROOT: run.root,
-                LOTUS_E2E_CALENDAR_API_BASE: fake.baseUrl,
-                LOTUS_E2E_SUPPRESS_OPEN_FILE: '1',
-              },
+              env: webdriverAppEnvironment(process.env, run.root, fake.calendarBaseUrl),
             }
           )
         );

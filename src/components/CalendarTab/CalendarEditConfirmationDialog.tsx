@@ -29,7 +29,7 @@ export function CalendarEditConfirmationDialog({ preflight, saving, onClose, onC
         <button
           type="button"
           onClick={onClose}
-          className="rounded-md px-3 py-2 text-sm text-gray-600 hover:bg-gray-100"
+          className="rounded-md px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 max-md:min-h-12 max-md:text-base"
         >
           Cancel
         </button>
@@ -37,7 +37,7 @@ export function CalendarEditConfirmationDialog({ preflight, saving, onClose, onC
           type="button"
           disabled={saving}
           onClick={onConfirm}
-          className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-45"
+          className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-45 max-md:min-h-12 max-md:text-base"
         >
           {saving ? 'Updating…' : 'Update entire series'}
         </button>

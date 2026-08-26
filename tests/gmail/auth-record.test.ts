@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   acceptAuthorizationExchange,
   calendarEditAuthorizationState,
+  hasDriveAuthorization,
   hasRequiredScopes,
   mergeRefreshResponse,
   parseStoredTokenRecord,
@@ -13,6 +14,7 @@ import {
   BASE_OAUTH_SCOPES,
   CALENDAR_EDIT_OAUTH_SCOPES,
   CALENDAR_EVENTS_SCOPE,
+  DRIVE_OAUTH_SCOPES,
 } from '../../src/lib/gmail/constants';
 
 const NOW = 1_700_000_000_000;
@@ -38,7 +40,19 @@ describe('stored authorization records', () => {
     expect(parsed).toEqual(legacy);
     expect(hasRequiredScopes(parsed, BASE_OAUTH_SCOPES)).toBe(false);
     expect(hasRequiredScopes(parsed, [CALENDAR_EVENTS_SCOPE])).toBe(false);
+    expect(hasRequiredScopes(parsed, DRIVE_OAUTH_SCOPES)).toBe(false);
     expect(calendarEditAuthorizationState(parsed, null)).toBe('prompt');
+  });
+
+  it('requires an explicit Drive scope in the current versioned record', () => {
+    expect(hasRequiredScopes(versioned, DRIVE_OAUTH_SCOPES)).toBe(false);
+    expect(hasDriveAuthorization(versioned)).toBe(false);
+    const driveRecord = {
+      ...versioned,
+      granted_scopes: [...versioned.granted_scopes, DRIVE_OAUTH_SCOPES.at(-1)!],
+    };
+    expect(hasRequiredScopes(driveRecord, DRIVE_OAUTH_SCOPES)).toBe(true);
+    expect(hasDriveAuthorization(driveRecord)).toBe(true);
   });
 
   it('records the complete grant using the actual returned scopes and current version', () => {

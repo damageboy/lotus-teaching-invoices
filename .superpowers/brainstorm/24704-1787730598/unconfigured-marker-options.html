@@ -1,0 +1,193 @@
+<h2>Unconfigured-class marker</h2>
+<p class="subtitle">
+  Which compact warning marker should appear inside a month-grid day? Each example keeps the normal
+  studio-color bars for configured lessons.
+</p>
+
+<style>
+  .marker-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+  }
+  .marker-card {
+    cursor: pointer;
+    border: 2px solid #e2e8f0;
+    border-radius: 16px;
+    overflow: hidden;
+    background: white;
+    transition: 0.15s;
+  }
+  .marker-card:hover {
+    border-color: #818cf8;
+    transform: translateY(-1px);
+  }
+  .marker-card.selected {
+    border-color: #4f46e5;
+    box-shadow: 0 0 0 3px #c7d2fe;
+  }
+  .marker-demo {
+    padding: 18px;
+    display: flex;
+    justify-content: center;
+    background: #f8fafc;
+  }
+  .day-cell {
+    width: 104px;
+    height: 92px;
+    border: 1px solid #cbd5e1;
+    background: #fff;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 10px;
+    color: #1e293b;
+    font-weight: 700;
+    font-size: 18px;
+  }
+  .indicators {
+    margin-top: auto;
+    min-height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+  }
+  .normal {
+    width: 24px;
+    height: 6px;
+    border-radius: 99px;
+    background: #22c55e;
+  }
+  .pill-dot {
+    width: 24px;
+    height: 10px;
+    border-radius: 99px;
+    background: #dc2626;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 0 1px rgba(127, 29, 29, 0.15);
+  }
+  .pill-dot::after {
+    content: '';
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: white;
+  }
+  .no-entry {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #dc2626;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .no-entry::after {
+    content: '';
+    width: 9px;
+    height: 3px;
+    border-radius: 2px;
+    background: white;
+  }
+  .corner-cell {
+    position: relative;
+  }
+  .corner {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #dc2626;
+    box-shadow: inset 0 0 0 3px #dc2626;
+    border: 3px solid white;
+    outline: 2px solid #dc2626;
+  }
+  .marker-copy {
+    padding: 16px;
+  }
+  .marker-copy h3 {
+    margin: 0 0 6px;
+  }
+  .marker-copy p {
+    margin: 0;
+    color: #64748b;
+    font-size: 14px;
+    line-height: 1.4;
+  }
+  .pick {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: #eef2ff;
+    color: #4338ca;
+    font-weight: 800;
+    margin-bottom: 10px;
+  }
+  @media (max-width: 760px) {
+    .marker-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<div class="marker-grid">
+  <div class="marker-card" data-choice="pill-dot" onclick="toggleSelect(this)">
+    <div class="marker-demo">
+      <div class="day-cell">
+        <span>12</span>
+        <div class="indicators"><span class="normal"></span><span class="pill-dot"></span></div>
+      </div>
+    </div>
+    <div class="marker-copy">
+      <span class="pick">A</span>
+      <h3>Red pill + white dot</h3>
+      <p>
+        Closest to your description. Fits naturally alongside the existing lesson bars and reads as
+        a distinct warning.
+      </p>
+    </div>
+  </div>
+
+  <div class="marker-card" data-choice="no-entry" onclick="toggleSelect(this)">
+    <div class="marker-demo">
+      <div class="day-cell">
+        <span>12</span>
+        <div class="indicators"><span class="normal"></span><span class="no-entry"></span></div>
+      </div>
+    </div>
+    <div class="marker-copy">
+      <span class="pick">B</span>
+      <h3>Classic no-entry circle</h3>
+      <p>
+        Most recognizable symbol, but visually smaller and less aligned with the existing horizontal
+        lesson markers.
+      </p>
+    </div>
+  </div>
+
+  <div class="marker-card" data-choice="corner-badge" onclick="toggleSelect(this)">
+    <div class="marker-demo">
+      <div class="day-cell corner-cell">
+        <span>12</span><span class="corner"></span>
+        <div class="indicators"><span class="normal"></span></div>
+      </div>
+    </div>
+    <div class="marker-copy">
+      <span class="pick">C</span>
+      <h3>Red corner badge</h3>
+      <p>
+        Easy to spot at a glance and preserves the lesson-bar row, but feels more like a
+        notification than a class state.
+      </p>
+    </div>
+  </div>
+</div>

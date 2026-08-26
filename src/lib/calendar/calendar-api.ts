@@ -16,6 +16,10 @@ interface CalendarListDependencies {
   invoke: <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
 }
 
+interface CalendarListOptions {
+  interactive?: boolean;
+}
+
 const calendarListDependencies: CalendarListDependencies = {
   getAccessToken,
   invoke,
@@ -46,9 +50,10 @@ export function mapCalendarListResponse(data: any): CalendarListEntry[] {
 
 /** Fetches the list of calendars visible to the authenticated user. */
 export async function listCalendars(
-  dependencies: CalendarListDependencies = calendarListDependencies
+  dependencies: CalendarListDependencies = calendarListDependencies,
+  options: CalendarListOptions = {}
 ): Promise<CalendarListEntry[]> {
-  const token = await dependencies.getAccessToken();
+  const token = await dependencies.getAccessToken({ interactive: options.interactive === true });
   logInfo('Fetching calendar list from Google Calendar API...');
   try {
     const response = await dependencies.invoke<unknown>('list_calendars', {
@@ -113,7 +118,7 @@ export async function fetchEvents(
   timeMin: string,
   timeMax: string
 ): Promise<CalendarEvent[]> {
-  const token = await getAccessToken();
+  const token = await getAccessToken({ interactive: false });
   const allEvents: CalendarEvent[] = [];
   let pageToken: string | undefined;
 

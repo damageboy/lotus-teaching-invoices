@@ -1,11 +1,12 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { message } from '@tauri-apps/plugin-dialog';
 import { exit } from '@tauri-apps/plugin-process';
 import { useConfig } from './hooks/useConfig';
 import { useCalendarData } from './hooks/useCalendarData';
 import { useGoogleAuthorization } from './hooks/useGoogleAuthorization';
 import { useCalendarEditing } from './hooks/useCalendarEditing';
-import { useInvoiceFreshness } from './hooks/useInvoiceFreshness';
+import { useDriveInvoices } from './hooks/useDriveInvoices';
+import { useCompactLayout, type AppLayout } from './hooks/useCompactLayout';
 import { CalendarTab } from './components/CalendarTab';
 import { InvoicesTab } from './components/InvoicesTab';
 import { IncomeTab } from './components/IncomeTab';
@@ -13,19 +14,33 @@ import { RatesTab } from './components/RatesTab';
 import { LogPanel } from './components/LogPanel';
 import { UpdateNotification } from './components/UpdateNotification';
 import { CalendarPermissionPrompt } from './components/CalendarPermissionPrompt';
+import { MobileAppShell } from './components/mobile/MobileAppShell';
+import type { AppTab } from './components/mobile/MobileNavigation';
+import { initialMobileTabState, selectMobileTab } from './components/mobile/mobile-tab-state';
 import { initRustLogListener, logInfo } from './lib/logger';
 import { nextUnusedColor } from './lib/studioColors';
-
-type Tab = 'calendar' | 'invoices' | 'income' | 'rates';
+import { createTauriDriveApi } from './lib/drive/transport';
+import { DriveFolderService } from './lib/drive/folders';
+import { scanFinalFolder } from './lib/drive/invoiceCatalog';
+import { DriveInvoiceStore } from './lib/drive/invoiceStore';
+import { renderFinalPdf } from './lib/pdf/generatePdf';
+import {
+  buildCurrentInvoiceSources,
+  currentInvoiceSourceInputKey,
+  visibleCurrentInvoiceSourceBuild,
+  type CurrentInvoiceSourceBuild,
+} from './lib/invoice/rows';
 
 export default function App() {
   const {
     config,
     isDirty,
     isLoading: configLoading,
-    error: configError,
+    loadError: configLoadError,
+    saveError: configSaveError,
     updateConfig,
     save,
+    saveOrThrow,
   } = useConfig();
   const {
     classes,
@@ -35,21 +50,61 @@ export default function App() {
     reloadCache,
   } = useCalendarData(config);
   const googleAuthorization = useGoogleAuthorization();
-  const invoiceFreshness = useInvoiceFreshness(
-    configLoading ? undefined : config.calendarId,
-    configLoading ? undefined : config.outputDir
-  );
   const calendarEditing = useCalendarEditing({
     calendarId: configLoading ? undefined : config.calendarId,
-    outputDir: configLoading ? undefined : config.outputDir,
     persistedAccessRole: config.calendarAccessRole,
     hasCalendarWrite: googleAuthorization.hasCalendarWrite,
     authorizationLoading: googleAuthorization.isLoading,
     reloadCache,
-    reloadInvoiceFreshness: invoiceFreshness.reload,
   });
-  const [activeTab, setActiveTab] = useState<Tab>('calendar');
+  const compactLayout = useCompactLayout();
+  const layout: AppLayout = compactLayout ? 'mobile' : 'desktop';
+  const [mobileTabState, setMobileTabState] = useState(initialMobileTabState);
+  const { activeTab, calendarActivation } = mobileTabState;
+  const invoiceSourceInputKey = useMemo(
+    () => currentInvoiceSourceInputKey(classes, config),
+    [classes, config]
+  );
+  const [invoiceSourceBuild, setInvoiceSourceBuild] = useState<CurrentInvoiceSourceBuild>({
+    inputKey: null,
+    sources: [],
+    error: null,
+  });
+  const {
+    sources: invoiceSources,
+    ready: invoiceSourcesReady,
+    error: invoiceSourceError,
+  } = visibleCurrentInvoiceSourceBuild(invoiceSourceInputKey, invoiceSourceBuild);
   const fatalConfigHandled = useRef(false);
+  const driveApi = useMemo(() => createTauriDriveApi(), []);
+  const driveStore = useMemo(() => new DriveInvoiceStore(driveApi, { renderFinalPdf }), [driveApi]);
+  const driveFolderService = useMemo(() => new DriveFolderService(driveApi), [driveApi]);
+  const driveInvoices = useDriveInvoices({
+    store: driveStore,
+    sources: invoiceSources,
+    sourceContextKey: invoiceSourceInputKey,
+    authorizationIncarnation: googleAuthorization.authorizationIncarnation,
+    active: activeTab === 'invoices' && invoiceSourcesReady,
+  });
+
+  useEffect(() => {
+    let current = true;
+    void buildCurrentInvoiceSources(classes, config).then(
+      (sources) => {
+        if (!current) return;
+        setInvoiceSourceBuild({ inputKey: invoiceSourceInputKey, sources, error: null });
+      },
+      (error) => {
+        if (!current) return;
+        const message = error instanceof Error ? error.message : String(error);
+        logInfo(`Current invoice sources unavailable: ${message}`);
+        setInvoiceSourceBuild({ inputKey: invoiceSourceInputKey, sources: [], error: message });
+      }
+    );
+    return () => {
+      current = false;
+    };
+  }, [classes, config, invoiceSourceInputKey]);
 
   function handleAddStudio(name: string) {
     const usedHexes = Object.values(config.studios)
@@ -67,7 +122,7 @@ export default function App() {
         },
       },
     });
-    setActiveTab('rates');
+    setMobileTabState((state) => ({ ...state, activeTab: 'rates' }));
   }
 
   // Cmd+Plus / Cmd+Minus zoom
@@ -113,16 +168,16 @@ export default function App() {
   // refresh is safe to include: it only changes when calendarId/studioKeys change, and calling
   // it doesn't mutate either, so there is no loop.
   useEffect(() => {
-    if (!configLoading && !configError && config.calendarId) refresh();
-  }, [configLoading, configError, config.calendarId, refresh]);
+    if (!configLoading && !configLoadError && config.calendarId) refresh();
+  }, [configLoading, configLoadError, config.calendarId, refresh]);
 
   useEffect(() => {
-    if (configLoading || !configError || fatalConfigHandled.current) return;
+    if (configLoading || !configLoadError || fatalConfigHandled.current) return;
     fatalConfigHandled.current = true;
 
     async function showFatalConfigError() {
       try {
-        await message(configError ?? 'The configuration file is invalid.', {
+        await message(configLoadError ?? 'The configuration file is invalid.', {
           title: 'Invalid configuration',
           kind: 'error',
           buttons: { ok: 'Quit' },
@@ -133,13 +188,13 @@ export default function App() {
     }
 
     void showFatalConfigError();
-  }, [configLoading, configError]);
+  }, [configLoading, configLoadError]);
 
   if (configLoading) {
     return <div className="flex items-center justify-center h-screen text-gray-500">Loading…</div>;
   }
 
-  if (configError) {
+  if (configLoadError) {
     return (
       <div className="flex items-center justify-center h-screen text-red-600">
         Invalid configuration
@@ -147,63 +202,21 @@ export default function App() {
     );
   }
 
-  const tabs: { id: Tab; label: string }[] = [
+  const tabs: { id: AppTab; label: string }[] = [
     { id: 'calendar', label: 'Calendar' },
     { id: 'invoices', label: 'Invoices' },
     { id: 'income', label: 'Income' },
     { id: 'rates', label: 'Rates & Config' },
   ];
 
-  return (
-    <div className="flex flex-col h-screen bg-white">
-      <UpdateNotification />
-      <CalendarPermissionPrompt
-        open={googleAuthorization.promptOpen}
-        reason={googleAuthorization.hasCalendarWrite ? 'calendarReadOnly' : 'scopeMissing'}
-        isAuthorizing={googleAuthorization.isAuthorizing}
-        error={googleAuthorization.error}
-        onAllow={googleAuthorization.allowCalendarEditing}
-        onDismiss={googleAuthorization.dismissCalendarEditingPrompt}
-      />
-      {/* Tab bar */}
-      <div className="flex border-b border-gray-200 bg-gray-50">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`px-6 py-3 text-sm font-medium transition-colors ${
-              activeTab === tab.id
-                ? 'border-b-2 border-indigo-600 text-indigo-600'
-                : 'text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            {tab.label}
-            {tab.id === 'rates' && isDirty && (
-              <span className="ml-2 text-xs text-amber-500">●</span>
-            )}
-          </button>
-        ))}
-        <div className="ml-auto flex items-center px-4 gap-3">
-          {calLoading && <span className="text-xs text-gray-400">Refreshing…</span>}
-          {calError && (
-            <span className="text-xs text-red-500" title={calError}>
-              ⚠ Calendar error
-            </span>
-          )}
-          <button
-            onClick={refresh}
-            disabled={calLoading}
-            className="text-xs text-gray-500 hover:text-gray-800 disabled:opacity-40"
-          >
-            ↺ Refresh
-          </button>
-        </div>
-      </div>
-
+  const tabContent = (
+    <>
       {/* Tab content */}
       <div className="flex-1 overflow-auto min-h-0">
         {activeTab === 'calendar' && (
           <CalendarTab
+            layout={layout}
+            mobileActivation={calendarActivation}
             classes={classes}
             studios={config.studios}
             onAddStudio={handleAddStudio}
@@ -217,28 +230,98 @@ export default function App() {
         )}
         {activeTab === 'invoices' && (
           <InvoicesTab
+            layout={layout}
             classes={classes}
             config={config}
-            activeFreshness={invoiceFreshness.rows}
-            activeFreshnessContext={invoiceFreshness.loadedContext}
-            freshnessVerified={invoiceFreshness.isCurrentContextVerified}
-            onAcknowledgeFreshnessClear={invoiceFreshness.acknowledgeClear}
-            onRefreshFreshness={invoiceFreshness.reload}
-            onSaveConfig={save}
+            drive={driveInvoices}
+            sourceError={invoiceSourceError}
+            folderService={driveFolderService}
+            scanCandidate={(stagedRoot) => {
+              if (!invoiceSourcesReady) {
+                throw new Error(invoiceSourceError ?? 'Current invoice sources are still loading.');
+              }
+              return scanFinalFolder(driveApi, stagedRoot, invoiceSources);
+            }}
+            onSaveConfig={saveOrThrow}
+            onAuthorizeDrive={googleAuthorization.allowDrive}
           />
         )}
-        {activeTab === 'income' && <IncomeTab classes={classes} config={config} />}
+        {activeTab === 'income' && <IncomeTab layout={layout} classes={classes} config={config} />}
         {activeTab === 'rates' && (
           <RatesTab
+            layout={layout}
             config={config}
             isDirty={isDirty}
-            saveError={configError}
+            saveError={configSaveError}
             onUpdate={updateConfig}
             onSave={save}
           />
         )}
       </div>
-      <LogPanel />
+      <LogPanel layout={layout} />
+    </>
+  );
+
+  return (
+    <div className="flex flex-col h-screen bg-white">
+      <UpdateNotification />
+      <CalendarPermissionPrompt
+        open={googleAuthorization.promptOpen}
+        reason={googleAuthorization.hasCalendarWrite ? 'calendarReadOnly' : 'scopeMissing'}
+        isAuthorizing={googleAuthorization.isAuthorizing}
+        error={googleAuthorization.error}
+        onAllow={googleAuthorization.allowCalendarEditing}
+        onDismiss={googleAuthorization.dismissCalendarEditingPrompt}
+      />
+      {layout === 'desktop' ? (
+        <>
+          {/* Tab bar */}
+          <div data-layout="desktop" className="flex border-b border-gray-200 bg-gray-50">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setMobileTabState((state) => ({ ...state, activeTab: tab.id }))}
+                className={`px-6 py-3 text-sm font-medium transition-colors ${
+                  activeTab === tab.id
+                    ? 'border-b-2 border-indigo-600 text-indigo-600'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                {tab.label}
+                {tab.id === 'rates' && isDirty && (
+                  <span className="ml-2 text-xs text-amber-500">●</span>
+                )}
+              </button>
+            ))}
+            <div className="ml-auto flex items-center px-4 gap-3">
+              {calLoading && <span className="text-xs text-gray-400">Refreshing…</span>}
+              {calError && (
+                <span className="text-xs text-red-500" title={calError}>
+                  ⚠ Calendar error
+                </span>
+              )}
+              <button
+                onClick={refresh}
+                disabled={calLoading}
+                className="text-xs text-gray-500 hover:text-gray-800 disabled:opacity-40"
+              >
+                ↺ Refresh
+              </button>
+            </div>
+          </div>
+          {tabContent}
+        </>
+      ) : (
+        <MobileAppShell
+          activeTab={activeTab}
+          onSelectTab={(tab) => setMobileTabState((state) => selectMobileTab(state, tab))}
+          calendarLoading={calLoading}
+          calendarError={calError}
+          onRefresh={refresh}
+        >
+          {tabContent}
+        </MobileAppShell>
+      )}
     </div>
   );
 }

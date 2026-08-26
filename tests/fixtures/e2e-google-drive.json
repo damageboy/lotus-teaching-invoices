@@ -1,0 +1,97 @@
+{
+  "pageSize": 1,
+  "sharedDrives": [
+    { "id": "shared-drive-1", "name": "Teaching Shared" },
+    { "id": "shared-drive-2", "name": "Archive Shared" }
+  ],
+  "files": [
+    {
+      "id": "my-drive-root",
+      "name": "My Drive",
+      "mimeType": "application/vnd.google-apps.folder",
+      "parents": [],
+      "driveId": null,
+      "ownedByMe": true,
+      "capabilities": {
+        "canListChildren": true,
+        "canAddChildren": true,
+        "canEdit": true,
+        "canDownload": false
+      }
+    },
+    {
+      "id": "final-my-drive",
+      "name": "Final",
+      "mimeType": "application/vnd.google-apps.folder",
+      "parents": ["my-drive-root"],
+      "driveId": null,
+      "ownedByMe": true,
+      "capabilities": {
+        "canListChildren": true,
+        "canAddChildren": true,
+        "canEdit": true,
+        "canDownload": false
+      }
+    },
+    {
+      "id": "control-1",
+      "name": ".lotus-teaching-invoices.json",
+      "mimeType": "application/json",
+      "parents": ["my-drive-root"],
+      "driveId": null,
+      "ownedByMe": true,
+      "properties": { "lotusConfigSchema": "1" },
+      "bytesUtf8": "{\"schema\":1,\"root\":null,\"sequenceByYear\":{},\"reservation\":null}",
+      "capabilities": {
+        "canListChildren": false,
+        "canAddChildren": false,
+        "canEdit": true,
+        "canDownload": true
+      }
+    },
+    {
+      "id": "control-not-owned",
+      "name": ".lotus-teaching-invoices.json",
+      "mimeType": "application/json",
+      "parents": ["my-drive-root"],
+      "driveId": null,
+      "ownedByMe": false,
+      "properties": { "lotusConfigSchema": "1" },
+      "bytesUtf8": "{\"schemaVersion\":1,\"generation\":99,\"root\":null,\"sequenceByYear\":{},\"reservation\":null}",
+      "capabilities": {
+        "canListChildren": false,
+        "canAddChildren": false,
+        "canEdit": false,
+        "canDownload": true
+      }
+    },
+    {
+      "id": "shared-root-1",
+      "name": "Shared Root",
+      "mimeType": "application/vnd.google-apps.folder",
+      "parents": [],
+      "driveId": "shared-drive-1",
+      "ownedByMe": false,
+      "capabilities": {
+        "canListChildren": true,
+        "canAddChildren": true,
+        "canEdit": true,
+        "canDownload": false
+      }
+    },
+    {
+      "id": "shared-final-1",
+      "name": "Final",
+      "mimeType": "application/vnd.google-apps.folder",
+      "parents": ["shared-root-1"],
+      "driveId": "shared-drive-1",
+      "ownedByMe": false,
+      "capabilities": {
+        "canListChildren": true,
+        "canAddChildren": true,
+        "canEdit": true,
+        "canDownload": false
+      }
+    }
+  ]
+}

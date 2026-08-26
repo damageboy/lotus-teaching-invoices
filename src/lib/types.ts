@@ -32,8 +32,10 @@ export interface AppConfig {
   calendarId?: string; // Google Calendar ID (e.g. "abc@group.calendar.google.com")
   calendarName?: string; // Display name of the selected calendar
   calendarAccessRole?: CalendarAccessRole; // Last observed CalendarList role; refreshed each session
-  outputDir: string;
-  lastInvoice: string; // "N/YYYY" e.g. "7/2026", or "" if unset
+  /** Legacy activation seed only. Drive is authoritative after root activation. */
+  outputDir?: string;
+  /** Legacy activation seed only, in "N/YYYY" format. */
+  lastInvoice?: string;
   studios: Record<string, StudioConfig>;
 }
 

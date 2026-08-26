@@ -340,12 +340,10 @@ describe('useCalendarEditing', () => {
       status: 'confirmed',
     }));
     const reloadCache = vi.fn(async () => {});
-    const reloadInvoiceFreshness = vi.fn(async () => {});
 
     const { result } = renderHook(() =>
       useCalendarEditing({
         calendarId: 'calendar-1',
-        outputDir: '/output-a',
         persistedAccessRole: 'owner',
         hasCalendarWrite: true,
         authorizationLoading: false,
@@ -353,7 +351,6 @@ describe('useCalendarEditing', () => {
         preflightOccurrenceStudioEdit,
         applyOccurrenceStudioEdit,
         reloadCache,
-        reloadInvoiceFreshness,
       })
     );
     await waitFor(() => expect(result.current.canEdit).toBe(true));
@@ -366,9 +363,8 @@ describe('useCalendarEditing', () => {
       identity: lesson.eventIdentity,
       studioName: 'New Studio',
     });
-    expect(applyOccurrenceStudioEdit).toHaveBeenCalledWith(preflight, '/output-a');
+    expect(applyOccurrenceStudioEdit).toHaveBeenCalledWith(preflight);
     expect(reloadCache).toHaveBeenCalledOnce();
-    expect(reloadInvoiceFreshness).toHaveBeenCalledOnce();
     expect(result.current.saveError).toBeNull();
   });
 
@@ -401,11 +397,9 @@ describe('useCalendarEditing', () => {
       status: 'confirmed',
     }));
     const reloadCache = vi.fn(async () => {});
-    const reloadInvoiceFreshness = vi.fn(async () => {});
     const { result } = renderHook(() =>
       useCalendarEditing({
         calendarId: 'calendar-1',
-        outputDir: '/output-a',
         persistedAccessRole: 'owner',
         hasCalendarWrite: true,
         authorizationLoading: false,
@@ -413,7 +407,6 @@ describe('useCalendarEditing', () => {
         preflightOccurrenceValueEdit,
         applyOccurrenceValueEdit,
         reloadCache,
-        reloadInvoiceFreshness,
       })
     );
     await waitFor(() => expect(result.current.canEdit).toBe(true));
@@ -434,12 +427,11 @@ describe('useCalendarEditing', () => {
     await act(async () => {
       await result.current.saveOccurrenceValueEdit(prepared!, false);
     });
-    expect(applyOccurrenceValueEdit).toHaveBeenCalledWith(preflight, false, '/output-a');
+    expect(applyOccurrenceValueEdit).toHaveBeenCalledWith(preflight, false);
     expect(reloadCache).toHaveBeenCalledOnce();
-    expect(reloadInvoiceFreshness).toHaveBeenCalledOnce();
   });
 
-  it('reloads calendar and invoice status when an apply reports a post-save local failure', async () => {
+  it('reloads the Calendar cache when an apply reports a post-save reconciliation failure', async () => {
     mocks.listCalendars.mockResolvedValue([
       { id: 'calendar-1', summary: 'Teaching', accessRole: 'owner' },
     ]);
@@ -456,11 +448,9 @@ describe('useCalendarEditing', () => {
       'Google Calendar was updated, but invoice status could not be updated.'
     );
     const reloadCache = vi.fn(async () => {});
-    const reloadInvoiceFreshness = vi.fn(async () => {});
     const { result } = renderHook(() =>
       useCalendarEditing({
         calendarId: 'calendar-1',
-        outputDir: '/output-a',
         persistedAccessRole: 'owner',
         hasCalendarWrite: true,
         authorizationLoading: false,
@@ -470,7 +460,6 @@ describe('useCalendarEditing', () => {
           throw failure;
         }),
         reloadCache,
-        reloadInvoiceFreshness,
       })
     );
     await waitFor(() => expect(result.current.canEdit).toBe(true));
@@ -482,7 +471,6 @@ describe('useCalendarEditing', () => {
     });
 
     expect(reloadCache).toHaveBeenCalledOnce();
-    expect(reloadInvoiceFreshness).toHaveBeenCalledOnce();
     expect(result.current.saveError).toBe(failure.message);
   });
 
@@ -518,11 +506,9 @@ describe('useCalendarEditing', () => {
       reconciliationPending: false,
     }));
     const reloadCache = vi.fn(async () => {});
-    const reloadInvoiceFreshness = vi.fn(async () => {});
     const { result } = renderHook(() =>
       useCalendarEditing({
         calendarId: 'calendar-1',
-        outputDir: '/output-a',
         persistedAccessRole: 'owner',
         hasCalendarWrite: true,
         authorizationLoading: false,
@@ -530,7 +516,6 @@ describe('useCalendarEditing', () => {
         preflightSeriesStudioEdit,
         applySeriesStudioEdit,
         reloadCache,
-        reloadInvoiceFreshness,
       })
     );
     await waitFor(() => expect(result.current.canEdit).toBe(true));
@@ -547,9 +532,8 @@ describe('useCalendarEditing', () => {
       selectedIdentity: lesson.eventIdentity,
       studioName: 'New Studio',
     });
-    expect(applySeriesStudioEdit).toHaveBeenCalledWith(preflight, '/output-a');
+    expect(applySeriesStudioEdit).toHaveBeenCalledWith(preflight);
     expect(reloadCache).toHaveBeenCalledOnce();
-    expect(reloadInvoiceFreshness).toHaveBeenCalledOnce();
   });
 
   it('ignores calendar A while calendar B is the current pending request', async () => {
@@ -727,7 +711,10 @@ describe('useGoogleAuthorization', () => {
       await result.current.allowCalendarEditing();
     });
 
-    expect(mocks.getAccessToken).toHaveBeenCalledWith({ requireCalendarWrite: true });
+    expect(mocks.getAccessToken).toHaveBeenCalledWith({
+      requireCalendarWrite: true,
+      interactive: true,
+    });
     expect(result.current.hasCalendarWrite).toBe(true);
     expect(result.current.promptOpen).toBe(false);
     expect(mocks.savePreference).not.toHaveBeenCalled();

@@ -180,6 +180,8 @@ async function buildWebdriverArtifacts(lifecycle: IsolatedE2eLifecycle): Promise
 function wdioEnvironment(run: IsolatedE2eRun): NodeJS.ProcessEnv {
   return {
     ...process.env,
+    // WebDriver's bundled Undici transport rejects localhost session requests under Node 26.
+    WDIO_USE_NATIVE_FETCH: '1',
     VITE_LOTUS_E2E: '1',
     LOTUS_E2E_RUN_ROOT: run.root,
     LOTUS_E2E_CONFIG_PATH: run.configPath,
@@ -199,7 +201,7 @@ async function runFullE2e(): Promise<void> {
     copyFileSync(FIXTURE_CONFIG, lifecycle.run.configPath, constants.COPYFILE_EXCL);
     await runLifecycleCommand(
       lifecycle,
-      'fake Google Calendar contract tests',
+      'fake Google Calendar, Drive, and Gmail contract tests',
       process.execPath,
       ['run', 'tests/e2e/fake-google-calendar.ts', '--self-test'],
       process.env,

@@ -8,6 +8,8 @@ const { cleanup, fireEvent, render, screen, waitFor } = await import('@testing-l
 const userEvent = (await import('@testing-library/user-event')).default;
 const { CalendarPermissionPrompt } =
   await import('../../src/components/CalendarPermissionPrompt.js');
+const { LogPanel } = await import('../../src/components/LogPanel/index.js');
+const { clearLog, logInfo } = await import('../../src/lib/logger.js');
 
 function renderScopePrompt(overrides: Record<string, unknown> = {}) {
   const onAllow = vi.fn();
@@ -25,6 +27,23 @@ function renderScopePrompt(overrides: Record<string, unknown> = {}) {
 }
 
 describe('CalendarPermissionPrompt', () => {
+  it('stays scrollable within a 390-pixel dynamic viewport and wraps its actions', () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 });
+    renderScopePrompt();
+
+    const dialog = screen.getByRole('dialog');
+    expect(dialog.classList.contains('max-h-[calc(100dvh-2rem)]')).toBe(true);
+    expect(dialog.classList.contains('overflow-y-auto')).toBe(true);
+    expect(screen.getByTestId('calendar-permission-actions').classList.contains('flex-wrap')).toBe(
+      true
+    );
+    expect(
+      [...dialog.querySelectorAll('button')].every((button) =>
+        button.classList.contains('min-h-12')
+      )
+    ).toBe(true);
+  });
+
   it('renders a labelled real modal and initially focuses the exact primary action', async () => {
     renderScopePrompt();
 
@@ -166,4 +185,101 @@ describe('CalendarPermissionPrompt', () => {
   });
 });
 
-afterEach(() => cleanup());
+describe('mobile LogPanel', () => {
+  it('opens the modal stateful sheet, contains focus, and restores it after Escape', async () => {
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: vi.fn(),
+    });
+    const historyBack = vi.spyOn(window.history, 'back').mockImplementation(() => undefined);
+    logInfo('Focus containment test');
+    render(<LogPanel layout="mobile" />);
+    const opener = screen.getByRole('button', { name: 'Open logs' });
+    opener.focus();
+
+    fireEvent.click(opener);
+    const dialog = screen.getByRole('dialog', { name: 'Application logs' });
+    const clear = screen.getByRole('button', { name: 'Clear logs' });
+    const close = screen.getByRole('button', { name: 'Close logs' });
+    const backdrop = [...document.body.querySelectorAll<HTMLElement>('div')].find((element) =>
+      element.classList.contains('bg-black/40')
+    );
+    expect(dialog).toBeTruthy();
+    expect(clear).toBeTruthy();
+    expect(close).toBeTruthy();
+    await waitFor(() => expect(document.activeElement).toBe(clear));
+    expect(opener.classList.contains('z-20')).toBe(true);
+    expect(backdrop?.classList.contains('z-60')).toBe(true);
+    expect(dialog.classList.contains('z-70')).toBe(true);
+    expect(dialog.classList.contains('bottom-[var(--mobile-navigation-height)]')).toBe(true);
+
+    const backwardTab = new window.KeyboardEvent('keydown', {
+      key: 'Tab',
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    fireEvent(document, backwardTab);
+    expect(backwardTab.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(close);
+
+    const forwardTab = new window.KeyboardEvent('keydown', {
+      key: 'Tab',
+      bubbles: true,
+      cancelable: true,
+    });
+    fireEvent(document, forwardTab);
+    expect(forwardTab.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(clear);
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: 'Application logs' })).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(opener));
+    expect(historyBack).toHaveBeenCalledOnce();
+  });
+
+  it('closes the stateful sheet from its backdrop and restores focus', async () => {
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: vi.fn(),
+    });
+    const historyBack = vi.spyOn(window.history, 'back').mockImplementation(() => undefined);
+    render(<LogPanel layout="mobile" />);
+    const opener = screen.getByRole('button', { name: 'Open logs' });
+    opener.focus();
+
+    fireEvent.click(opener);
+    const backdrop = [...document.body.querySelectorAll<HTMLElement>('div')].find((element) =>
+      element.classList.contains('bg-black/40')
+    );
+    expect(backdrop).toBeTruthy();
+    fireEvent.click(backdrop!);
+
+    expect(screen.queryByRole('dialog', { name: 'Application logs' })).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(opener));
+    expect(historyBack).toHaveBeenCalledOnce();
+  });
+
+  it('closes the stateful sheet and restores focus on Android Back popstate', async () => {
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: vi.fn(),
+    });
+    render(<LogPanel layout="mobile" />);
+    const opener = screen.getByRole('button', { name: 'Open logs' });
+    opener.focus();
+
+    fireEvent.click(opener);
+    expect(screen.getByRole('dialog', { name: 'Application logs' })).toBeTruthy();
+    fireEvent.popState(window);
+
+    expect(screen.queryByRole('dialog', { name: 'Application logs' })).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(opener));
+  });
+});
+
+afterEach(() => {
+  cleanup();
+  clearLog();
+  vi.restoreAllMocks();
+});

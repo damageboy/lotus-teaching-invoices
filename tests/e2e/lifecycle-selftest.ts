@@ -30,6 +30,7 @@ import {
   stopChildProcess,
   waitForChildOutputMarker,
   waitForOwnedListeningPort,
+  webdriverAppEnvironment,
   withIsolatedE2eLifecycle,
   type IsolatedE2eRun,
 } from './helpers.js';
@@ -38,6 +39,7 @@ import { spawnGatedProcessGroupForRegistration } from './lifecycle-supervisor.js
 const TEMP_ROOT = realpathSync(tmpdir());
 const SELF_PATH = fileURLToPath(import.meta.url);
 const SUPERVISOR_PATH = fileURLToPath(new URL('./lifecycle-supervisor.ts', import.meta.url));
+const DRIVE_INVOICES_SPEC_PATH = fileURLToPath(new URL('./drive-invoices.e2e.ts', import.meta.url));
 const VALID_LOCK_IDENTITY = 'a'.repeat(64);
 const REUSED_LOCK_IDENTITY = 'f'.repeat(64);
 
@@ -1308,17 +1310,46 @@ async function testProductionProofAndExactCleanup(): Promise<void> {
     mkdirSync(dirname(binary), { recursive: true });
     mkdirSync(run.productionDistDir, { recursive: true });
     writeFileSync(binary, 'normal production binary');
-    writeFileSync(frontend, 'window.__LOTUS_E2E__ = {}');
-    assert.throws(
-      () => assertProductionArtifactsExcludeE2eSeams(run),
-      /production frontend contains webdriver-only seam/
-    );
+    for (const seam of [
+      '__LOTUS_E2E__',
+      'e2e_seed_runtime',
+      'e2e_runtime_status',
+      'e2e_arm_failpoint',
+      'e2e_read_cached_pdf',
+      'e2e_confirm_invoice',
+    ]) {
+      writeFileSync(frontend, `production artifact accidentally contains ${seam}`);
+      assert.throws(
+        () => assertProductionArtifactsExcludeE2eSeams(run),
+        /production frontend contains webdriver-only seam/,
+        seam
+      );
+    }
     writeFileSync(frontend, 'normal frontend');
-    writeFileSync(binary, 'binary --e2e-run-marker-token');
-    assert.throws(
-      () => assertProductionArtifactsExcludeE2eSeams(run),
-      /production binary contains webdriver-only seam/
-    );
+    for (const seam of [
+      '--e2e-data-dir',
+      '--e2e-run-marker-token',
+      'LOTUS_E2E_RUN_ROOT',
+      'LOTUS_E2E_CALENDAR_API_BASE',
+      'LOTUS_E2E_DRIVE_API_BASE',
+      'LOTUS_E2E_DRIVE_UPLOAD_BASE',
+      'LOTUS_E2E_GMAIL_API_BASE',
+      'LOTUS_E2E_SUPPRESS_OPEN_FILE',
+      'e2e_seed_runtime',
+      'e2e_runtime_status',
+      'e2e_arm_failpoint',
+      'e2e_read_cached_pdf',
+      'e2e_confirm_invoice',
+      'cacheReconcileAfterRemote',
+      'LOTUS_E2E_WEBDRIVER_READY',
+    ]) {
+      writeFileSync(binary, `production artifact accidentally contains ${seam}`);
+      assert.throws(
+        () => assertProductionArtifactsExcludeE2eSeams(run),
+        /production binary contains webdriver-only seam/,
+        seam
+      );
+    }
     writeFileSync(binary, 'normal production binary');
     assert.doesNotThrow(() => assertProductionArtifactsExcludeE2eSeams(run));
   });
@@ -1353,6 +1384,58 @@ async function testProductionProofAndExactCleanup(): Promise<void> {
   }
 }
 
+async function testDriveAndGmailBasesAreScopedToTheWebdriverAppEnvironment(): Promise<void> {
+  const inherited: NodeJS.ProcessEnv = {
+    PATH: '/usr/bin',
+    VITE_LOTUS_E2E: '1',
+  };
+  const before = { ...inherited };
+  const environment = webdriverAppEnvironment(
+    inherited,
+    '/tmp/lotus-calendar-e2e-test',
+    'http://127.0.0.1:43127/calendar/v3'
+  );
+
+  assert.deepEqual(inherited, before, 'the parent/preview environment must not be mutated');
+  assert.deepEqual(
+    {
+      driveApi: environment.LOTUS_E2E_DRIVE_API_BASE,
+      driveUpload: environment.LOTUS_E2E_DRIVE_UPLOAD_BASE,
+      gmail: environment.LOTUS_E2E_GMAIL_API_BASE,
+      suppressOpen: environment.LOTUS_E2E_SUPPRESS_OPEN_FILE,
+    },
+    {
+      driveApi: 'http://127.0.0.1:43127/drive/v3',
+      driveUpload: 'http://127.0.0.1:43127/upload/drive/v3',
+      gmail: 'http://127.0.0.1:43127/gmail/v1',
+      suppressOpen: '1',
+    }
+  );
+}
+
+function testEveryDriveReloadUsesRobustInvoiceNavigation(): void {
+  const source = readFileSync(DRIVE_INVOICES_SPEC_PATH, 'utf8');
+  assert.match(
+    source,
+    /async function navigateToDriveInvoicesAfterReload\(\s*expectation: PostReloadExpectation\s*\): Promise<void>/
+  );
+  assert.equal(
+    source.match(/await navigateToDriveInvoicesAfterReload\(\{/g)?.length,
+    2,
+    'both Drive reload sites must reacquire the Invoices button until its content mounts'
+  );
+  assert.equal(
+    source.match(/calendarRequestsBefore,/g)?.length,
+    2,
+    'both reload sites must wait for the post-reload Calendar request before navigating'
+  );
+  assert.equal(
+    source.match(/driveRequestsBefore,/g)?.length,
+    1,
+    'the configured reload must wait for a post-reload Drive scan'
+  );
+}
+
 async function runLifecycleSelftest(): Promise<void> {
   await testCrashBeforeGroupRegistrationNeverStartsWorkload();
   await testActivationGateRejectsEveryInvalidPreActivationInput();
@@ -1376,6 +1459,8 @@ async function runLifecycleSelftest(): Promise<void> {
   await testSupervisorExitsWhenCommandGroupIsEmpty();
   await testOneLifecycleStartsSequentialRegisteredGroups();
   await testRunDescriptorAndImmutableArtifacts();
+  await testDriveAndGmailBasesAreScopedToTheWebdriverAppEnvironment();
+  testEveryDriveReloadUsesRobustInvoiceNavigation();
   await testProductionProofAndExactCleanup();
 }
 

@@ -72,8 +72,24 @@ describe('mapCalendarListResponse', () => {
 });
 
 describe('listCalendars', () => {
+  it('requests interactive authorization when opened by the calendar picker', async () => {
+    const getAccessToken = vi.fn(async () => 'access-token');
+    mocks.invoke.mockResolvedValue([]);
+
+    await listCalendars(
+      {
+        getAccessToken,
+        invoke: mocks.invoke,
+      },
+      { interactive: true }
+    );
+
+    expect(getAccessToken).toHaveBeenCalledWith({ interactive: true });
+  });
+
   it('routes CalendarList reads through the registered Rust command', async () => {
     const calendars = [{ id: 'calendar-1', summary: 'Teaching Calendar', accessRole: 'writer' }];
+    const getAccessToken = vi.fn(async () => 'access-token');
     mocks.invoke.mockImplementation(async (command: string) => {
       if (command === 'list_calendars') return calendars;
       throw new Error(`Unexpected command: ${command}`);
@@ -81,10 +97,11 @@ describe('listCalendars', () => {
 
     await expect(
       listCalendars({
-        getAccessToken: async () => 'access-token',
+        getAccessToken,
         invoke: mocks.invoke,
       })
     ).resolves.toEqual(calendars);
+    expect(getAccessToken).toHaveBeenCalledWith({ interactive: false });
     expect(mocks.invoke).toHaveBeenCalledWith('list_calendars', {
       accessToken: 'access-token',
     });

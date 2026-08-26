@@ -25,9 +25,11 @@
       "allow": [{ "path": "$HOME/**" }, { "path": "/tmp/**" }, { "path": "$TEMP/**" }]
     },
     "dialog:default",
+    "opener:default",
     "shell:allow-open",
     "log:default",
     "updater:default",
-    "process:default"
+    "process:default",
+    "lotus-mobile:default"
   ]
 }

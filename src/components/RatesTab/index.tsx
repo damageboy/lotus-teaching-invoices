@@ -1,19 +1,17 @@
 import { useState, useEffect } from 'react';
-import {
-  AppConfig,
-  CalendarAccessRole,
-  RateTier,
-  StudioConfig,
-  TeacherInfo,
-  BankDetails,
-} from '../../lib/types';
-import { ColorPickerPopup } from '../ColorPickerPopup';
-import { effectiveHex, nextUnusedColor } from '../../lib/studioColors';
+import { AppConfig, CalendarAccessRole, RateTier, TeacherInfo, BankDetails } from '../../lib/types';
+import { nextUnusedColor } from '../../lib/studioColors';
 import { APP_VERSION, APP_IS_OFFICIAL } from '../../lib/version';
-import { calendarErrorMessage, listCalendars } from '../../lib/calendar/calendar-api';
-import { getRateTierValidation } from '../../lib/config/rateTiers';
+import {
+  calendarErrorMessage,
+  listCalendars,
+  type CalendarListEntry,
+} from '../../lib/calendar/calendar-api';
+import type { AppLayout } from '../../hooks/useCompactLayout';
+import { MobileSettings, StudioCard } from './MobileSettings';
 
 interface Props {
+  layout?: AppLayout;
   config: AppConfig;
   isDirty: boolean;
   saveError: string | null;
@@ -23,6 +21,18 @@ interface Props {
 
 export function calendarPickerErrorMessage(error: unknown): string {
   return calendarErrorMessage(error);
+}
+
+export function selectedCalendarDisplayName(
+  config: Pick<AppConfig, 'calendarId' | 'calendarName'>,
+  calendars: readonly CalendarListEntry[] | null,
+  loading: boolean
+): string {
+  return (
+    config.calendarName?.trim() ||
+    calendars?.find((calendar) => calendar.id === config.calendarId)?.summary.trim() ||
+    (loading ? 'Loading calendar…' : 'Selected calendar')
+  );
 }
 
 export async function selectCalendar(
@@ -48,247 +58,53 @@ export async function selectCalendar(
   closeCalendarList(null);
 }
 
-// Isolated card so studio name edits don't unmount the card on each keystroke
-interface StudioCardProps {
-  studioName: string;
-  studio: StudioConfig;
-  onRename: (oldName: string, newName: string) => void;
-  onDelete: (name: string) => void;
-  onUpdateTier: (studioName: string, index: number, field: keyof RateTier, raw: string) => void;
-  onAddTier: (studioName: string) => void;
-  onRemoveTier: (studioName: string, index: number) => void;
-  onUpdateColor: (studioName: string, hex: string) => void;
-  onUpdateField: (
-    studioName: string,
-    field: 'fullName' | 'address' | 'invoiceEmail',
-    value: string
-  ) => void;
-}
-
-function StudioCard({
-  studioName,
-  studio,
-  onRename,
-  onDelete,
-  onUpdateTier,
-  onAddTier,
-  onRemoveTier,
-  onUpdateField,
-  onUpdateColor,
-}: StudioCardProps) {
-  const [draftName, setDraftName] = useState(studioName);
-  const [isOpen, setIsOpen] = useState(false);
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [emailError, setEmailError] = useState<string | null>(null);
-  const tierValidation = getRateTierValidation(studio.rateTiers);
-
-  function inputClass(hasError: boolean, isLocked = false): string {
-    return `w-full border rounded px-1.5 py-0.5 ${
-      hasError ? 'border-red-400 bg-red-50' : 'border-gray-200'
-    } ${isLocked ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''}`;
-  }
-
-  useEffect(() => {
-    setDraftName(studioName);
-  }, [studioName]);
-
-  // Effective color: stored hex or hash-derived palette hex for this studio name
-  const effectiveColor = effectiveHex(studioName, studio.color);
-
-  return (
-    <div className="rounded border border-gray-200">
-      {/* Header — always visible, click to toggle */}
-      <div
-        className="flex items-center gap-2 px-4 py-3 cursor-pointer select-none"
-        onClick={() => setIsOpen((o) => !o)}
-      >
-        <span className="text-gray-400 text-xs w-3">{isOpen ? '▾' : '▸'}</span>
-
-        {/* Color dot trigger */}
-        <div className="relative flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-          <button
-            onClick={() => setPickerOpen((o) => !o)}
-            title="Change studio color"
-            style={{ backgroundColor: effectiveColor }}
-            className="w-4 h-4 rounded-full border border-white shadow-sm hover:scale-110 transition-transform"
-          />
-          {pickerOpen && (
-            <ColorPickerPopup
-              currentColor={effectiveColor}
-              onColorChange={(hex) => onUpdateColor(studioName, hex)}
-              onClose={() => setPickerOpen(false)}
-            />
-          )}
-        </div>
-
-        <span className="flex-1 text-sm font-medium truncate">{draftName}</span>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete(studioName);
-          }}
-          className="text-xs text-red-400 hover:text-red-600"
-        >
-          Delete
-        </button>
-      </div>
-
-      {/* Body — only when open */}
-      {isOpen && (
-        <div className="px-4 pb-4 flex flex-col gap-3 border-t border-gray-100">
-          <div className="flex items-center gap-2 pt-3">
-            <input
-              className="flex-1 border border-gray-200 rounded px-2 py-1 text-sm font-medium"
-              value={draftName}
-              onChange={(e) => setDraftName(e.target.value)}
-              onBlur={() => {
-                if (draftName !== studioName) onRename(studioName, draftName);
-              }}
-              onClick={(e) => e.stopPropagation()}
-            />
-          </div>
-
-          <label className="flex flex-col gap-1">
-            <span className="text-xs text-gray-400">Full name (for invoice)</span>
-            <input
-              className="border border-gray-200 rounded px-2 py-1 text-sm"
-              value={studio.fullName}
-              onChange={(e) => onUpdateField(studioName, 'fullName', e.target.value)}
-              placeholder="e.g. Yogibar Yoga Studio GmbH"
-            />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-xs text-gray-400">Address</span>
-            <textarea
-              className="border border-gray-200 rounded px-2 py-1 text-sm resize-none"
-              rows={2}
-              value={studio.address}
-              onChange={(e) => onUpdateField(studioName, 'address', e.target.value)}
-              placeholder="Street, City"
-            />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-xs text-gray-400">Invoice e-mail</span>
-            <input
-              type="email"
-              className={`border rounded px-2 py-1 text-sm ${emailError ? 'border-red-400' : 'border-gray-200'}`}
-              value={studio.invoiceEmail ?? ''}
-              onChange={(e) => {
-                setEmailError(null);
-                onUpdateField(studioName, 'invoiceEmail', e.target.value);
-              }}
-              onBlur={(e) => {
-                const v = e.target.value;
-                if (v !== '' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) {
-                  setEmailError('Please enter a valid e-mail address');
-                } else {
-                  setEmailError(null);
-                }
-              }}
-              placeholder="studio@example.com"
-            />
-            {emailError && <span className="text-xs text-red-500">{emailError}</span>}
-          </label>
-
-          {/* Rate tiers table */}
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="text-gray-400 text-left">
-                <th className="pb-1 font-normal">Min students</th>
-                <th className="pb-1 font-normal">Max students</th>
-                <th className="pb-1 font-normal">Rate (€)</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {studio.rateTiers.map((tier, i) => {
-                const errors = tierValidation.tierErrors[i] ?? {};
-                const isFirst = i === 0;
-                const isLast = i === studio.rateTiers.length - 1;
-                return (
-                  <tr key={i}>
-                    <td className="pr-2 py-0.5">
-                      <input
-                        type="number"
-                        min={1}
-                        className={inputClass(Boolean(errors.minStudents), isFirst)}
-                        title={errors.minStudents}
-                        value={isFirst ? 1 : Number.isNaN(tier.minStudents) ? '' : tier.minStudents}
-                        disabled={isFirst}
-                        onChange={(e) => onUpdateTier(studioName, i, 'minStudents', e.target.value)}
-                      />
-                    </td>
-                    <td className="pr-2 py-0.5">
-                      <input
-                        type="number"
-                        placeholder="∞"
-                        className={inputClass(Boolean(errors.maxStudents), isLast)}
-                        title={errors.maxStudents}
-                        value={
-                          isLast
-                            ? ''
-                            : tier.maxStudents === null || Number.isNaN(tier.maxStudents)
-                              ? ''
-                              : tier.maxStudents
-                        }
-                        disabled={isLast}
-                        onChange={(e) => onUpdateTier(studioName, i, 'maxStudents', e.target.value)}
-                      />
-                    </td>
-                    <td className="pr-2 py-0.5">
-                      <input
-                        type="number"
-                        min={0}
-                        className={inputClass(Boolean(errors.rate))}
-                        title={errors.rate}
-                        value={Number.isNaN(tier.rate) ? '' : tier.rate}
-                        onChange={(e) => onUpdateTier(studioName, i, 'rate', e.target.value)}
-                      />
-                    </td>
-                    <td>
-                      <button
-                        onClick={() => onRemoveTier(studioName, i)}
-                        disabled={studio.rateTiers.length === 1}
-                        className="text-gray-300 hover:text-red-400 disabled:opacity-30 disabled:hover:text-gray-300"
-                      >
-                        ✕
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          {!tierValidation.isValid && (
-            <div className="text-xs text-red-500">
-              Rate tiers must start at 1, touch without gaps, and end with no maximum.
-            </div>
-          )}
-          <button
-            onClick={() => onAddTier(studioName)}
-            className="text-xs text-indigo-500 hover:text-indigo-700 self-start"
-          >
-            + Add tier
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-export function RatesTab({ config, isDirty, saveError, onUpdate, onSave }: Props) {
+export function RatesTab({
+  layout = 'desktop',
+  config,
+  isDirty,
+  saveError,
+  onUpdate,
+  onSave,
+}: Props) {
   const [calendars, setCalendars] = useState<
     { id: string; summary: string; accessRole?: CalendarAccessRole }[] | null
   >(null);
+  const [calendarListOpen, setCalendarListOpen] = useState(false);
   const [calendarLoading, setCalendarLoading] = useState(false);
   const [calendarError, setCalendarError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!config.calendarId || config.calendarName?.trim()) return;
+
+    let active = true;
+    setCalendarLoading(true);
+    setCalendarError(null);
+    void listCalendars()
+      .then((list) => {
+        if (active) setCalendars(list);
+      })
+      .catch((error) => {
+        if (active) setCalendarError(calendarPickerErrorMessage(error));
+      })
+      .finally(() => {
+        if (active) setCalendarLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [config.calendarId, config.calendarName]);
+
+  const selectedCalendarName = selectedCalendarDisplayName(config, calendars, calendarLoading);
 
   async function handlePickCalendar() {
     setCalendarLoading(true);
     setCalendarError(null);
+    setCalendarListOpen(false);
     try {
-      const list = await listCalendars();
+      const list = await listCalendars(undefined, { interactive: true });
       setCalendars(list);
+      setCalendarListOpen(true);
     } catch (e) {
       setCalendarError(calendarPickerErrorMessage(e));
     } finally {
@@ -301,7 +117,10 @@ export function RatesTab({ config, isDirty, saveError, onUpdate, onSave }: Props
     name: string,
     accessRole: CalendarAccessRole | undefined
   ) {
-    await selectCalendar(config, id, name, accessRole, onUpdate, onSave, setCalendars);
+    await selectCalendar(config, id, name, accessRole, onUpdate, onSave, (next) => {
+      setCalendars(next);
+      if (next === null) setCalendarListOpen(false);
+    });
   }
 
   function updateTeacher(key: keyof Omit<TeacherInfo, 'bankDetails'>, value: string) {
@@ -313,10 +132,6 @@ export function RatesTab({ config, isDirty, saveError, onUpdate, onSave }: Props
       teacher: { ...config.teacher, bankDetails: { ...config.teacher.bankDetails, [key]: value } },
     });
   }
-  function updateLastInvoice(value: string) {
-    onUpdate({ ...config, lastInvoice: value });
-  }
-
   function updateStudioName(oldName: string, newName: string) {
     const studios = Object.fromEntries(
       Object.entries(config.studios).map(([k, v]) => [k === oldName ? newName : k, v])
@@ -441,6 +256,34 @@ export function RatesTab({ config, isDirty, saveError, onUpdate, onSave }: Props
     onUpdate({ ...config, studios: rest });
   }
 
+  if (layout === 'mobile') {
+    return (
+      <MobileSettings
+        config={config}
+        isDirty={isDirty}
+        saveError={saveError}
+        selectedCalendarName={selectedCalendarName}
+        calendars={calendars}
+        calendarListOpen={calendarListOpen}
+        calendarLoading={calendarLoading}
+        calendarError={calendarError}
+        onSave={() => onSave()}
+        onUpdateTeacher={updateTeacher}
+        onUpdateBank={updateBank}
+        onPickCalendar={handlePickCalendar}
+        onSelectCalendar={handleSelectCalendar}
+        onRenameStudio={updateStudioName}
+        onDeleteStudio={deleteStudio}
+        onUpdateTier={updateTier}
+        onAddTier={addTier}
+        onRemoveTier={removeTier}
+        onUpdateStudioField={updateStudioField}
+        onUpdateStudioColor={updateStudioColor}
+        onAddStudio={addStudio}
+      />
+    );
+  }
+
   return (
     <div className="p-4 flex flex-col gap-6 max-w-2xl">
       {/* Save bar */}
@@ -521,14 +364,14 @@ export function RatesTab({ config, isDirty, saveError, onUpdate, onSave }: Props
         <h3 className="text-sm font-medium text-gray-700 mt-2">Calendar</h3>
         <div className="flex flex-col gap-2">
           {config.calendarId ? (
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-800">
-                {config.calendarName || config.calendarId}
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="min-w-0 flex-1 truncate text-sm text-gray-800">
+                {selectedCalendarName}
               </span>
               <button
                 onClick={handlePickCalendar}
                 disabled={calendarLoading}
-                className="text-xs text-indigo-500 hover:text-indigo-700"
+                className="flex-shrink-0 text-xs text-indigo-500 hover:text-indigo-700"
               >
                 {calendarLoading ? 'Loading…' : 'Change…'}
               </button>
@@ -543,7 +386,7 @@ export function RatesTab({ config, isDirty, saveError, onUpdate, onSave }: Props
             </button>
           )}
           {calendarError && <span className="text-xs text-red-500">{calendarError}</span>}
-          {calendars && (
+          {calendarListOpen && calendars && (
             <div className="flex flex-col gap-1 p-2 rounded border border-gray-200 bg-gray-50 max-h-48 overflow-y-auto">
               {calendars.map((cal) => (
                 <button
@@ -564,20 +407,6 @@ export function RatesTab({ config, isDirty, saveError, onUpdate, onSave }: Props
             </div>
           )}
         </div>
-
-        <h3 className="text-sm font-medium text-gray-700 mt-2">Invoicing</h3>
-        <label className="flex flex-col gap-1">
-          <span className="text-xs text-gray-500">Last invoice number</span>
-          <input
-            className="border border-gray-200 rounded px-2 py-1 text-sm font-mono w-32"
-            value={config.lastInvoice}
-            onChange={(e) => updateLastInvoice(e.target.value)}
-            placeholder="e.g. 7/2026"
-          />
-          <span className="text-xs text-gray-400">
-            The next finalized invoice will use the following number.
-          </span>
-        </label>
       </div>
 
       {/* Studio cards — use index key so renaming doesn't unmount the card */}

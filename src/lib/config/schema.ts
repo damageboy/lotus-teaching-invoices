@@ -96,13 +96,14 @@ const ConfigSchema = z.object({
   calendarName: z.string().optional(),
   calendarAccessRole: z.enum(['owner', 'writer', 'reader', 'freeBusyReader']).optional(),
   calendarUrl: z.string().optional(),
-  outputDir: z.string().default(''),
+  outputDir: z.string().optional(),
   lastInvoice: z
     .string()
-    .default('')
+    .transform((value) => (value.trim().length === 0 ? '' : value))
     .refine((v) => v === '' || /^\d+\/\d{4}$/.test(v), {
       message: 'lastInvoice must be in N/YYYY format or empty',
-    }),
+    })
+    .optional(),
   studios: z
     .record(StudioConfigSchema, { required_error: 'Config must have a studios object' })
     .refine(
@@ -166,8 +167,8 @@ export function validateConfig(raw: unknown): AppConfig {
     calendarId: configData.calendarId ?? extractCalendarIdFromLegacyUrl(configData.calendarUrl),
     calendarName: configData.calendarName,
     calendarAccessRole: configData.calendarAccessRole,
-    outputDir: configData.outputDir,
-    lastInvoice: configData.lastInvoice,
+    ...(configData.outputDir === undefined ? {} : { outputDir: configData.outputDir }),
+    ...(configData.lastInvoice === undefined ? {} : { lastInvoice: configData.lastInvoice }),
     studios: {},
   };
 
@@ -184,4 +185,10 @@ export function validateConfig(raw: unknown): AppConfig {
   }
 
   return config;
+}
+
+/** Remove the former local finalized-invoice authorities after Drive activation succeeds. */
+export function withoutLegacyInvoiceStorage(config: AppConfig): AppConfig {
+  const { outputDir: _outputDir, lastInvoice: _lastInvoice, ...current } = config;
+  return current;
 }

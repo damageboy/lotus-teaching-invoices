@@ -73,7 +73,7 @@ export function CalendarPermissionPrompt({
         aria-modal="true"
         aria-labelledby={TITLE_ID}
         aria-describedby={DESCRIPTION_ID}
-        className="w-full max-w-md rounded-lg border border-gray-200 bg-white p-5 shadow-xl"
+        className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-lg border border-gray-200 bg-white p-5 shadow-xl"
       >
         <div className="flex items-start gap-4">
           <div className="min-w-0 flex-1">
@@ -91,7 +91,7 @@ export function CalendarPermissionPrompt({
             type="button"
             aria-label="Close"
             onClick={() => void onDismiss()}
-            className="rounded px-2 py-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="min-h-12 min-w-12 rounded px-2 py-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
             ×
           </button>
@@ -99,14 +99,17 @@ export function CalendarPermissionPrompt({
 
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
 
-        <div className="mt-5 flex justify-end gap-2">
+        <div
+          data-testid="calendar-permission-actions"
+          className="mt-5 flex flex-wrap justify-end gap-2"
+        >
           {reason === 'scopeMissing' && (
             <>
               <button
                 type="button"
                 onClick={() => void onDismiss()}
                 disabled={isAuthorizing}
-                className="rounded px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 disabled:opacity-40"
+                className="min-h-12 rounded px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 disabled:opacity-40 max-md:text-base"
               >
                 Not now
               </button>
@@ -115,7 +118,7 @@ export function CalendarPermissionPrompt({
                 type="button"
                 onClick={() => void onAllow()}
                 disabled={isAuthorizing}
-                className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700 disabled:opacity-40"
+                className="min-h-12 rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700 disabled:opacity-40 max-md:text-base"
               >
                 {isAuthorizing ? 'Waiting for Google…' : 'Allow calendar editing to make changes'}
               </button>

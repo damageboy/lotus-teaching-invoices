@@ -2,8 +2,11 @@ import { useMemo, useState } from 'react';
 import { AppConfig, ParsedClass } from '../../lib/types';
 import { buildIncomeReport, buildIncomeYears } from '../../lib/income/report';
 import { effectiveHex } from '../../lib/studioColors';
+import type { AppLayout } from '../../hooks/useCompactLayout';
+import { MobileIncome } from './MobileIncome';
 
 interface Props {
+  layout?: AppLayout;
   classes: ParsedClass[];
   config: AppConfig;
 }
@@ -18,7 +21,7 @@ function yoyClasses(yoyPercent: number | null): string {
   return 'border-emerald-200 bg-emerald-50 text-emerald-700';
 }
 
-export function IncomeTab({ classes, config }: Props) {
+export function IncomeTab({ layout = 'desktop', classes, config }: Props) {
   const currentYear = new Date().getFullYear();
   const availableYears = useMemo(() => buildIncomeYears(classes), [classes]);
   const yearOptions = availableYears.length > 0 ? availableYears : [currentYear];
@@ -31,6 +34,18 @@ export function IncomeTab({ classes, config }: Props) {
     studioName,
     color: effectiveHex(studioName, studio.color),
   }));
+
+  if (layout === 'mobile') {
+    return (
+      <MobileIncome
+        report={report}
+        legend={legend}
+        year={year}
+        yearOptions={yearOptions}
+        onSelectYear={setSelectedYear}
+      />
+    );
+  }
 
   return (
     <div className="p-4 flex flex-col gap-5">

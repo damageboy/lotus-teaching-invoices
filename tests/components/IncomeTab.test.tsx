@@ -63,7 +63,9 @@ const classes: ParsedClass[] = [
 
 describe('IncomeTab', () => {
   it('renders monthly income chart labels, year selector, legend, and YoY badge', () => {
-    const html = renderToStaticMarkup(React.createElement(IncomeTab, { classes, config }));
+    const html = renderToStaticMarkup(
+      React.createElement(IncomeTab, { classes, config, layout: 'desktop' })
+    );
 
     expect(html).toContain('Monthly Income');
     expect(html).toContain(`<option value="${currentYear}" selected="">${currentYear}</option>`);
@@ -74,6 +76,7 @@ describe('IncomeTab', () => {
     expect(html).toContain('Beta');
     expect(html).toContain('€150.00');
     expect(html).toContain('+50%');
+    expect(html).toContain('min-w-[760px]');
   });
 
   it('uses years with historical data for the selector and excludes future recurring years', () => {

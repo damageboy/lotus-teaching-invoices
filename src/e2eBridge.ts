@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 
-export type E2eFailpoint = 'freshnessAfterRemote' | 'cacheReconcileAfterRemote';
+export type E2eFailpoint = 'cacheReconcileAfterRemote';
 
 export interface E2eAuthorizationSeed {
   accessToken: string;
@@ -40,13 +40,13 @@ export interface E2eRuntimeStatus {
   syncStatePresent: boolean;
   writeCapable: boolean;
   pendingEditJournalPath: string;
-  invoiceFreshnessPath: string;
 }
 
 export interface LotusE2eBridge {
   seedRuntime(seed: E2eSeedRequest): Promise<E2eRuntimeStatus>;
   runtimeStatus(calendarId: string): Promise<E2eRuntimeStatus>;
   armFailpoint(failpoint: E2eFailpoint): Promise<void>;
+  readCachedPdf(filename: string): Promise<number[]>;
 }
 
 const bridge: LotusE2eBridge = Object.freeze({
@@ -54,6 +54,7 @@ const bridge: LotusE2eBridge = Object.freeze({
   runtimeStatus: (calendarId: string) =>
     invoke<E2eRuntimeStatus>('e2e_runtime_status', { calendarId }),
   armFailpoint: (failpoint: E2eFailpoint) => invoke<void>('e2e_arm_failpoint', { failpoint }),
+  readCachedPdf: (filename: string) => invoke<number[]>('e2e_read_cached_pdf', { filename }),
 });
 
 export function installE2eBridge(): void {

@@ -14,6 +14,11 @@ describe('Boot', () => {
     await expect($('button=Income')).toBeDisplayed();
     await expect($('button=Rates & Config')).toBeDisplayed();
   });
+
+  it('keeps the desktop shell at the 800-pixel E2E viewport', async () => {
+    await expect($('[data-layout="desktop"]')).toBeDisplayed();
+    await expect($('[aria-label="Mobile navigation"]')).not.toBeExisting();
+  });
 });
 
 // ─── Calendar tab ────────────────────────────────────────────────────────────
@@ -60,16 +65,16 @@ describe('Invoices tab', () => {
     await browser.pause(300);
   });
 
-  it('shows "No classes loaded" when calendar is empty', async () => {
-    await expect($('td=No classes loaded')).toBeDisplayed();
+  it('renders the invoice table for the isolated cached calendar', async () => {
+    await expect($('table')).toBeDisplayed();
   });
 
-  it('shows "not set" for the output folder', async () => {
-    await expect($('span=not set')).toBeDisplayed();
+  it('shows Drive storage as not configured', async () => {
+    await expect($('span*=not configured')).toBeDisplayed();
   });
 
-  it('has a "Change folder…" button', async () => {
-    await expect($('button=Change folder\u2026')).toBeDisplayed();
+  it('has a "Choose Drive folder" button', async () => {
+    await expect($('button=Choose Drive folder')).toBeDisplayed();
   });
 });
 

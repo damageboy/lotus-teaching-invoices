@@ -20,6 +20,19 @@ export interface SyncResult {
   syncToken?: string;
 }
 
+interface SyncCalendarDependencies {
+  getAccessToken(options: { interactive: boolean }): Promise<string>;
+  invoke(
+    command: 'sync_calendar',
+    args: { calendarId: string; accessToken: string }
+  ): Promise<SyncResult>;
+}
+
+const syncCalendarDependencies: SyncCalendarDependencies = {
+  getAccessToken,
+  invoke: (command, args) => invoke<SyncResult>(command, args),
+};
+
 export function mapCachedCalendarEvents(events: CachedCalendarEventDto[]): CalendarEvent[] {
   return events.map((event) => ({
     identity: event.identity,
@@ -32,9 +45,12 @@ export function mapCachedCalendarEvents(events: CachedCalendarEventDto[]): Calen
   }));
 }
 
-export async function syncCalendar(calendarId: string): Promise<SyncResult> {
-  const accessToken = await getAccessToken();
-  return invoke<SyncResult>('sync_calendar', { calendarId, accessToken });
+export async function syncCalendar(
+  calendarId: string,
+  dependencies: SyncCalendarDependencies = syncCalendarDependencies
+): Promise<SyncResult> {
+  const accessToken = await dependencies.getAccessToken({ interactive: false });
+  return dependencies.invoke('sync_calendar', { calendarId, accessToken });
 }
 
 export async function listCachedCalendarEvents(calendarId: string): Promise<CalendarEvent[]> {

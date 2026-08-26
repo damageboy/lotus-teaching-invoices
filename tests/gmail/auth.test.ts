@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const sharedMocks = {
   fetch: vi.fn(),
   invoke: vi.fn(),
-  open: vi.fn(),
+  openUrl: vi.fn(),
   logInfo: vi.fn(),
   logError: vi.fn(),
   logWarn: vi.fn(),
@@ -11,7 +11,7 @@ const sharedMocks = {
 
 vi.mock('@tauri-apps/plugin-http', () => ({ fetch: sharedMocks.fetch }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: sharedMocks.invoke }));
-vi.mock('@tauri-apps/plugin-shell', () => ({ open: sharedMocks.open }));
+vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: sharedMocks.openUrl }));
 vi.mock('../../src/lib/logger', () => ({
   logInfo: sharedMocks.logInfo,
   logError: sharedMocks.logError,
@@ -20,19 +20,23 @@ vi.mock('../../src/lib/logger', () => ({
 
 const httpMocks = await import('@tauri-apps/plugin-http');
 const coreMocks = await import('@tauri-apps/api/core');
-const shellMocks = await import('@tauri-apps/plugin-shell');
+const openerMocks = await import('@tauri-apps/plugin-opener');
 const loggerMocks = await import('../../src/lib/logger.js');
 const {
   buildConsentUrl,
   getAccessToken,
   isTokenExpired,
   loadCalendarEditPromptPreference,
+  requiredScopes,
   saveCalendarEditPromptPreference,
 } = await import('../../src/lib/gmail/auth.js');
 const {
   AUTHORIZATION_SCHEMA_VERSION,
   BASE_OAUTH_SCOPES,
   CALENDAR_EDIT_OAUTH_SCOPES,
+  CALENDAR_READONLY_SCOPE,
+  DRIVE_SCOPE,
+  GMAIL_COMPOSE_SCOPE,
   GOOGLE_CLIENT_ID,
   OAUTH_AUTH_URL,
 } = await import('../../src/lib/gmail/constants.js');
@@ -115,7 +119,7 @@ beforeEach(() => {
         throw new Error(`Unexpected command: ${command}`);
     }
   });
-  shellMocks.open.mockResolvedValue(undefined);
+  openerMocks.openUrl.mockResolvedValue(undefined);
 });
 
 describe('isTokenExpired', () => {
@@ -156,6 +160,17 @@ describe('buildConsentUrl', () => {
   });
 });
 
+describe('requiredScopes', () => {
+  it('combines Calendar write and Drive without duplicating base scopes', () => {
+    expect(requiredScopes({ requireCalendarWrite: true, requireDrive: true })).toEqual([
+      GMAIL_COMPOSE_SCOPE,
+      CALENDAR_READONLY_SCOPE,
+      'https://www.googleapis.com/auth/calendar.events',
+      DRIVE_SCOPE,
+    ]);
+  });
+});
+
 describe('getAccessToken', () => {
   it('keeps a legacy record usable for existing Gmail and read-only calls', async () => {
     storedRaw = JSON.stringify({
@@ -166,7 +181,7 @@ describe('getAccessToken', () => {
 
     await expect(getAccessToken()).resolves.toBe('legacy-access');
     expect(httpMocks.fetch).not.toHaveBeenCalled();
-    expect(shellMocks.open).not.toHaveBeenCalled();
+    expect(openerMocks.openUrl).not.toHaveBeenCalled();
   });
 
   it('upgrades a base-only record only after a complete actual grant', async () => {
@@ -182,7 +197,7 @@ describe('getAccessToken', () => {
 
     await expect(getAccessToken({ requireCalendarWrite: true })).resolves.toBe('upgraded-access');
 
-    const opened = new URL(shellMocks.open.mock.calls[0][0]);
+    const opened = new URL(openerMocks.openUrl.mock.calls[0][0]);
     expect(opened.searchParams.get('scope')?.split(' ')).toEqual(CALENDAR_EDIT_OAUTH_SCOPES);
     expect(opened.searchParams.get('include_granted_scopes')).toBe('true');
     const expectedState = coreMocks.invoke.mock.calls.find(
@@ -195,6 +210,32 @@ describe('getAccessToken', () => {
       authorization_version: AUTHORIZATION_SCHEMA_VERSION,
       granted_scopes: CALENDAR_EDIT_OAUTH_SCOPES,
     });
+  });
+
+  it('does not open desktop consent when a passive Drive check needs an upgrade', async () => {
+    storedRaw = JSON.stringify(versionedRecord(BASE_OAUTH_SCOPES));
+
+    await expect(getAccessToken({ requireDrive: true, interactive: false })).rejects.toMatchObject({
+      code: 'authorizationRequired',
+    });
+
+    expect(openerMocks.openUrl).not.toHaveBeenCalled();
+    expect(httpMocks.fetch).not.toHaveBeenCalled();
+  });
+
+  it('does not open desktop consent after a passive refresh failure', async () => {
+    storedRaw = JSON.stringify({
+      ...versionedRecord(),
+      expires_at: Date.now() - 1,
+    });
+    httpMocks.fetch.mockResolvedValue(jsonResponse({ error: 'invalid_grant' }, 400));
+
+    await expect(getAccessToken({ interactive: false })).rejects.toMatchObject({
+      code: 'authorizationRequired',
+    });
+
+    expect(httpMocks.fetch).toHaveBeenCalledTimes(1);
+    expect(openerMocks.openUrl).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -257,7 +298,7 @@ describe('getAccessToken', () => {
     await expect(getAccessToken({ forceRefresh: true })).resolves.toBe('refreshed-access');
 
     expect(httpMocks.fetch).toHaveBeenCalledTimes(1);
-    expect(shellMocks.open).not.toHaveBeenCalled();
+    expect(openerMocks.openUrl).not.toHaveBeenCalled();
     expect(JSON.parse(storedRaw!)).toMatchObject({
       access_token: 'refreshed-access',
       authorization_version: AUTHORIZATION_SCHEMA_VERSION,
@@ -277,7 +318,7 @@ describe('getAccessToken', () => {
     );
 
     expect(httpMocks.fetch).toHaveBeenCalledTimes(1);
-    expect(shellMocks.open).not.toHaveBeenCalled();
+    expect(openerMocks.openUrl).not.toHaveBeenCalled();
     expect(
       coreMocks.invoke.mock.calls.filter(([command]) => command === 'write_auth_tokens')
     ).toHaveLength(1);
@@ -306,7 +347,7 @@ describe('getAccessToken', () => {
     await expect(getAccessToken({ forceRefresh: true })).resolves.toBe('reauthorized-access');
 
     expect(httpMocks.fetch).toHaveBeenCalledTimes(2);
-    const opened = new URL(shellMocks.open.mock.calls[0][0]);
+    const opened = new URL(openerMocks.openUrl.mock.calls[0][0]);
     expect(opened.searchParams.get('scope')?.split(' ')).toEqual(knownScopes);
   });
 
@@ -454,7 +495,7 @@ describe('getAccessToken', () => {
 
     expect(httpMocks.fetch).toHaveBeenCalledTimes(3);
     expect(storedRaw).toBe(originalRaw);
-    expect(shellMocks.open).not.toHaveBeenCalled();
+    expect(openerMocks.openUrl).not.toHaveBeenCalled();
 
     await expect(getAccessToken()).resolves.toBe('stored-access');
     expect(httpMocks.fetch).toHaveBeenCalledTimes(3);
@@ -554,7 +595,7 @@ describe('getAccessToken', () => {
       }
       throw new Error(`Unexpected command: ${command}`);
     });
-    shellMocks.open
+    openerMocks.openUrl
       .mockRejectedValueOnce(new Error('Browser launch failed'))
       .mockResolvedValueOnce(undefined);
     httpMocks.fetch.mockResolvedValue(

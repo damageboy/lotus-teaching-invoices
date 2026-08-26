@@ -93,7 +93,6 @@ interface RuntimeStatus {
   syncStatePresent: boolean;
   writeCapable: boolean;
   pendingEditJournalPath: string;
-  invoiceFreshnessPath: string;
 }
 
 describe('Calendar editing isolated bootstrap', () => {
@@ -127,7 +126,6 @@ describe('Calendar editing isolated bootstrap', () => {
     expect(seeded.pendingEditJournalPath).toBe(
       `${seeded.dataRoot}/calendar-edit-operations.sqlite`
     );
-    expect(seeded.invoiceFreshnessPath).toBe(`${seeded.dataRoot}/invoice-freshness.sqlite`);
 
     const config = readTmpConfig() as {
       calendarId: string;
@@ -141,7 +139,6 @@ describe('Calendar editing isolated bootstrap', () => {
       '.gmail-tokens.lock',
       'calendar-cache.sqlite',
       'gmail-tokens.json',
-      'invoice-freshness.sqlite',
     ]);
 
     await browser.refresh();

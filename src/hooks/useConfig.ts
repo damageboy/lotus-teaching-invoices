@@ -14,11 +14,12 @@ export function useConfig() {
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG);
   const [isDirty, setIsDirty] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setIsLoading(true);
-    setError(null);
+    setLoadError(null);
     try {
       const configPath = await invoke<string | null>('get_config_path');
       const fileExists = configPath
@@ -37,7 +38,7 @@ export function useConfig() {
       }
     } catch (e) {
       logError(`Config load failed: ${e}`);
-      setError(String(e));
+      setLoadError(String(e));
     } finally {
       setIsLoading(false);
       setIsDirty(false);
@@ -58,9 +59,9 @@ export function useConfig() {
     setIsDirty(true);
   }, []);
 
-  const save = useCallback(async (next?: AppConfig) => {
+  const persist = useCallback(async (next?: AppConfig, throwOnFailure = false) => {
     const raw = next ?? configRef.current;
-    setError(null);
+    setSaveError(null);
 
     // Sanitize: JSON round-trip strips Symbol values/keys that yaml can't serialize.
     // Also log any symbols found so we can diagnose the root cause.
@@ -93,9 +94,23 @@ export function useConfig() {
       logInfo('Config saved successfully');
     } catch (e) {
       logError(`Config save failed: ${e}`);
-      setError(String(e));
+      setSaveError(String(e));
+      if (throwOnFailure) throw e;
     }
   }, []);
 
-  return { config, isDirty, isLoading, error, updateConfig, save, reload: load };
+  const save = useCallback((next?: AppConfig) => persist(next), [persist]);
+  const saveOrThrow = useCallback((next?: AppConfig) => persist(next, true), [persist]);
+
+  return {
+    config,
+    isDirty,
+    isLoading,
+    loadError,
+    saveError,
+    updateConfig,
+    save,
+    saveOrThrow,
+    reload: load,
+  };
 }

@@ -11,8 +11,6 @@ export const DEFAULT_CONFIG: AppConfig = {
       bic: '',
     },
   },
-  outputDir: '',
-  lastInvoice: '',
   studios: {
     Yogibar: {
       fullName: '',

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { join } from 'node:path';
 import { loadConfig } from '../../src/lib/config/loader.js';
-import { validateConfig } from '../../src/lib/config/schema.js';
+import { validateConfig, withoutLegacyInvoiceStorage } from '../../src/lib/config/schema.js';
 
 const fixturesDir = join(import.meta.dirname, '..', 'fixtures');
 
@@ -13,7 +13,7 @@ describe('loadConfig', () => {
     expect(config.teacher.name).toBe('');
     expect(config.teacher.taxNumber).toBe('');
     expect(config.teacher.bankDetails.iban).toBe('');
-    expect(config.outputDir).toBe('');
+    expect(config.outputDir).toBeUndefined();
     expect(Object.keys(config.studios)).toEqual(['Zen Yoga', 'Power House']);
     expect(config.studios['Zen Yoga'].rateTiers).toHaveLength(3);
     expect(config.studios['Power House'].rateTiers).toHaveLength(3);
@@ -23,6 +23,12 @@ describe('loadConfig', () => {
 
   it('throws on missing file', () => {
     expect(() => loadConfig('/nonexistent/config.yaml')).toThrow('Cannot read config file');
+  });
+
+  it('normalizes a whitespace-only legacy invoice seed while loading YAML', () => {
+    const config = loadConfig(join(fixturesDir, 'config-legacy-whitespace.yaml'));
+
+    expect(config.lastInvoice).toBe('');
   });
 });
 
@@ -176,20 +182,48 @@ describe('validateRateTiers (via validateConfig)', () => {
   });
 });
 
-describe('lastInvoice field', () => {
-  it('defaults to empty string when absent', () => {
+describe('legacy finalized-invoice config fields', () => {
+  it('does not emit legacy fields when they are absent', () => {
     const cfg = validateConfig({
       studios: { Foo: { rateTiers: [{ minStudents: 1, maxStudents: null, rate: 80 }] } },
     });
-    expect(cfg.lastInvoice).toBe('');
+    expect(cfg).not.toHaveProperty('outputDir');
+    expect(cfg).not.toHaveProperty('lastInvoice');
   });
 
-  it('accepts a valid N/YYYY string', () => {
+  it('loads legacy fields as optional activation seeds', () => {
     const cfg = validateConfig({
+      outputDir: '/old/local/invoices',
       lastInvoice: '7/2026',
       studios: { Foo: { rateTiers: [{ minStudents: 1, maxStudents: null, rate: 80 }] } },
     });
+    expect(cfg.outputDir).toBe('/old/local/invoices');
     expect(cfg.lastInvoice).toBe('7/2026');
+  });
+
+  it.each(['', ' ', '  \t\n'])('normalizes blank legacy lastInvoice %j to no seed', (seed) => {
+    const cfg = validateConfig({
+      lastInvoice: seed,
+      studios: { Foo: { rateTiers: [{ minStudents: 1, maxStudents: null, rate: 80 }] } },
+    });
+
+    expect(cfg.lastInvoice).toBe('');
+  });
+
+  it('removes both legacy authorities without mutating the loaded config', () => {
+    const legacy = validateConfig({
+      outputDir: '/old/local/invoices',
+      lastInvoice: '7/2026',
+      studios: { Foo: { rateTiers: [{ minStudents: 1, maxStudents: null, rate: 80 }] } },
+    });
+
+    expect(withoutLegacyInvoiceStorage(legacy)).toEqual(
+      expect.not.objectContaining({ outputDir: expect.anything(), lastInvoice: expect.anything() })
+    );
+    expect(legacy).toMatchObject({
+      outputDir: '/old/local/invoices',
+      lastInvoice: '7/2026',
+    });
   });
 
   it('rejects an invalid format', () => {
