@@ -10,14 +10,6 @@ import { DriveStoreError } from '../../src/lib/drive/invoiceStore.js';
 const restoreEnvironment = installReactTestEnvironment();
 const roots: Array<{ root: Root; container: HTMLElement }> = [];
 
-function deferred<T>() {
-  let resolve!: (value: T | PromiseLike<T>) => void;
-  const promise = new Promise<T>((resolvePromise) => {
-    resolve = resolvePromise;
-  });
-  return { promise, resolve };
-}
-
 function render(ui: ReactNode) {
   const container = document.createElement('div');
   document.body.append(container);
@@ -68,8 +60,7 @@ afterEach(() => {
 });
 afterAll(() => restoreEnvironment());
 
-const { InvoicesTab, activateDriveStorage } =
-  await import('../../src/components/InvoicesTab/index.js');
+const { InvoicesTab } = await import('../../src/components/InvoicesTab/index.js');
 const { clearLog, subscribeLog } = await import('../../src/lib/logger.js');
 
 const config: AppConfig = {
@@ -190,14 +181,7 @@ function props(overrides: Record<string, unknown> = {}) {
     onAcknowledgeFreshnessClear: vi.fn(),
     onRefreshFreshness: vi.fn(async () => {}),
     drive: driveState('ready'),
-    folderService: {
-      listLocations: vi.fn(async () => []),
-      listChildren: vi.fn(),
-      createChild: vi.fn(),
-      stageRoot: vi.fn(),
-    },
-    scanCandidate: vi.fn(),
-    onSaveConfig: vi.fn(async () => {}),
+    onChooseDriveFolder: vi.fn(async () => {}),
     dependencies: dependencies(),
     ...overrides,
   };
@@ -219,75 +203,6 @@ describe('Drive-backed InvoicesTab', () => {
     expect(document.body.textContent).toContain('recover the reservation');
     await click(button('Recover invoice reservation'));
     await waitFor(() => expect(drive.recoverReservation).toHaveBeenCalledOnce());
-  });
-
-  it('writes Drive control before removing legacy authority from the latest queued config', async () => {
-    const calls: string[] = [];
-    const queuedWrite = deferred<void>();
-    const drive = driveState('unconfigured', {
-      activateRoot: vi.fn(async () => {
-        calls.push('drive');
-      }),
-    });
-    let currentConfig = config;
-    let durableConfig: AppConfig | null = null;
-    const saveConfig = vi.fn(async (update: (current: AppConfig) => AppConfig) => {
-      calls.push('config');
-      await queuedWrite.promise;
-      durableConfig = update(currentConfig);
-    });
-
-    const activation = activateDriveStorage(
-      drive,
-      {
-        root: { folderId: 'root', driveId: null, folderName: 'Drive Root' },
-        rootFile: {} as any,
-        finalFolder: {} as any,
-      },
-      config,
-      saveConfig
-    );
-    await waitFor(() => expect(saveConfig).toHaveBeenCalledOnce());
-    currentConfig = {
-      ...config,
-      teacher: { ...config.teacher, name: 'Concurrent Teacher' },
-    };
-    queuedWrite.resolve();
-    await activation;
-
-    expect(calls).toEqual(['drive', 'config']);
-    expect(drive.activateRoot).toHaveBeenCalledWith(expect.any(Object), '11/2026');
-    expect(durableConfig).toEqual(
-      expect.objectContaining({ teacher: expect.objectContaining({ name: 'Concurrent Teacher' }) })
-    );
-    expect(durableConfig).not.toHaveProperty('outputDir');
-    expect(durableConfig).not.toHaveProperty('lastInvoice');
-  });
-
-  it('keeps legacy config fields when remote activation fails', async () => {
-    const drive = driveState('unconfigured', {
-      activateRoot: vi.fn(async () => {
-        throw new Error('Drive control conflict');
-      }),
-    });
-    const saveConfig = vi.fn();
-
-    await expect(
-      activateDriveStorage(
-        drive,
-        {
-          root: { folderId: 'root', driveId: null, folderName: 'Drive Root' },
-          rootFile: {} as any,
-          finalFolder: {} as any,
-        },
-        config,
-        saveConfig
-      )
-    ).rejects.toThrow('Drive control conflict');
-
-    expect(saveConfig).not.toHaveBeenCalled();
-    expect(config).toHaveProperty('outputDir', '/legacy-output');
-    expect(config).toHaveProperty('lastInvoice', '11/2026');
   });
 
   it('keeps Preview available before Drive setup and disables persistent actions', () => {
@@ -618,21 +533,19 @@ describe('Drive-backed InvoicesTab', () => {
     expect(button('Finalize PDF').disabled).toBe(true);
   });
 
-  it('does not open the folder dialog when Drive authorization fails', async () => {
-    const reason = 'Google authorization was denied';
+  it('delegates Drive folder setup to the App-owned controller', async () => {
+    const onChooseDriveFolder = vi.fn(async () => undefined);
     render(
       <InvoicesTab
         {...(props({
           drive: driveState('authorizationRequired'),
-          onAuthorizeDrive: vi.fn(async () => {
-            throw new Error(reason);
-          }),
+          onChooseDriveFolder,
         }) as any)}
       />
     );
 
     await click(button('Choose Drive folder'));
-    await waitFor(() => expect(document.body.textContent).toContain(reason));
+    expect(onChooseDriveFolder).toHaveBeenCalledOnce();
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 

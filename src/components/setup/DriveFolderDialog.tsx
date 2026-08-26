@@ -72,6 +72,8 @@ export function DriveFolderDialog({
   const closeRef = useRef<HTMLButtonElement>(null);
   const requestRef = useRef(0);
   const confirmingRef = useRef(false);
+  const mobileHistoryRef = useRef<{ id: number; previousState: unknown } | null>(null);
+  const mobileHistorySequenceRef = useRef(0);
   const [phase, setPhase] = useState<DialogPhase>('browse');
   const [locations, setLocations] = useState<DriveLocation[]>([]);
   const [location, setLocation] = useState<DriveLocation | null>(null);
@@ -89,10 +91,24 @@ export function DriveFolderDialog({
 
   const touchClass = layout === 'mobile' ? 'min-h-12 min-w-12 text-base' : '';
 
-  const close = useCallback(() => {
-    requestRef.current += 1;
-    onClose();
-  }, [onClose]);
+  const finishClose = useCallback(
+    (fromHistory: boolean) => {
+      requestRef.current += 1;
+      const historyEntry = mobileHistoryRef.current;
+      mobileHistoryRef.current = null;
+      if (
+        !fromHistory &&
+        historyEntry !== null &&
+        window.history.state?.lotusDriveFolderDialog === historyEntry.id
+      ) {
+        window.history.replaceState(historyEntry.previousState, '');
+      }
+      onClose();
+    },
+    [onClose]
+  );
+
+  const close = useCallback(() => finishClose(false), [finishClose]);
 
   const loadLocations = useCallback(async (): Promise<void> => {
     const request = ++requestRef.current;
@@ -209,6 +225,23 @@ export function DriveFolderDialog({
       previouslyFocused?.focus();
     };
   }, [close, open]);
+
+  useEffect(() => {
+    if (!open || layout !== 'mobile') return;
+    const id = ++mobileHistorySequenceRef.current;
+    const previousState = window.history.state;
+    window.history.pushState({ lotusDriveFolderDialog: id }, '');
+    mobileHistoryRef.current = { id, previousState };
+
+    function handlePopState(event: PopStateEvent): void {
+      if (mobileHistoryRef.current?.id !== id) return;
+      event.stopImmediatePropagation();
+      finishClose(true);
+    }
+
+    window.addEventListener('popstate', handlePopState, true);
+    return () => window.removeEventListener('popstate', handlePopState, true);
+  }, [finishClose, layout, open]);
 
   if (!open) return null;
 

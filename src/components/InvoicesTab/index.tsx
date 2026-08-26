@@ -3,16 +3,8 @@ import { confirm } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import type { AppLayout } from '../../hooks/useCompactLayout.js';
 import type { DriveInvoicesState } from '../../hooks/useDriveInvoices.js';
-import type { DriveFolderBrowserService } from './DriveFolderDialog.js';
-import { DriveFolderDialog } from './DriveFolderDialog.js';
-import type { StagedDriveRoot } from '../../lib/drive/folders.js';
-import type {
-  DriveInvoiceConflict,
-  DriveInvoiceEntry,
-  DriveInvoiceScan,
-} from '../../lib/drive/invoiceCatalog.js';
+import type { DriveInvoiceConflict, DriveInvoiceEntry } from '../../lib/drive/invoiceCatalog.js';
 import type { AppConfig, InvoicePeriod, ParsedClass } from '../../lib/types.js';
-import { withoutLegacyInvoiceStorage } from '../../lib/config/schema.js';
 import { createGmailDraft } from '../../lib/gmail/drafts.js';
 import { generateInvoice } from '../../lib/invoice/generator.js';
 import { buildInvoiceRows, type InvoiceRow } from '../../lib/invoice/rows.js';
@@ -51,10 +43,7 @@ interface Props {
   config: AppConfig;
   sourceError?: string | null;
   drive: DriveInvoicesState;
-  folderService: DriveFolderBrowserService;
-  scanCandidate(stagedRoot: StagedDriveRoot): Promise<DriveInvoiceScan>;
-  onSaveConfig(update: (current: AppConfig) => AppConfig): Promise<void>;
-  onAuthorizeDrive?: () => Promise<void>;
+  onChooseDriveFolder(): void | Promise<void>;
   dependencies?: Partial<InvoiceActionDependencies>;
 }
 
@@ -224,33 +213,18 @@ function availabilityFor(
   return { status, statusLabel, reasons, preview, finalize, open, draftEmail };
 }
 
-export async function activateDriveStorage(
-  drive: Pick<DriveInvoicesState, 'activateRoot'>,
-  stagedRoot: StagedDriveRoot,
-  config: AppConfig,
-  saveConfig: (update: (current: AppConfig) => AppConfig) => Promise<void>
-): Promise<void> {
-  await drive.activateRoot(stagedRoot, config.lastInvoice);
-  await saveConfig(withoutLegacyInvoiceStorage);
-}
-
 export function InvoicesTab({
   layout = 'desktop',
   classes,
   config,
   sourceError = null,
   drive,
-  folderService,
-  scanCandidate,
-  onSaveConfig,
-  onAuthorizeDrive,
+  onChooseDriveFolder,
   dependencies: dependencyOverrides,
 }: Props) {
   const dependencies = { ...DEFAULT_DEPENDENCIES, ...dependencyOverrides };
-  const [folderDialogOpen, setFolderDialogOpen] = useState(false);
   const [rowAction, setRowAction] = useState<string | null>(null);
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
-  const [authorizationError, setAuthorizationError] = useState<string | null>(null);
 
   const driveEntries = drive.snapshot?.scan.entries ?? [];
   const rows = useMemo(() => {
@@ -405,15 +379,7 @@ export function InvoicesTab({
 
   function openFolderDialog(): void {
     if (sourceError !== null) return;
-    if (drive.status === 'authorizationRequired' && onAuthorizeDrive !== undefined) {
-      setAuthorizationError(null);
-      void onAuthorizeDrive().then(
-        () => setFolderDialogOpen(true),
-        (error) => setAuthorizationError(error instanceof Error ? error.message : String(error))
-      );
-      return;
-    }
-    setFolderDialogOpen(true);
+    void onChooseDriveFolder();
   }
 
   const rootName = drive.snapshot?.stagedRoot.root.folderName ?? null;
@@ -422,7 +388,6 @@ export function InvoicesTab({
   const scanConflictMessages = scanConflicts.map((conflict) => conflict.message);
   const globalMessages = [
     sourceError,
-    authorizationError,
     drive.error?.message ?? null,
     ...scanConflictMessages,
     ...scanWarnings,
@@ -611,17 +576,6 @@ export function InvoicesTab({
           </table>
         </div>
       )}
-
-      <DriveFolderDialog
-        open={folderDialogOpen}
-        layout={layout}
-        currentRoot={drive.snapshot?.stagedRoot.root ?? null}
-        legacyLastInvoice={config.lastInvoice}
-        folderService={folderService}
-        scanCandidate={scanCandidate}
-        onConfirm={(stagedRoot) => activateDriveStorage(drive, stagedRoot, config, onSaveConfig)}
-        onClose={() => setFolderDialogOpen(false)}
-      />
     </>
   );
 }

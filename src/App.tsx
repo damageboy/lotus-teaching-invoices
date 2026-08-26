@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { message } from '@tauri-apps/plugin-dialog';
 import { exit } from '@tauri-apps/plugin-process';
 import { useConfig } from './hooks/useConfig';
@@ -6,6 +6,7 @@ import { useCalendarData } from './hooks/useCalendarData';
 import { useGoogleAuthorization } from './hooks/useGoogleAuthorization';
 import { useCalendarEditing } from './hooks/useCalendarEditing';
 import { useDriveInvoices } from './hooks/useDriveInvoices';
+import { useDriveFolderController } from './hooks/useDriveFolderController';
 import { useCalendarPicker } from './hooks/useCalendarPicker';
 import { useCompactLayout, type AppLayout } from './hooks/useCompactLayout';
 import { CalendarTab } from './components/CalendarTab';
@@ -15,6 +16,7 @@ import { RatesTab } from './components/RatesTab';
 import { LogPanel } from './components/LogPanel';
 import { UpdateNotification } from './components/UpdateNotification';
 import { CalendarPermissionPrompt } from './components/CalendarPermissionPrompt';
+import { DriveFolderDialog } from './components/setup/DriveFolderDialog';
 import { MobileAppShell } from './components/mobile/MobileAppShell';
 import type { AppTab } from './components/mobile/MobileNavigation';
 import { initialMobileTabState, selectMobileTab } from './components/mobile/mobile-tab-state';
@@ -88,6 +90,24 @@ export default function App() {
     authorizationIncarnation: googleAuthorization.authorizationIncarnation,
     discoveryEnabled: !googleAuthorization.isLoading && googleAuthorization.hasDrive,
     foregroundRefreshEnabled: activeTab === 'invoices' && invoiceSourcesReady,
+  });
+  const scanDriveFolderCandidate = useCallback(
+    (
+      stagedRoot: Parameters<typeof scanFinalFolder>[1],
+      sources: Parameters<typeof scanFinalFolder>[2]
+    ) => scanFinalFolder(driveApi, stagedRoot, sources),
+    [driveApi]
+  );
+  const driveFolder = useDriveFolderController({
+    hasDriveAuthorization: googleAuthorization.hasDrive,
+    authorizationIncarnation: googleAuthorization.authorizationIncarnation,
+    authorizeDrive: googleAuthorization.allowDrive,
+    drive: driveInvoices,
+    config,
+    saveConfig: saveUpdateOrThrow,
+    sources: invoiceSourcesReady ? invoiceSources : [],
+    sourceContextKey: invoiceSourcesReady ? invoiceSourceInputKey : 'setup-discovery',
+    scanCandidate: scanDriveFolderCandidate,
   });
 
   useEffect(() => {
@@ -238,15 +258,7 @@ export default function App() {
             config={config}
             drive={driveInvoices}
             sourceError={invoiceSourceError}
-            folderService={driveFolderService}
-            scanCandidate={(stagedRoot) => {
-              if (!invoiceSourcesReady) {
-                throw new Error(invoiceSourceError ?? 'Current invoice sources are still loading.');
-              }
-              return scanFinalFolder(driveApi, stagedRoot, invoiceSources);
-            }}
-            onSaveConfig={saveUpdateOrThrow}
-            onAuthorizeDrive={googleAuthorization.allowDrive}
+            onChooseDriveFolder={driveFolder.openDialog}
           />
         )}
         {activeTab === 'income' && <IncomeTab layout={layout} classes={classes} config={config} />}
@@ -276,6 +288,16 @@ export default function App() {
         error={googleAuthorization.error}
         onAllow={googleAuthorization.allowCalendarEditing}
         onDismiss={googleAuthorization.dismissCalendarEditingPrompt}
+      />
+      <DriveFolderDialog
+        open={driveFolder.dialogOpen}
+        layout={layout}
+        currentRoot={driveInvoices.snapshot?.stagedRoot.root ?? null}
+        legacyLastInvoice={config.lastInvoice}
+        folderService={driveFolderService}
+        scanCandidate={driveFolder.scanCandidate}
+        onConfirm={driveFolder.confirmRoot}
+        onClose={driveFolder.closeDialog}
       />
       {layout === 'desktop' ? (
         <>

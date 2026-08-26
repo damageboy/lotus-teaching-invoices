@@ -16,7 +16,7 @@ Object.defineProperties(window.HTMLElement.prototype, {
   detachEvent: { configurable: true, value: () => {} },
 });
 afterAll(() => restoreDom());
-const { DriveFolderDialog } = await import('../../src/components/InvoicesTab/DriveFolderDialog.js');
+const { DriveFolderDialog } = await import('../../src/components/setup/DriveFolderDialog.js');
 
 const roots: Array<{ root: Root; container: HTMLElement }> = [];
 
@@ -158,6 +158,9 @@ const fireEvent = {
     const eventWindow = target.defaultView;
     if (eventWindow === null) throw new Error('Document has no window');
     act(() => target.dispatchEvent(new eventWindow.KeyboardEvent('keydown', init)));
+  },
+  popState(target: Window) {
+    act(() => target.dispatchEvent(new target.PopStateEvent('popstate')));
   },
 };
 
@@ -784,6 +787,19 @@ describe('DriveFolderDialog', () => {
 
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('owns Android Back while the mobile folder dialog is open', () => {
+    const onClose = vi.fn();
+    const dismissUnderlyingWizard = vi.fn();
+    window.addEventListener('popstate', dismissUnderlyingWizard);
+    render(<DriveFolderDialog {...dialogProps({ layout: 'mobile', onClose })} />);
+
+    fireEvent.popState(window);
+
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(dismissUnderlyingWizard).not.toHaveBeenCalled();
+    window.removeEventListener('popstate', dismissUnderlyingWizard);
   });
 
   it('renders nothing while closed and does not browse Drive', () => {
