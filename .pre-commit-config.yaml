@@ -3,6 +3,13 @@ default_install_hook_types: [pre-commit, commit-msg]
 repos:
   - repo: local
     hooks:
+      - id: oauth-source-scan
+        name: OAuth source secret scan
+        entry: bun run verify:oauth-source
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+
       - id: prettier
         name: Prettier
         entry: bunx prettier --write

@@ -34,7 +34,7 @@ shell:open https://mail.google.com/mail/#drafts
 
 - `src/lib/gmail/auth.ts` — OAuth2 flow, token storage/refresh
 - `src/lib/gmail/drafts.ts` — MIME construction, drafts.create API call
-- `src/lib/gmail/constants.ts` — client ID, client secret, scopes, endpoints
+- `src/lib/gmail/constants.ts` — public client ID, scopes, endpoints
 - `src-tauri/src/oauth.rs` — loopback server (Tauri commands)
 
 ### Modified files
@@ -59,10 +59,11 @@ The server is ephemeral — lives for exactly one request, then shuts down.
 1. Check `gmail-tokens.json` in AppData — if refresh token exists, use it to get a fresh access token via `POST https://oauth2.googleapis.com/token`
 2. If no token or refresh fails → start OAuth flow:
    - `invoke('start_oauth_server')` → get port
-   - Build consent URL with `redirect_uri=http://127.0.0.1:{port}`, scopes `gmail.compose calendar.events`
+   - Generate a per-flow PKCE verifier and S256 challenge
+   - Build the consent URL with the loopback redirect, scopes, and PKCE challenge
    - `shell:open` the consent URL
    - `invoke('wait_oauth_code', { timeoutSecs: 120 })` → get auth code
-   - Exchange code for tokens via `POST https://oauth2.googleapis.com/token`
+   - Exchange the code and PKCE verifier for tokens via `POST https://oauth2.googleapis.com/token`
    - Save `{ access_token, refresh_token, expires_at }` to `gmail-tokens.json`
 3. Return the access token
 
@@ -71,8 +72,8 @@ Token refresh: before each Gmail API call, check `expires_at`. If expired, use r
 ### OAuth credentials
 
 - Client ID: `918178070743-m12oc3dv1rp40blkdomhc1767oigocpr.apps.googleusercontent.com`
-- Client secret: `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`
-- These are embedded in the app binary (standard for desktop OAuth2 public clients)
+- Client secret: Not used. Desktop OAuth uses PKCE and the public client ID.
+- Only the public client ID is embedded in the app binary
 
 ### OAuth scopes
 

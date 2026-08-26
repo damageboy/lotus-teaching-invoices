@@ -4,7 +4,7 @@ import { join, relative } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 
-const DESKTOP_CLIENT_SECRET = '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';
+const GOOGLE_CLIENT_SECRET_PREFIX = Buffer.from(['GOCSPX', ''].join('-'));
 
 function filesBelow(root: string): string[] {
   const result: string[] = [];
@@ -20,7 +20,7 @@ function filesBelow(root: string): string[] {
 }
 
 describe('Android OAuth bundle boundary', () => {
-  it('excludes the desktop client secret from emitted assets and source maps', () => {
+  it('excludes Google OAuth client secrets from emitted assets and source maps', () => {
     const output = mkdtempSync(join(tmpdir(), 'lotus-android-oauth-bundle-'));
     try {
       const build = spawnSync(
@@ -41,9 +41,8 @@ describe('Android OAuth bundle boundary', () => {
       const files = filesBelow(output);
       expect(files.some((path) => path.endsWith('.js'))).toBe(true);
       expect(files.some((path) => path.endsWith('.map'))).toBe(true);
-      const secretBytes = Buffer.from(DESKTOP_CLIENT_SECRET);
       const violations = files
-        .filter((path) => readFileSync(path).includes(secretBytes))
+        .filter((path) => readFileSync(path).includes(GOOGLE_CLIENT_SECRET_PREFIX))
         .map((path) => relative(output, path));
       expect(violations).toEqual([]);
     } finally {

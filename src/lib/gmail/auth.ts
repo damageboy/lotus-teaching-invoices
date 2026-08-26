@@ -64,9 +64,11 @@ export function isTokenExpired(expiresAt: number): boolean {
 export function buildConsentUrl(
   port: number,
   oauthState: string,
+  codeChallenge: string,
   scopes: readonly string[] = BASE_OAUTH_SCOPES
 ): string {
   if (!oauthState) throw new Error('OAuth state is required');
+  if (!codeChallenge) throw new Error('PKCE code challenge is required');
   const params = new URLSearchParams({
     client_id: GOOGLE_CLIENT_ID,
     redirect_uri: `http://127.0.0.1:${port}`,
@@ -76,6 +78,8 @@ export function buildConsentUrl(
     prompt: 'consent',
     include_granted_scopes: 'true',
     state: oauthState,
+    code_challenge: codeChallenge,
+    code_challenge_method: 'S256',
   });
   return `${OAUTH_AUTH_URL}?${params.toString()}`;
 }
@@ -138,6 +142,26 @@ function createOAuthState(): string {
   return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
+function base64UrlEncode(bytes: Uint8Array): string {
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+async function createPkcePair(): Promise<{ verifier: string; challenge: string }> {
+  const randomBytes = new Uint8Array(64);
+  globalThis.crypto.getRandomValues(randomBytes);
+  const verifier = base64UrlEncode(randomBytes);
+  const digest = await globalThis.crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(verifier)
+  );
+  return {
+    verifier,
+    challenge: base64UrlEncode(new Uint8Array(digest)),
+  };
+}
+
 function authorizationScopes(
   existing: StoredTokenRecord | null,
   options: GetAccessTokenOptions
@@ -178,11 +202,12 @@ async function runOAuthFlow(
 ): Promise<StoredTokenRecord> {
   const requestedScopes = authorizationScopes(existing, options);
   const oauthState = createOAuthState();
+  const pkce = await createPkcePair();
   logInfo('Starting Google OAuth flow...');
   const port = await invoke<number>('start_oauth_server', { expectedState: oauthState });
   let outcome: OAuthCallbackOutcome;
   try {
-    await openUrl(buildConsentUrl(port, oauthState, requestedScopes));
+    await openUrl(buildConsentUrl(port, oauthState, pkce.challenge, requestedScopes));
     logInfo('Waiting for authorization in browser...');
     outcome = await invoke<OAuthCallbackOutcome>('wait_oauth_code', { timeoutSecs: 120 });
   } catch (error) {
@@ -191,7 +216,7 @@ async function runOAuthFlow(
   }
   const code = callbackCode(outcome);
   logInfo('Authorization code received, exchanging for tokens...');
-  const response = await exchangeCodeForTokens(code, port);
+  const response = await exchangeCodeForTokens(code, port, pkce.verifier);
   const tokens = acceptAuthorizationExchange(existing, response, requestedScopes, Date.now());
   if (!tokens) {
     throw new Error('Authorization response did not include all required scopes and tokens');

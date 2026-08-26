@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const sharedMocks = {
@@ -138,7 +139,7 @@ describe('isTokenExpired', () => {
 
 describe('buildConsentUrl', () => {
   it('includes the base scopes and incremental authorization flag', () => {
-    const url = buildConsentUrl(12345, 'oauth-state');
+    const url = buildConsentUrl(12345, 'oauth-state', 'test-code-challenge');
     const parsed = new URL(url);
 
     expect(parsed.searchParams.get('client_id')).toBe(GOOGLE_CLIENT_ID);
@@ -149,11 +150,15 @@ describe('buildConsentUrl', () => {
     expect(parsed.searchParams.get('prompt')).toBe('consent');
     expect(parsed.searchParams.get('include_granted_scopes')).toBe('true');
     expect(parsed.searchParams.get('state')).toBe('oauth-state');
+    expect(parsed.searchParams.get('code_challenge')).toBe('test-code-challenge');
+    expect(parsed.searchParams.get('code_challenge_method')).toBe('S256');
     expect(url.startsWith(OAUTH_AUTH_URL)).toBe(true);
   });
 
   it('includes Gmail, calendar read, and calendar write in the upgrade URL', () => {
-    const parsed = new URL(buildConsentUrl(12345, 'oauth-state', CALENDAR_EDIT_OAUTH_SCOPES));
+    const parsed = new URL(
+      buildConsentUrl(12345, 'oauth-state', 'test-code-challenge', CALENDAR_EDIT_OAUTH_SCOPES)
+    );
 
     expect(parsed.searchParams.get('scope')?.split(' ')).toEqual(CALENDAR_EDIT_OAUTH_SCOPES);
     expect(parsed.searchParams.get('include_granted_scopes')).toBe('true');
@@ -200,6 +205,16 @@ describe('getAccessToken', () => {
     const opened = new URL(openerMocks.openUrl.mock.calls[0][0]);
     expect(opened.searchParams.get('scope')?.split(' ')).toEqual(CALENDAR_EDIT_OAUTH_SCOPES);
     expect(opened.searchParams.get('include_granted_scopes')).toBe('true');
+    expect(opened.searchParams.get('code_challenge_method')).toBe('S256');
+    const tokenRequest = new URLSearchParams(
+      String(httpMocks.fetch.mock.calls[0]?.[1]?.body ?? '')
+    );
+    const codeVerifier = tokenRequest.get('code_verifier');
+    expect(codeVerifier).toMatch(/^[A-Za-z0-9._~-]{43,128}$/);
+    expect(opened.searchParams.get('code_challenge')).toBe(
+      createHash('sha256').update(codeVerifier!).digest('base64url')
+    );
+    expect(tokenRequest.has('client_secret')).toBe(false);
     const expectedState = coreMocks.invoke.mock.calls.find(
       ([command]) => command === 'start_oauth_server'
     )?.[1]?.expectedState;
@@ -298,6 +313,11 @@ describe('getAccessToken', () => {
     await expect(getAccessToken({ forceRefresh: true })).resolves.toBe('refreshed-access');
 
     expect(httpMocks.fetch).toHaveBeenCalledTimes(1);
+    const tokenRequest = new URLSearchParams(
+      String(httpMocks.fetch.mock.calls[0]?.[1]?.body ?? '')
+    );
+    expect(tokenRequest.get('grant_type')).toBe('refresh_token');
+    expect(tokenRequest.has('client_secret')).toBe(false);
     expect(openerMocks.openUrl).not.toHaveBeenCalled();
     expect(JSON.parse(storedRaw!)).toMatchObject({
       access_token: 'refreshed-access',

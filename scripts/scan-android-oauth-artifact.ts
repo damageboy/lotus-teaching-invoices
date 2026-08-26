@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { basename, join, relative } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-const DESKTOP_CLIENT_SECRET = Buffer.from('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');
+const GOOGLE_CLIENT_SECRET_PREFIX = Buffer.from(['GOCSPX', ''].join('-'));
 
 function filesBelow(root: string): string[] {
   const result: string[] = [];
@@ -48,12 +48,12 @@ function main(): void {
 
     const files = filesBelow(extracted);
     const violations = files
-      .filter((path) => readFileSync(path).includes(DESKTOP_CLIENT_SECRET))
+      .filter((path) => readFileSync(path).includes(GOOGLE_CLIENT_SECRET_PREFIX))
       .map((path) => relative(extracted, path))
       .sort();
     if (violations.length > 0) {
       console.error(
-        `Desktop OAuth client secret found in ${basename(artifact)}: ${violations.join(', ')}`
+        `Google OAuth client secret marker found in ${basename(artifact)}: ${violations.join(', ')}`
       );
       process.exitCode = 1;
       return;

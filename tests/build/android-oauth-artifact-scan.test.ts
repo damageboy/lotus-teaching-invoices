@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 
-const DESKTOP_CLIENT_SECRET = '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';
+const GOOGLE_CLIENT_SECRET_CANARY = ['GOCSPX', 'not-a-real-oauth-client-secret'].join('-');
 const SCANNER = join(process.cwd(), 'scripts', 'scan-android-oauth-artifact.ts');
 
 function artifact(root: string, name: string, contents: string): string {
@@ -18,7 +18,7 @@ function artifact(root: string, name: string, contents: string): string {
 }
 
 describe('Android OAuth APK scanner', () => {
-  it('accepts clean archives and rejects a secret in any decompressed asset', () => {
+  it('accepts clean archives and rejects a Google secret marker in any decompressed asset', () => {
     const root = mkdtempSync(join(tmpdir(), 'lotus-android-oauth-scan-'));
     try {
       const clean = spawnSync('bun', [SCANNER, artifact(root, 'clean', 'clean source map')], {
@@ -28,11 +28,14 @@ describe('Android OAuth APK scanner', () => {
 
       const contaminated = spawnSync(
         'bun',
-        [SCANNER, artifact(root, 'contaminated', `prefix ${DESKTOP_CLIENT_SECRET} suffix`)],
+        [SCANNER, artifact(root, 'contaminated', `prefix ${GOOGLE_CLIENT_SECRET_CANARY} suffix`)],
         { encoding: 'utf8' }
       );
       expect(contaminated.status).toBe(1);
       expect(`${contaminated.stdout}\n${contaminated.stderr}`).toContain('assets/index.js.map');
+      expect(`${contaminated.stdout}\n${contaminated.stderr}`).not.toContain(
+        GOOGLE_CLIENT_SECRET_CANARY
+      );
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

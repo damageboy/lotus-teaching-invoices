@@ -21,7 +21,7 @@
 ```typescript
 export const GOOGLE_CLIENT_ID =
   '918178070743-m12oc3dv1rp40blkdomhc1767oigocpr.apps.googleusercontent.com';
-export const GOOGLE_CLIENT_SECRET = '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';
+// Desktop installed-app OAuth uses PKCE and no client secret.
 
 export const OAUTH_SCOPES = [
   'https://www.googleapis.com/auth/gmail.compose',
@@ -355,7 +355,6 @@ import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-shell';
 import {
   GOOGLE_CLIENT_ID,
-  GOOGLE_CLIENT_SECRET,
   OAUTH_SCOPES,
   OAUTH_AUTH_URL,
   OAUTH_TOKEN_URL,
@@ -375,7 +374,7 @@ export function isTokenExpired(expiresAt: number): boolean {
 }
 
 /** Build the Google OAuth consent URL for the given loopback port. */
-export function buildConsentUrl(port: number): string {
+export function buildConsentUrl(port: number, codeChallenge: string): string {
   const params = new URLSearchParams({
     client_id: GOOGLE_CLIENT_ID,
     redirect_uri: `http://127.0.0.1:${port}`,
@@ -383,6 +382,8 @@ export function buildConsentUrl(port: number): string {
     scope: OAUTH_SCOPES,
     access_type: 'offline',
     prompt: 'consent',
+    code_challenge: codeChallenge,
+    code_challenge_method: 'S256',
   });
   return `${OAUTH_AUTH_URL}?${params.toString()}`;
 }
@@ -403,13 +404,17 @@ async function saveTokens(tokens: StoredTokens): Promise<void> {
   });
 }
 
-async function exchangeCodeForTokens(code: string, port: number): Promise<StoredTokens> {
+async function exchangeCodeForTokens(
+  code: string,
+  port: number,
+  codeVerifier: string
+): Promise<StoredTokens> {
   const body = new URLSearchParams({
     code,
     client_id: GOOGLE_CLIENT_ID,
-    client_secret: GOOGLE_CLIENT_SECRET,
     redirect_uri: `http://127.0.0.1:${port}`,
     grant_type: 'authorization_code',
+    code_verifier: codeVerifier,
   });
 
   const resp = await fetch(OAUTH_TOKEN_URL, {
@@ -435,7 +440,6 @@ async function refreshAccessToken(refreshToken: string): Promise<StoredTokens> {
   const body = new URLSearchParams({
     refresh_token: refreshToken,
     client_id: GOOGLE_CLIENT_ID,
-    client_secret: GOOGLE_CLIENT_SECRET,
     grant_type: 'refresh_token',
   });
 

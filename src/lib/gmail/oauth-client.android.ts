@@ -4,7 +4,8 @@ const UNAVAILABLE = 'Desktop OAuth token operations are unavailable on Android';
 
 export async function exchangeCodeForTokens(
   _code: string,
-  _port: number
+  _port: number,
+  _codeVerifier: string
 ): Promise<OAuthTokenResponse> {
   throw new Error(UNAVAILABLE);
 }
