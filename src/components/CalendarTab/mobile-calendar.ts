@@ -1,5 +1,5 @@
-import { AppError, ParsedClass, StudioConfig } from '../../lib/types.js';
-import { findRate } from '../../lib/invoice/calculator.js';
+import type { ParsedClass } from '../../lib/types.js';
+export { lessonExpectedAmount } from './lesson-value.js';
 
 function localDate(year: number, month: number, day: number): string {
   return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
@@ -23,26 +23,6 @@ export function initialMobileDate(
 
   const firstLesson = classes.map((lesson) => lesson.date).sort()[0];
   return firstLesson ?? localDate(year, month, 1);
-}
-
-export function lessonExpectedAmount(lesson: ParsedClass, studio?: StudioConfig): number | null {
-  if (
-    lesson.studentCount <= 0 ||
-    lesson.ambiguousStudentCount ||
-    !Number.isSafeInteger(lesson.studentCount)
-  ) {
-    return null;
-  }
-
-  if (lesson.rateOverride !== undefined) return lesson.rateOverride;
-  if (!studio) return null;
-
-  try {
-    return findRate(studio.rateTiers, lesson.studentCount);
-  } catch (error) {
-    if (error instanceof AppError && error.code === 'NO_MATCHING_TIER') return null;
-    throw error;
-  }
 }
 
 export function localDateString(year: number, month: number, day: number): string {

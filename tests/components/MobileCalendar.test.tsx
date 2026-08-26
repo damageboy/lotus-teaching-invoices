@@ -361,8 +361,8 @@ describe('CalendarTab mobile presentation', () => {
     );
 
     const configuredDay = namedButton('August 6, 2026');
-    const unconfiguredDay = namedButton('August 12, 2026, 2 unconfigured classes');
-    const mixedDay = namedButton('August 21, 2026, 1 unconfigured class');
+    const unconfiguredDay = namedButton('August 12, 2026, 2 incomplete classes');
+    const mixedDay = namedButton('August 21, 2026, 1 incomplete class');
     expect(configuredDay.querySelectorAll('[style]')).toHaveLength(1);
     expect(configuredDay.querySelector('[data-unconfigured-marker="true"]')).toBeNull();
     expect(unconfiguredDay.querySelectorAll('[style]')).toHaveLength(0);
@@ -415,39 +415,88 @@ describe('CalendarTab mobile presentation', () => {
     );
   });
 
-  it('shows unconfigured markers only for dates before today', () => {
+  it('marks past dates whose configured classes have no calculable EUR value', () => {
+    const incompleteClasses = [
+      parsedClass({
+        date: '2026-08-08',
+        studentCount: 1,
+        rateOverride: 55,
+        eventIdentity: { calendarId: 'fixture-calendar', eventId: 'configured-override' },
+      }),
+      parsedClass({
+        date: '2026-08-09',
+        studentCount: 0,
+        eventIdentity: { calendarId: 'fixture-calendar', eventId: 'missing-students' },
+      }),
+      parsedClass({
+        date: '2026-08-10',
+        studentCount: 8,
+        ambiguousStudentCount: true,
+        eventIdentity: { calendarId: 'fixture-calendar', eventId: 'ambiguous-students' },
+      }),
+      parsedClass({
+        date: '2026-08-11',
+        studentCount: 1,
+        eventIdentity: { calendarId: 'fixture-calendar', eventId: 'missing-rate-tier' },
+      }),
+    ];
+    const limitedStudios = {
+      Studio: {
+        ...studios.Studio,
+        rateTiers: [{ minStudents: 2, maxStudents: null, rate: 55 }],
+      },
+    };
+
+    render(<CalendarTab layout="mobile" classes={incompleteClasses} studios={limitedStudios} />);
+
+    expect(
+      namedButton('August 8, 2026').querySelector('[data-unconfigured-marker="true"]')
+    ).toBeNull();
+    for (const label of [
+      'August 9, 2026, 1 incomplete class',
+      'August 10, 2026, 1 incomplete class',
+      'August 11, 2026, 1 incomplete class',
+    ]) {
+      expect(namedButton(label).querySelectorAll('[data-unconfigured-marker="true"]')).toHaveLength(
+        1
+      );
+    }
+  });
+
+  it('shows incomplete markers only for dates before today', () => {
     const incompleteClasses = [
       parsedClass({
         date: '2026-08-23',
         unconfigured: true,
+        rateOverride: 55,
         eventIdentity: { calendarId: 'fixture-calendar', eventId: 'unconfigured-past' },
       }),
       parsedClass({
         date: '2026-08-24',
-        unconfigured: true,
-        eventIdentity: { calendarId: 'fixture-calendar', eventId: 'unconfigured-today' },
+        studentCount: 0,
+        eventIdentity: { calendarId: 'fixture-calendar', eventId: 'missing-today' },
       }),
       parsedClass({
         date: '2026-08-25',
-        unconfigured: true,
-        eventIdentity: { calendarId: 'fixture-calendar', eventId: 'unconfigured-future' },
+        studentCount: 0,
+        eventIdentity: { calendarId: 'fixture-calendar', eventId: 'missing-future' },
       }),
     ];
 
     render(<CalendarTab layout="mobile" classes={incompleteClasses} studios={studios} />);
 
     expect(
-      namedButton('August 23, 2026, 1 unconfigured class').querySelectorAll(
+      namedButton('August 23, 2026, 1 incomplete class').querySelectorAll(
         '[data-unconfigured-marker="true"]'
       )
     ).toHaveLength(1);
     expect(
-      namedButton('August 24, 2026, 1 unconfigured class').querySelectorAll(
+      namedButton('August 24, 2026, 1 incomplete class').querySelectorAll(
         '[data-unconfigured-marker="true"]'
       )
     ).toHaveLength(0);
     expect(
-      namedButton('August 25, 2026, 1 unconfigured class').querySelectorAll(
+      namedButton('August 25, 2026, 1 incomplete class').querySelectorAll(
         '[data-unconfigured-marker="true"]'
       )
     ).toHaveLength(0);

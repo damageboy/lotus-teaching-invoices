@@ -161,6 +161,7 @@ export function MobileCalendar({
             year={year}
             month={month}
             classes={classes}
+            studios={studios}
             colorMap={colorMap}
             selectedDate={selectedDate}
             onSelectDate={onOpenAgenda}
