@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   android:
@@ -100,3 +100,23 @@ jobs:
           name: lotus-android-arm64-release
           path: ${{ steps.release.outputs.apk }}
           if-no-files-found: error
+
+      - name: Prepare GitHub Release APK
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          APK: ${{ steps.release.outputs.apk }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          VERSION="${VERSION#v}"
+          mkdir -p release-assets
+          cp "$APK" "release-assets/Lotus.Teaching.Invoices_${VERSION}_android-arm64.apk"
+
+      - name: Publish GitHub prerelease
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v3
+        with:
+          name: ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          prerelease: true
+          files: release-assets/*.apk
+          fail_on_unmatched_files: true
