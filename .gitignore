@@ -3,6 +3,8 @@ dist/
 invoices/
 config.yaml
 *.tsbuildinfo
+*.jks
+src-tauri/gen/android/keystore.properties
 
 # Debug screenshots from browser tooling
 /*.png
