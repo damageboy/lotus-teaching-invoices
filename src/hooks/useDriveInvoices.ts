@@ -272,7 +272,18 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
 
       const promise = (async () => {
         try {
-          const snapshot = hasSnapshot ? await store.refresh(sources) : await store.bootstrap([]);
+          let snapshot: DriveStoreSnapshot | null;
+          if (hasSnapshot) {
+            snapshot = await store.refresh(sources);
+          } else {
+            snapshot = await store.bootstrap([]);
+            if (!contextIsCurrent(context) || refreshGenerationRef.current !== refreshGeneration) {
+              return;
+            }
+            if (snapshot !== null && sources.length > 0) {
+              snapshot = await store.refresh(sources);
+            }
+          }
           if (!contextIsCurrent(context) || refreshGenerationRef.current !== refreshGeneration) {
             return;
           }

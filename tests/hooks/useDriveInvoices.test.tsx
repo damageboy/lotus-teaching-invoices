@@ -279,7 +279,7 @@ describe('useDriveInvoices', () => {
     const pending = deferred<DriveStoreSnapshot>();
     const store = storeDouble();
     store.bootstrap.mockReturnValue(pending.promise);
-    const { result } = renderHook(() => useDriveInvoices(options({ store })), {
+    const { result } = renderHook(() => useDriveInvoices(options({ store, sources: [] })), {
       reactStrictMode: true,
     });
 
@@ -295,7 +295,7 @@ describe('useDriveInvoices', () => {
   it('maps an empty bootstrap to unconfigured without manufacturing an error', async () => {
     const store = storeDouble();
     store.bootstrap.mockResolvedValueOnce(null);
-    const { result } = renderHook(() => useDriveInvoices(options({ store })));
+    const { result } = renderHook(() => useDriveInvoices(options({ store, sources: [] })));
 
     await waitFor(() => expect(result.current.status).toBe('unconfigured'));
     expect(result.current.snapshot).toBeNull();
@@ -305,7 +305,7 @@ describe('useDriveInvoices', () => {
   it('publishes a durable reservation as recovery-required immediately after cold bootstrap', async () => {
     const store = storeDouble();
     store.bootstrap.mockResolvedValueOnce(reservedSnapshotFor('cold-start'));
-    const { result } = renderHook(() => useDriveInvoices(options({ store })));
+    const { result } = renderHook(() => useDriveInvoices(options({ store, sources: [] })));
 
     await waitFor(() => expect(result.current.status).toBe('blocked'));
 
@@ -322,7 +322,7 @@ describe('useDriveInvoices', () => {
   it('publishes a reservation discovered by refresh while retaining the snapshot', async () => {
     const store = storeDouble();
     store.refresh.mockResolvedValueOnce(reservedSnapshotFor('refreshed'));
-    const { result } = renderHook(() => useDriveInvoices(options({ store })));
+    const { result } = renderHook(() => useDriveInvoices(options({ store, sources: [] })));
     await waitFor(() => expect(result.current.status).toBe('ready'));
 
     await act(async () => result.current.refresh());
@@ -339,8 +339,8 @@ describe('useDriveInvoices', () => {
     firstStore.bootstrap.mockResolvedValueOnce(reservedSnapshotFor('first-controller'));
     secondStore.bootstrap.mockResolvedValueOnce(reservedSnapshotFor('second-controller'));
 
-    const first = renderHook(() => useDriveInvoices(options({ store: firstStore })));
-    const second = renderHook(() => useDriveInvoices(options({ store: secondStore })));
+    const first = renderHook(() => useDriveInvoices(options({ store: firstStore, sources: [] })));
+    const second = renderHook(() => useDriveInvoices(options({ store: secondStore, sources: [] })));
 
     await waitFor(() => expect(first.result.current.error?.code).toBe('recoveryRequired'));
     await waitFor(() => expect(second.result.current.error?.code).toBe('recoveryRequired'));
@@ -368,7 +368,7 @@ describe('useDriveInvoices', () => {
     const store = storeDouble();
     const error = new DriveStoreError(code, `${code} detail`, code === 'offline');
     store.bootstrap.mockRejectedValueOnce(error);
-    const { result } = renderHook(() => useDriveInvoices(options({ store })));
+    const { result } = renderHook(() => useDriveInvoices(options({ store, sources: [] })));
 
     await waitFor(() => expect(result.current.status).toBe(status));
     expect(result.current.error).toBe(error);
@@ -379,7 +379,7 @@ describe('useDriveInvoices', () => {
     const store = storeDouble();
     const offline = new DriveStoreError('offline', 'Try again', true);
     store.bootstrap.mockRejectedValueOnce(offline).mockResolvedValueOnce(snapshotFor('recovered'));
-    const { result } = renderHook(() => useDriveInvoices(options({ store })));
+    const { result } = renderHook(() => useDriveInvoices(options({ store, sources: [] })));
     await waitFor(() => expect(result.current.status).toBe('offline'));
 
     await act(async () => result.current.refresh());
@@ -393,7 +393,7 @@ describe('useDriveInvoices', () => {
     const store = storeDouble();
     const offline = new DriveStoreError('offline', 'Temporarily unavailable', true);
     store.refresh.mockRejectedValueOnce(offline).mockResolvedValueOnce(snapshotFor('newer'));
-    const { result } = renderHook(() => useDriveInvoices(options({ store })));
+    const { result } = renderHook(() => useDriveInvoices(options({ store, sources: [] })));
     await waitFor(() => expect(result.current.status).toBe('ready'));
 
     await act(async () => {
@@ -411,7 +411,7 @@ describe('useDriveInvoices', () => {
     const retry = deferred<DriveStoreSnapshot>();
     const store = storeDouble();
     store.refresh.mockReturnValueOnce(retry.promise);
-    const { result } = renderHook(() => useDriveInvoices(options({ store })));
+    const { result } = renderHook(() => useDriveInvoices(options({ store, sources: [] })));
     await waitFor(() => expect(result.current.status).toBe('ready'));
 
     let retryPromise!: Promise<void>;
@@ -436,7 +436,7 @@ describe('useDriveInvoices', () => {
       .mockResolvedValueOnce(snapshotFor('account-b'));
     const { result, rerender } = renderHook(
       ({ authorizationIncarnation }) =>
-        useDriveInvoices(options({ authorizationIncarnation, store })),
+        useDriveInvoices(options({ authorizationIncarnation, store, sources: [] })),
       { initialProps: { authorizationIncarnation: 1 } }
     );
 
@@ -456,6 +456,7 @@ describe('useDriveInvoices', () => {
     const newer = deferred<DriveStoreSnapshot>();
     const store = storeDouble();
     store.bootstrap.mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise);
+    store.refresh.mockResolvedValueOnce(snapshotFor('newer'));
     const { result, rerender } = renderHook(
       ({ sources }) => useDriveInvoices(options({ sources, store })),
       { initialProps: { sources: [source('older')] } }
@@ -480,7 +481,9 @@ describe('useDriveInvoices', () => {
   it('synchronously hides the old snapshot until the changed source refresh publishes', async () => {
     const changedRefresh = deferred<DriveStoreSnapshot>();
     const store = storeDouble();
-    store.refresh.mockReturnValueOnce(changedRefresh.promise);
+    store.refresh
+      .mockResolvedValueOnce(snapshotFor('account-a'))
+      .mockReturnValueOnce(changedRefresh.promise);
     const { result, rerender } = renderHook(
       ({ sources }) => useDriveInvoices(options({ sources, store })),
       { initialProps: { sources: [source('original')] } }
@@ -492,7 +495,7 @@ describe('useDriveInvoices', () => {
 
     expect(result.current.status).toBe('loading');
     expect(result.current.snapshot).toBeNull();
-    await waitFor(() => expect(store.refresh).toHaveBeenCalledOnce());
+    await waitFor(() => expect(store.refresh).toHaveBeenCalledTimes(2));
 
     await act(async () => {
       changedRefresh.resolve(snapshotFor('changed-source'));
@@ -596,6 +599,70 @@ describe('useDriveInvoices', () => {
     expect(store.bootstrap).toHaveBeenCalledWith([]);
   });
 
+  it('reconciles ready sources after discovery becomes enabled', async () => {
+    const store = storeDouble();
+    store.bootstrap.mockResolvedValueOnce(snapshotFor('discovered'));
+    store.refresh.mockResolvedValueOnce(snapshotFor('reconciled'));
+    const view = renderHook(
+      ({ discoveryEnabled }) =>
+        useDriveInvoices(
+          options({
+            store,
+            sources: [source('ready-source')],
+            discoveryEnabled,
+            foregroundRefreshEnabled: false,
+          })
+        ),
+      { initialProps: { discoveryEnabled: false } }
+    );
+    expect(store.bootstrap).not.toHaveBeenCalled();
+
+    view.rerender({ discoveryEnabled: true });
+
+    await waitFor(() =>
+      expect(view.result.current.snapshot?.stagedRoot.root.folderId).toBe('reconciled-root')
+    );
+    expect(store.bootstrap).toHaveBeenCalledWith([]);
+    expect(store.refresh).toHaveBeenCalledOnce();
+    expect(store.refresh.mock.calls[0][0][0].fingerprint.sourceSha256).toBe('ready-source');
+  });
+
+  it('reconciles only the current sources when they change during bootstrap', async () => {
+    const olderBootstrap = deferred<DriveStoreSnapshot>();
+    const newerBootstrap = deferred<DriveStoreSnapshot>();
+    const store = storeDouble();
+    store.bootstrap
+      .mockReturnValueOnce(olderBootstrap.promise)
+      .mockReturnValueOnce(newerBootstrap.promise);
+    store.refresh.mockResolvedValueOnce(snapshotFor('reconciled-newer'));
+    const view = renderHook(
+      ({ sources }) =>
+        useDriveInvoices(
+          options({ store, sources, discoveryEnabled: true, foregroundRefreshEnabled: false })
+        ),
+      { initialProps: { sources: [source('older-source')] } }
+    );
+    await waitFor(() => expect(store.bootstrap).toHaveBeenCalledOnce());
+
+    view.rerender({ sources: [source('newer-source')] });
+    await waitFor(() => expect(store.bootstrap).toHaveBeenCalledTimes(2));
+    await act(async () => {
+      newerBootstrap.resolve(snapshotFor('discovered-newer'));
+      await newerBootstrap.promise;
+    });
+
+    await waitFor(() => expect(store.refresh).toHaveBeenCalledOnce());
+    expect(store.refresh.mock.calls[0][0][0].fingerprint.sourceSha256).toBe('newer-source');
+    expect(view.result.current.snapshot?.stagedRoot.root.folderId).toBe('reconciled-newer-root');
+
+    await act(async () => {
+      olderBootstrap.resolve(snapshotFor('discovered-older'));
+      await olderBootstrap.promise;
+    });
+    expect(store.refresh).toHaveBeenCalledOnce();
+    expect(view.result.current.snapshot?.stagedRoot.root.folderId).toBe('reconciled-newer-root');
+  });
+
   it('refreshes on focus only while foreground refresh is enabled', async () => {
     const store = storeDouble();
     store.bootstrap.mockResolvedValueOnce(snapshotFor('background'));
@@ -625,7 +692,9 @@ describe('useDriveInvoices', () => {
     const store = storeDouble();
     const { rerender } = renderHook(
       ({ discoveryEnabled, foregroundRefreshEnabled }) =>
-        useDriveInvoices(options({ discoveryEnabled, foregroundRefreshEnabled, store })),
+        useDriveInvoices(
+          options({ discoveryEnabled, foregroundRefreshEnabled, store, sources: [] })
+        ),
       { initialProps: { discoveryEnabled: false, foregroundRefreshEnabled: false } }
     );
     expect(store.bootstrap).not.toHaveBeenCalled();
@@ -643,7 +712,9 @@ describe('useDriveInvoices', () => {
     const store = storeDouble();
     const { rerender } = renderHook(
       ({ discoveryEnabled }) =>
-        useDriveInvoices(options({ discoveryEnabled, foregroundRefreshEnabled: false, store })),
+        useDriveInvoices(
+          options({ discoveryEnabled, foregroundRefreshEnabled: false, store, sources: [] })
+        ),
       { initialProps: { discoveryEnabled: false } }
     );
 
@@ -656,7 +727,7 @@ describe('useDriveInvoices', () => {
     const store = storeDouble();
     const { rerender } = renderHook(
       ({ foregroundRefreshEnabled }) =>
-        useDriveInvoices(options({ foregroundRefreshEnabled, store })),
+        useDriveInvoices(options({ foregroundRefreshEnabled, store, sources: [] })),
       { initialProps: { foregroundRefreshEnabled: true } }
     );
     await waitFor(() => expect(store.bootstrap).toHaveBeenCalledTimes(1));
@@ -685,11 +756,11 @@ describe('useDriveInvoices', () => {
 
     rerender({ sources: [source('same')] });
     await act(async () => Promise.resolve());
-    expect(store.refresh).not.toHaveBeenCalled();
+    expect(store.refresh).toHaveBeenCalledOnce();
 
     rerender({ sources: [source('changed')] });
-    await waitFor(() => expect(store.refresh).toHaveBeenCalledTimes(1));
-    expect(store.refresh.mock.calls[0][0][0].fingerprint.sourceSha256).toBe('changed');
+    await waitFor(() => expect(store.refresh).toHaveBeenCalledTimes(2));
+    expect(store.refresh.mock.calls[1][0][0].fingerprint.sourceSha256).toBe('changed');
   });
 
   it('refreshes before and after each successful mutation and publishes the post-success snapshot', async () => {
@@ -697,7 +768,7 @@ describe('useDriveInvoices', () => {
     const callOrder: string[] = [];
     store.refresh.mockImplementation(async () => {
       callOrder.push('refresh');
-      return snapshotFor(callOrder.length === 3 ? 'post-finalize' : 'refreshed');
+      return snapshotFor(callOrder.length === 4 ? 'post-finalize' : 'refreshed');
     });
     store.finalize.mockImplementation(async () => {
       callOrder.push('finalize');
@@ -712,7 +783,7 @@ describe('useDriveInvoices', () => {
     });
 
     expect(returned.file.id).toBe('finalized');
-    expect(callOrder).toEqual(['refresh', 'finalize', 'refresh']);
+    expect(callOrder).toEqual(['refresh', 'refresh', 'finalize', 'refresh']);
     expect(result.current.snapshot?.stagedRoot.root.folderId).toBe('post-finalize-root');
     expect(result.current.operationKey).toBeNull();
   });
@@ -799,10 +870,11 @@ describe('useDriveInvoices', () => {
     );
     store.finalize.mockRejectedValueOnce(recoveryError);
     store.refresh
+      .mockResolvedValueOnce(snapshotFor('initial-reconciliation'))
       .mockResolvedValueOnce(snapshotFor('before-failed-finalize'))
       .mockResolvedValueOnce(snapshotFor('before-recovery'))
       .mockResolvedValueOnce(snapshotFor('after-recovery'));
-    const { result } = renderHook(() => useDriveInvoices(options({ store })));
+    const { result } = renderHook(() => useDriveInvoices(options({ store, sources: [source()] })));
     await waitFor(() => expect(result.current.status).toBe('ready'));
 
     await act(async () => {
@@ -853,6 +925,7 @@ describe('useDriveInvoices', () => {
     const store = storeDouble();
     store.finalize.mockReturnValueOnce(action.promise);
     store.refresh
+      .mockResolvedValueOnce(snapshotFor('initial-reconciliation'))
       .mockResolvedValueOnce(snapshotFor('before-action'))
       .mockReturnValueOnce(foregroundRefresh.promise);
     const { result } = renderHook(() => useDriveInvoices(options({ store })));
@@ -864,7 +937,7 @@ describe('useDriveInvoices', () => {
     });
     await waitFor(() => expect(store.finalize).toHaveBeenCalledTimes(1));
     act(() => window.dispatchEvent(new Event('focus')));
-    await waitFor(() => expect(store.refresh).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(store.refresh).toHaveBeenCalledTimes(3));
 
     const conflict = new DriveStoreError('conflict', 'Mutation lost a race', true);
     await act(async () => {
@@ -886,6 +959,7 @@ describe('useDriveInvoices', () => {
     const postMutationRefresh = deferred<DriveStoreSnapshot>();
     const store = storeDouble();
     store.refresh
+      .mockResolvedValueOnce(snapshotFor('initial-reconciliation'))
       .mockResolvedValueOnce(snapshotFor('before-finalize'))
       .mockReturnValueOnce(postMutationRefresh.promise);
     const downloadError = new DriveStoreError('permission', 'Download was denied', false);
@@ -897,7 +971,7 @@ describe('useDriveInvoices', () => {
     act(() => {
       finalizePromise = result.current.finalize(finalizationInput());
     });
-    await waitFor(() => expect(store.refresh).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(store.refresh).toHaveBeenCalledTimes(3));
 
     await act(async () => {
       await expect(result.current.downloadVerified(entryFor('download'))).rejects.toBe(
@@ -1003,13 +1077,17 @@ describe('useDriveInvoices', () => {
     });
     expect(
       store.refresh.mock.calls.map(([sources]) => sources[0].fingerprint.sourceSha256)
-    ).toEqual(['committed', 'committed']);
+    ).toEqual(['committed', 'committed', 'committed']);
   });
 
   it('does not let a running old-account action overwrite the new-account refresh', async () => {
     const oldAction = deferred<DriveInvoiceEntry>();
     const store = storeDouble();
     store.bootstrap
+      .mockResolvedValueOnce(snapshotFor('account-a'))
+      .mockResolvedValueOnce(snapshotFor('account-b'));
+    store.refresh
+      .mockResolvedValueOnce(snapshotFor('account-a'))
       .mockResolvedValueOnce(snapshotFor('account-a'))
       .mockResolvedValueOnce(snapshotFor('account-b'));
     store.finalize.mockReturnValueOnce(oldAction.promise);
@@ -1047,6 +1125,10 @@ describe('useDriveInvoices', () => {
     store.bootstrap
       .mockResolvedValueOnce(snapshotFor('account-a'))
       .mockReturnValueOnce(newBootstrap.promise);
+    store.refresh
+      .mockResolvedValueOnce(snapshotFor('account-a'))
+      .mockResolvedValueOnce(snapshotFor('account-a'))
+      .mockResolvedValueOnce(snapshotFor('account-b'));
     store.activateRoot.mockReturnValueOnce(oldActivation.promise);
     const { result, rerender } = renderHook(
       ({ authorizationIncarnation }) =>
