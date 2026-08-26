@@ -283,6 +283,7 @@ export function CalendarTab({
         year={year}
         month={month}
         classes={monthClasses}
+        studios={studios}
         colorMap={colorMap}
         onSelectLesson={openDesktopDetails}
       />

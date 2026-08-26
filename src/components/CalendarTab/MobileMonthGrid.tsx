@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
-import type { ParsedClass } from '../../lib/types.js';
+import type { ParsedClass, StudioConfig } from '../../lib/types.js';
 import { studioColor } from '../../lib/studioColors.js';
+import { lessonNeedsConfiguration } from './lesson-value.js';
 import { localDateString } from './mobile-calendar.js';
 import { UnconfiguredMarker } from './UnconfiguredMarker.js';
 
@@ -8,6 +9,7 @@ interface Props {
   year: number;
   month: number;
   classes: ParsedClass[];
+  studios: Record<string, StudioConfig>;
   colorMap: Record<string, string | undefined>;
   selectedDate: string;
   onSelectDate: (date: string, anchor: HTMLButtonElement) => void;
@@ -28,6 +30,7 @@ export function MobileMonthGrid({
   year,
   month,
   classes,
+  studios,
   colorMap,
   selectedDate,
   onSelectDate,
@@ -81,12 +84,14 @@ export function MobileMonthGrid({
           const date = localDateString(year, month, day);
           const lessons = byDate.get(date) ?? [];
           const configuredLessons = lessons.filter((lesson) => !lesson.unconfigured);
-          const unconfiguredCount = lessons.length - configuredLessons.length;
+          const incompleteCount = lessons.filter((lesson) =>
+            lessonNeedsConfiguration(lesson, studios[lesson.studioName])
+          ).length;
           const accessibleLabel =
-            unconfiguredCount === 0
+            incompleteCount === 0
               ? dateLabel(year, month, day)
-              : `${dateLabel(year, month, day)}, ${unconfiguredCount} unconfigured ${
-                  unconfiguredCount === 1 ? 'class' : 'classes'
+              : `${dateLabel(year, month, day)}, ${incompleteCount} incomplete ${
+                  incompleteCount === 1 ? 'class' : 'classes'
                 }`;
           const isToday =
             today.getFullYear() === year && today.getMonth() === month && today.getDate() === day;
@@ -108,7 +113,7 @@ export function MobileMonthGrid({
                     : 'bg-white text-slate-800'
               } ${isToday ? 'font-extrabold underline decoration-2 underline-offset-4' : ''}`}
             >
-              {unconfiguredCount > 0 && date < todayDate && (
+              {incompleteCount > 0 && date < todayDate && (
                 <UnconfiguredMarker dateMarker className="absolute right-[3px] top-[3px] h-3 w-3" />
               )}
               <span>{day}</span>

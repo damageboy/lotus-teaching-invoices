@@ -1,10 +1,14 @@
-import { ParsedClass } from '../../lib/types';
+import type { ParsedClass, StudioConfig } from '../../lib/types';
 import { EventChip } from './EventChip';
+import { lessonNeedsConfiguration } from './lesson-value.js';
+import { localDateString } from './mobile-calendar.js';
+import { UnconfiguredMarker } from './UnconfiguredMarker.js';
 
 interface Props {
   year: number;
   month: number; // 0-indexed (0 = January)
   classes: ParsedClass[];
+  studios?: Record<string, StudioConfig>;
   colorMap?: Record<string, string | undefined>;
   onSelectLesson?: (lesson: ParsedClass, anchor: HTMLButtonElement) => void;
 }
@@ -19,7 +23,14 @@ function getFirstDayOfWeek(year: number, month: number) {
   return (day + 6) % 7;
 }
 
-export function CalendarGrid({ year, month, classes, colorMap = {}, onSelectLesson }: Props) {
+export function CalendarGrid({
+  year,
+  month,
+  classes,
+  studios = {},
+  colorMap = {},
+  onSelectLesson,
+}: Props) {
   const daysInMonth = getDaysInMonth(year, month);
   const firstDow = getFirstDayOfWeek(year, month);
 
@@ -40,6 +51,7 @@ export function CalendarGrid({ year, month, classes, colorMap = {}, onSelectLess
   while (cells.length % 7 !== 0) cells.push(null);
 
   const today = new Date();
+  const todayDate = localDateString(today.getFullYear(), today.getMonth(), today.getDate());
   const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
   return (
@@ -59,9 +71,12 @@ export function CalendarGrid({ year, month, classes, colorMap = {}, onSelectLess
         );
         const isToday =
           today.getFullYear() === year && today.getMonth() === month && today.getDate() === day;
+        const needsConfiguration = dayClasses.some((lesson) =>
+          lessonNeedsConfiguration(lesson, studios[lesson.studioName])
+        );
 
         return (
-          <div key={dateStr} className="bg-white min-h-[240px] p-1">
+          <div key={dateStr} className="relative bg-white min-h-[240px] p-1">
             <div
               className={`text-xs font-medium mb-1 w-5 h-5 flex items-center justify-center rounded-full ${
                 isToday ? 'bg-indigo-600 text-white' : 'text-gray-700'
@@ -69,6 +84,9 @@ export function CalendarGrid({ year, month, classes, colorMap = {}, onSelectLess
             >
               {day}
             </div>
+            {needsConfiguration && dateStr < todayDate && (
+              <UnconfiguredMarker dateMarker className="absolute right-1 top-1 h-3 w-3" />
+            )}
             {dayClasses.map((cls) => (
               <EventChip
                 key={cls.eventIdentity.eventId}
