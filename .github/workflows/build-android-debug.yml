@@ -1,0 +1,41 @@
+name: Build Android debug APK
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Build ARM64 debug APK
+        run: NDK_HOME="$ANDROID_NDK_HOME" bunx tauri android build --apk --target aarch64 --debug
+        env:
+          CI: true
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: lotus-android-arm64-debug
+          path: |
+            src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+            !src-tauri/gen/android/app/build/outputs/apk/**/*androidTest*.apk
+          if-no-files-found: error
