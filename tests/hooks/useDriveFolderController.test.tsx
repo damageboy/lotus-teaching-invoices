@@ -12,10 +12,12 @@ const { useDriveFolderController } = await import('../../src/hooks/useDriveFolde
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
-  const promise = new Promise<T>((resolvePromise) => {
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
     resolve = resolvePromise;
+    reject = rejectPromise;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 const config: AppConfig = {
@@ -172,6 +174,34 @@ describe('useDriveFolderController', () => {
     expect(view.result.current.error).toBeNull();
   });
 
+  it('does not adopt multiple authorization incarnations as its own transition', async () => {
+    const pending = deferred<void>();
+    const authorizeDrive = vi.fn(() => pending.promise);
+    const base = options({ authorizeDrive });
+    const view = renderHook(
+      ({ hasDriveAuthorization, authorizationIncarnation }) =>
+        useDriveFolderController({
+          ...base,
+          hasDriveAuthorization,
+          authorizationIncarnation,
+        }),
+      { initialProps: { hasDriveAuthorization: false, authorizationIncarnation: 1 } }
+    );
+    let opening!: Promise<void>;
+    act(() => {
+      opening = view.result.current.openDialog();
+    });
+    view.rerender({ hasDriveAuthorization: true, authorizationIncarnation: 2 });
+    view.rerender({ hasDriveAuthorization: true, authorizationIncarnation: 3 });
+    await act(async () => {
+      pending.resolve();
+      await opening;
+    });
+
+    expect(view.result.current.dialogOpen).toBe(false);
+    expect(view.result.current.error).toBeNull();
+  });
+
   it('activates remotely once when legacy-config cleanup needs a retry', async () => {
     const activateRoot = vi.fn(async () => undefined);
     const latestConfig: AppConfig = {
@@ -203,35 +233,33 @@ describe('useDriveFolderController', () => {
     );
     expect(attemptedConfigs.at(-1)).not.toHaveProperty('outputDir');
     expect(attemptedConfigs.at(-1)).not.toHaveProperty('lastInvoice');
+    expect(view.result.current.cleanupPending).toBe(false);
   });
 
-  it('retains durable cleanup debt when invoice sources change before retry', async () => {
+  it('keeps cleanup debt visible across close and semantic changes', async () => {
     const activateRoot = vi.fn(async () => undefined);
-    const refresh = vi.fn(async () => undefined);
-    const drive = driveState({ activateRoot, refresh });
-    let saveAttempt = 0;
-    let durableConfig: AppConfig | null = null;
-    const saveConfig = vi.fn<UseDriveFolderControllerOptions['saveConfig']>(async (update) => {
-      durableConfig = update(config);
-      saveAttempt += 1;
-      if (saveAttempt === 1) throw new Error('disk full');
+    const saveConfig = vi.fn<UseDriveFolderControllerOptions['saveConfig']>(async () => {
+      throw new Error('disk full');
     });
-    const base = options({ drive, saveConfig });
+    const base = options({ drive: driveState({ activateRoot }), saveConfig });
     const view = renderHook(
-      ({ sourceContextKey }) => useDriveFolderController({ ...base, sourceContextKey }),
-      { initialProps: { sourceContextKey: 'source-a' } }
+      ({ sourceContextKey, authorizationIncarnation }) =>
+        useDriveFolderController({ ...base, sourceContextKey, authorizationIncarnation }),
+      { initialProps: { sourceContextKey: 'source-a', authorizationIncarnation: 1 } }
     );
 
     await act(async () => {
       await expect(view.result.current.confirmRoot(stagedRoot)).rejects.toThrow('disk full');
     });
-    view.rerender({ sourceContextKey: 'source-b' });
-    await act(() => view.result.current.retry());
+    expect(view.result.current.cleanupPending).toBe(true);
+    expect(view.result.current.error).toBe('disk full');
+
+    act(() => view.result.current.closeDialog());
+    view.rerender({ sourceContextKey: 'source-b', authorizationIncarnation: 2 });
 
     expect(activateRoot).toHaveBeenCalledOnce();
-    expect(saveConfig).toHaveBeenCalledTimes(2);
-    expect(refresh).not.toHaveBeenCalled();
-    expect(durableConfig).not.toHaveProperty('lastInvoice');
+    expect(view.result.current.cleanupPending).toBe(true);
+    expect(view.result.current.error).toBe('disk full');
   });
 
   it('scans with an empty source list when invoice sources are unavailable', async () => {
@@ -323,6 +351,35 @@ describe('useDriveFolderController', () => {
     });
     expect(saveConfig).not.toHaveBeenCalled();
     expect(view.result.current.dialogOpen).toBe(true);
+    expect(view.result.current.error).toBeNull();
+  });
+
+  it('does not let an older retry failure replace a newer retry result', async () => {
+    const older = deferred<void>();
+    const newer = deferred<void>();
+    const refresh = vi
+      .fn<() => Promise<void>>()
+      .mockReturnValueOnce(older.promise)
+      .mockReturnValueOnce(newer.promise);
+    const view = renderHook(() =>
+      useDriveFolderController({ ...options(), drive: driveState({ refresh }) })
+    );
+    let olderRetry!: Promise<void>;
+    let newerRetry!: Promise<void>;
+    act(() => {
+      olderRetry = view.result.current.retry();
+      newerRetry = view.result.current.retry();
+    });
+
+    await act(async () => {
+      older.reject(new Error('older retry failed'));
+      await expect(olderRetry).rejects.toThrow('older retry failed');
+    });
+    await act(async () => {
+      newer.resolve();
+      await newerRetry;
+    });
+
     expect(view.result.current.error).toBeNull();
   });
 });

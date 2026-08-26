@@ -72,7 +72,7 @@ export function DriveFolderDialog({
   const closeRef = useRef<HTMLButtonElement>(null);
   const requestRef = useRef(0);
   const confirmingRef = useRef(false);
-  const mobileHistoryRef = useRef<{ id: number; previousState: unknown } | null>(null);
+  const mobileHistoryRef = useRef<{ id: number; closing: boolean } | null>(null);
   const mobileHistorySequenceRef = useRef(0);
   const [phase, setPhase] = useState<DialogPhase>('browse');
   const [locations, setLocations] = useState<DriveLocation[]>([]);
@@ -93,16 +93,20 @@ export function DriveFolderDialog({
 
   const finishClose = useCallback(
     (fromHistory: boolean) => {
-      requestRef.current += 1;
       const historyEntry = mobileHistoryRef.current;
-      mobileHistoryRef.current = null;
       if (
         !fromHistory &&
         historyEntry !== null &&
         window.history.state?.lotusDriveFolderDialog === historyEntry.id
       ) {
-        window.history.replaceState(historyEntry.previousState, '');
+        if (historyEntry.closing) return;
+        historyEntry.closing = true;
+        requestRef.current += 1;
+        window.history.back();
+        return;
       }
+      requestRef.current += 1;
+      mobileHistoryRef.current = null;
       onClose();
     },
     [onClose]
@@ -228,13 +232,16 @@ export function DriveFolderDialog({
 
   useEffect(() => {
     if (!open || layout !== 'mobile') return;
-    const id = ++mobileHistorySequenceRef.current;
-    const previousState = window.history.state;
-    window.history.pushState({ lotusDriveFolderDialog: id }, '');
-    mobileHistoryRef.current = { id, previousState };
+    let historyEntry = mobileHistoryRef.current;
+    if (historyEntry === null) {
+      const id = ++mobileHistorySequenceRef.current;
+      window.history.pushState({ lotusDriveFolderDialog: id }, '');
+      historyEntry = { id, closing: false };
+      mobileHistoryRef.current = historyEntry;
+    }
 
     function handlePopState(event: PopStateEvent): void {
-      if (mobileHistoryRef.current?.id !== id) return;
+      if (mobileHistoryRef.current !== historyEntry) return;
       event.stopImmediatePropagation();
       finishClose(true);
     }

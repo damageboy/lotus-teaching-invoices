@@ -8,6 +8,7 @@ import type { DriveInvoicesState } from './useDriveInvoices.js';
 export interface DriveFolderController {
   dialogOpen: boolean;
   opening: boolean;
+  cleanupPending: boolean;
   error: string | null;
   openDialog(): Promise<void>;
   closeDialog(): void;
@@ -106,9 +107,11 @@ export function useDriveFolderController(
   const semanticIncarnationRef = useRef(0);
   const sourceIncarnationRef = useRef(0);
   const sessionRef = useRef(0);
+  const retryGenerationRef = useRef(0);
   const pendingCleanupRef = useRef<PendingConfigCleanup | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [opening, setOpening] = useState(false);
+  const [cleanupPending, setCleanupPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useLayoutEffect(() => {
@@ -120,7 +123,7 @@ export function useDriveFolderController(
       semanticIncarnationRef.current += 1;
       if (sourcesChanged) sourceIncarnationRef.current += 1;
       setOpening(false);
-      setError(null);
+      if (pendingCleanupRef.current === null) setError(null);
     }
     committedIdentityRef.current = {
       authorizationIncarnation: options.authorizationIncarnation,
@@ -195,7 +198,7 @@ export function useDriveFolderController(
     if (
       !mountedRef.current ||
       !current.hasDriveAuthorization ||
-      current.authorizationIncarnation <= context.authorizationIncarnation ||
+      current.authorizationIncarnation !== context.authorizationIncarnation + 1 ||
       context.sourceIncarnation !== sourceIncarnationRef.current ||
       context.session !== sessionRef.current
     ) {
@@ -232,7 +235,7 @@ export function useDriveFolderController(
     sessionRef.current += 1;
     setDialogOpen(false);
     setOpening(false);
-    setError(null);
+    if (pendingCleanupRef.current === null) setError(null);
   }, []);
 
   const scanCandidate = useCallback(
@@ -267,7 +270,10 @@ export function useDriveFolderController(
           : null
       );
       requireCurrent(context, operation);
-      if (pendingCleanupRef.current === pending) pendingCleanupRef.current = null;
+      if (pendingCleanupRef.current === pending) {
+        pendingCleanupRef.current = null;
+        setCleanupPending(false);
+      }
     },
     [contextIsCurrent, requireCurrent]
   );
@@ -285,6 +291,7 @@ export function useDriveFolderController(
           await current.drive.activateRoot(stagedRoot, current.config.lastInvoice);
           pending = { rootKey };
           pendingCleanupRef.current = pending;
+          setCleanupPending(true);
           requireCurrent(context, 'confirmation');
         }
         await savePendingCleanup(pending, context, 'confirmation');
@@ -298,6 +305,7 @@ export function useDriveFolderController(
   );
 
   const retry = useCallback(async (): Promise<void> => {
+    const generation = ++retryGenerationRef.current;
     const context = captureContext();
     setError(null);
     try {
@@ -308,9 +316,10 @@ export function useDriveFolderController(
         await committedOptionsRef.current.drive.refresh();
         requireCurrent(context, 'retry');
       }
+      if (generation === retryGenerationRef.current) setError(null);
     } catch (cause) {
       if (!contextIsCurrent(context)) throw obsoleteError(context, 'retry');
-      setError(errorMessage(cause));
+      if (generation === retryGenerationRef.current) setError(errorMessage(cause));
       throw cause;
     }
   }, [captureContext, contextIsCurrent, obsoleteError, requireCurrent, savePendingCleanup]);
@@ -318,6 +327,7 @@ export function useDriveFolderController(
   return {
     dialogOpen,
     opening,
+    cleanupPending,
     error,
     openDialog,
     closeDialog,

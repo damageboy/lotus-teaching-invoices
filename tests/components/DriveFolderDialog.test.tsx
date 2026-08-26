@@ -771,22 +771,30 @@ describe('DriveFolderDialog', () => {
   it('renders an accessible mobile modal with 48-pixel controls and dismisses on Escape', async () => {
     const user = userEvent.setup({ document });
     const onClose = vi.fn();
+    const historyBack = vi.spyOn(window.history, 'back').mockImplementation(() => undefined);
     render(<DriveFolderDialog {...dialogProps({ layout: 'mobile', onClose })} />);
 
-    const dialog = screen.getByRole('dialog', { name: 'Choose Drive invoice folder' });
-    expect(dialog.getAttribute('aria-modal')).toBe('true');
-    await user.click(await screen.findByRole('button', { name: 'My Drive' }));
-    const controls = [...dialog.querySelectorAll<HTMLElement>('button, input')];
-    expect(controls.length).toBeGreaterThan(0);
-    expect(
-      controls.every(
-        (control) =>
-          control.classList.contains('min-h-12') && control.classList.contains('min-w-12')
-      )
-    ).toBe(true);
+    try {
+      const dialog = screen.getByRole('dialog', { name: 'Choose Drive invoice folder' });
+      expect(dialog.getAttribute('aria-modal')).toBe('true');
+      await user.click(await screen.findByRole('button', { name: 'My Drive' }));
+      const controls = [...dialog.querySelectorAll<HTMLElement>('button, input')];
+      expect(controls.length).toBeGreaterThan(0);
+      expect(
+        controls.every(
+          (control) =>
+            control.classList.contains('min-h-12') && control.classList.contains('min-w-12')
+        )
+      ).toBe(true);
 
-    fireEvent.keyDown(document, { key: 'Escape' });
-    expect(onClose).toHaveBeenCalledOnce();
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(historyBack).toHaveBeenCalledOnce();
+      expect(onClose).not.toHaveBeenCalled();
+      fireEvent.popState(window);
+      expect(onClose).toHaveBeenCalledOnce();
+    } finally {
+      historyBack.mockRestore();
+    }
   });
 
   it('owns Android Back while the mobile folder dialog is open', () => {
@@ -800,6 +808,65 @@ describe('DriveFolderDialog', () => {
     expect(onClose).toHaveBeenCalledOnce();
     expect(dismissUnderlyingWizard).not.toHaveBeenCalled();
     window.removeEventListener('popstate', dismissUnderlyingWizard);
+  });
+
+  it('owns one mobile history entry under React Strict Mode', () => {
+    const pushState = vi.spyOn(window.history, 'pushState');
+    const onClose = vi.fn();
+    const dismissUnderlyingWizard = vi.fn();
+    window.addEventListener('popstate', dismissUnderlyingWizard);
+    try {
+      render(
+        <React.StrictMode>
+          <DriveFolderDialog {...dialogProps({ layout: 'mobile', onClose })} />
+        </React.StrictMode>
+      );
+
+      expect(pushState).toHaveBeenCalledOnce();
+      fireEvent.popState(window);
+      expect(onClose).toHaveBeenCalledOnce();
+      expect(dismissUnderlyingWizard).not.toHaveBeenCalled();
+    } finally {
+      pushState.mockRestore();
+      window.removeEventListener('popstate', dismissUnderlyingWizard);
+    }
+  });
+
+  it('balances explicit close and reopen history without consuming parent history', async () => {
+    const pushState = vi.spyOn(window.history, 'pushState');
+    const historyBack = vi.spyOn(window.history, 'back').mockImplementation(() => undefined);
+    const onClose = vi.fn();
+    const dismissUnderlyingWizard = vi.fn();
+    window.addEventListener('popstate', dismissUnderlyingWizard);
+    const props = dialogProps({ layout: 'mobile', onClose });
+    try {
+      const view = render(<DriveFolderDialog {...props} />);
+      expect(pushState).toHaveBeenCalledOnce();
+
+      await click(screen.getByRole('button', { name: 'Close' }));
+      expect(historyBack).toHaveBeenCalledOnce();
+      expect(onClose).not.toHaveBeenCalled();
+      fireEvent.popState(window);
+      expect(onClose).toHaveBeenCalledOnce();
+      expect(dismissUnderlyingWizard).not.toHaveBeenCalled();
+
+      view.rerender(<DriveFolderDialog {...props} open={false} />);
+      view.rerender(<DriveFolderDialog {...props} open />);
+      expect(pushState).toHaveBeenCalledTimes(2);
+      await click(screen.getByRole('button', { name: 'Close' }));
+      expect(historyBack).toHaveBeenCalledTimes(2);
+      fireEvent.popState(window);
+      expect(onClose).toHaveBeenCalledTimes(2);
+      expect(dismissUnderlyingWizard).not.toHaveBeenCalled();
+
+      view.rerender(<DriveFolderDialog {...props} open={false} />);
+      fireEvent.popState(window);
+      expect(dismissUnderlyingWizard).toHaveBeenCalledOnce();
+    } finally {
+      pushState.mockRestore();
+      historyBack.mockRestore();
+      window.removeEventListener('popstate', dismissUnderlyingWizard);
+    }
   });
 
   it('renders nothing while closed and does not browse Drive', () => {
