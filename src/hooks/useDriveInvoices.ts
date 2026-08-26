@@ -226,8 +226,8 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
     [contextIsCurrent, currentContext]
   );
 
-  const runRefresh = useCallback(
-    (force = false): Promise<void> => {
+  const runRefresh: (force?: boolean, knownConfigured?: boolean) => Promise<void> = useCallback(
+    (force = false, knownConfigured = false): Promise<void> => {
       const current = committedOptionsRef.current;
       const context: SemanticContext = {
         incarnation: semanticIncarnationRef.current,
@@ -251,8 +251,9 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
       const store = current.store;
       const sources = current.sources;
       const hasSnapshot =
-        machineRef.current.authorizationIncarnation === authorizationIncarnation &&
-        machineRef.current.snapshot !== null;
+        knownConfigured ||
+        (machineRef.current.authorizationIncarnation === authorizationIncarnation &&
+          machineRef.current.snapshot !== null);
       const refreshGeneration = ++refreshGenerationRef.current;
       const actionErrorGeneration = actionErrorGenerationRef.current;
 
@@ -278,6 +279,10 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
           } else {
             snapshot = await store.bootstrap([]);
             if (!contextIsCurrent(context) || refreshGenerationRef.current !== refreshGeneration) {
+              const latest = committedOptionsRef.current;
+              if (snapshot !== null && mountedRef.current && latest.store === store) {
+                return runRefresh(true, true);
+              }
               return;
             }
             if (snapshot !== null && sources.length > 0) {

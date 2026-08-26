@@ -279,6 +279,7 @@ describe('useDriveInvoices', () => {
     const pending = deferred<DriveStoreSnapshot>();
     const store = storeDouble();
     store.bootstrap.mockReturnValue(pending.promise);
+    store.refresh.mockResolvedValue(snapshotFor('strict'));
     const { result } = renderHook(() => useDriveInvoices(options({ store, sources: [] })), {
       reactStrictMode: true,
     });
@@ -434,6 +435,7 @@ describe('useDriveInvoices', () => {
     store.bootstrap
       .mockReturnValueOnce(first.promise)
       .mockResolvedValueOnce(snapshotFor('account-b'));
+    store.refresh.mockResolvedValue(snapshotFor('account-b'));
     const { result, rerender } = renderHook(
       ({ authorizationIncarnation }) =>
         useDriveInvoices(options({ authorizationIncarnation, store, sources: [] })),
@@ -456,7 +458,7 @@ describe('useDriveInvoices', () => {
     const newer = deferred<DriveStoreSnapshot>();
     const store = storeDouble();
     store.bootstrap.mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise);
-    store.refresh.mockResolvedValueOnce(snapshotFor('newer'));
+    store.refresh.mockResolvedValue(snapshotFor('newer'));
     const { result, rerender } = renderHook(
       ({ sources }) => useDriveInvoices(options({ sources, store })),
       { initialProps: { sources: [source('older')] } }
@@ -627,14 +629,28 @@ describe('useDriveInvoices', () => {
     expect(store.refresh.mock.calls[0][0][0].fingerprint.sourceSha256).toBe('ready-source');
   });
 
-  it('reconciles only the current sources when they change during bootstrap', async () => {
+  it('repairs current store sources after a stale bootstrap completes last', async () => {
     const olderBootstrap = deferred<DriveStoreSnapshot>();
     const newerBootstrap = deferred<DriveStoreSnapshot>();
     const store = storeDouble();
+    let storedSourceHash = 'unset';
     store.bootstrap
-      .mockReturnValueOnce(olderBootstrap.promise)
-      .mockReturnValueOnce(newerBootstrap.promise);
-    store.refresh.mockResolvedValueOnce(snapshotFor('reconciled-newer'));
+      .mockReturnValueOnce(
+        olderBootstrap.promise.then((snapshot) => {
+          storedSourceHash = 'empty';
+          return snapshot;
+        })
+      )
+      .mockReturnValueOnce(
+        newerBootstrap.promise.then((snapshot) => {
+          storedSourceHash = 'empty';
+          return snapshot;
+        })
+      );
+    store.refresh.mockImplementation(async (sources) => {
+      storedSourceHash = sources[0]?.fingerprint.sourceSha256 ?? 'empty';
+      return snapshotFor(`reconciled-${storedSourceHash}`);
+    });
     const view = renderHook(
       ({ sources }) =>
         useDriveInvoices(
@@ -653,14 +669,21 @@ describe('useDriveInvoices', () => {
 
     await waitFor(() => expect(store.refresh).toHaveBeenCalledOnce());
     expect(store.refresh.mock.calls[0][0][0].fingerprint.sourceSha256).toBe('newer-source');
-    expect(view.result.current.snapshot?.stagedRoot.root.folderId).toBe('reconciled-newer-root');
+    expect(storedSourceHash).toBe('newer-source');
+    expect(view.result.current.snapshot?.stagedRoot.root.folderId).toBe(
+      'reconciled-newer-source-root'
+    );
 
     await act(async () => {
       olderBootstrap.resolve(snapshotFor('discovered-older'));
       await olderBootstrap.promise;
     });
-    expect(store.refresh).toHaveBeenCalledOnce();
-    expect(view.result.current.snapshot?.stagedRoot.root.folderId).toBe('reconciled-newer-root');
+    await waitFor(() => expect(store.refresh).toHaveBeenCalledTimes(2));
+    expect(store.refresh.mock.calls[1][0][0].fingerprint.sourceSha256).toBe('newer-source');
+    expect(storedSourceHash).toBe('newer-source');
+    expect(view.result.current.snapshot?.stagedRoot.root.folderId).toBe(
+      'reconciled-newer-source-root'
+    );
   });
 
   it('refreshes on focus only while foreground refresh is enabled', async () => {
