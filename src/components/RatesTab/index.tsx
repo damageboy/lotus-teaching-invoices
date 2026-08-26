@@ -4,12 +4,17 @@ import { nextUnusedColor } from '../../lib/studioColors';
 import { APP_VERSION, APP_IS_OFFICIAL } from '../../lib/version';
 import type { AppLayout } from '../../hooks/useCompactLayout';
 import type { CalendarPickerController } from '../../hooks/useCalendarPicker';
+import type { DriveFolderController } from '../../hooks/useDriveFolderController';
+import type { DriveInvoicesState } from '../../hooks/useDriveInvoices';
+import { ConnectionsSection } from '../setup/ConnectionsSection';
 import { MobileSettings, StudioCard } from './MobileSettings';
 
 interface Props {
   layout?: AppLayout;
   config: AppConfig;
   calendarPicker: CalendarPickerController;
+  drive: Pick<DriveInvoicesState, 'status' | 'snapshot' | 'error' | 'operationKey'>;
+  driveFolder: DriveFolderController;
   isDirty: boolean;
   saveError: string | null;
   onUpdate: (c: AppConfig) => void;
@@ -20,13 +25,13 @@ export function RatesTab({
   layout = 'desktop',
   config,
   calendarPicker,
+  drive,
+  driveFolder,
   isDirty,
   saveError,
   onUpdate,
   onSave,
 }: Props) {
-  const calendarBusy = calendarPicker.loading || calendarPicker.saving;
-
   function updateTeacher(key: keyof Omit<TeacherInfo, 'bankDetails'>, value: string) {
     onUpdate({ ...config, teacher: { ...config.teacher, [key]: value } });
   }
@@ -166,18 +171,18 @@ export function RatesTab({
         config={config}
         isDirty={isDirty}
         saveError={saveError}
-        selectedCalendarName={calendarPicker.selectedName}
-        calendars={calendarPicker.calendars}
-        calendarListOpen={calendarPicker.listOpen}
-        calendarLoading={calendarBusy}
-        calendarError={calendarPicker.error}
+        connections={
+          <ConnectionsSection
+            layout="mobile"
+            calendarConfigured={Boolean(config.calendarId?.trim())}
+            calendarPicker={calendarPicker}
+            drive={drive}
+            driveFolder={driveFolder}
+          />
+        }
         onSave={() => onSave()}
         onUpdateTeacher={updateTeacher}
         onUpdateBank={updateBank}
-        onPickCalendar={calendarPicker.openList}
-        onSelectCalendar={(id, summary, accessRole) =>
-          calendarPicker.select({ id, summary, ...(accessRole ? { accessRole } : {}) })
-        }
         onRenameStudio={updateStudioName}
         onDeleteStudio={deleteStudio}
         onUpdateTier={updateTier}
@@ -211,6 +216,14 @@ export function RatesTab({
           </button>
         </div>
       </div>
+
+      <ConnectionsSection
+        layout="desktop"
+        calendarConfigured={Boolean(config.calendarId?.trim())}
+        calendarPicker={calendarPicker}
+        drive={drive}
+        driveFolder={driveFolder}
+      />
 
       {/* Global settings */}
       <div className="flex flex-col gap-3 p-4 rounded border border-gray-200">
@@ -266,56 +279,6 @@ export function RatesTab({
             onChange={(e) => updateBank('bic', e.target.value)}
           />
         </label>
-
-        <h3 className="text-sm font-medium text-gray-700 mt-2">Calendar</h3>
-        <div className="flex flex-col gap-2">
-          {config.calendarId ? (
-            <div className="flex min-w-0 items-center gap-2">
-              <span className="min-w-0 flex-1 truncate text-sm text-gray-800">
-                {calendarPicker.selectedName}
-              </span>
-              <button
-                onClick={() => void calendarPicker.openList()}
-                disabled={calendarBusy}
-                className="flex-shrink-0 text-xs text-indigo-500 hover:text-indigo-700"
-              >
-                {calendarBusy ? 'Loading…' : 'Change…'}
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => void calendarPicker.openList()}
-              disabled={calendarBusy}
-              className="self-start px-3 py-1.5 rounded border border-gray-300 text-sm text-gray-600 hover:border-indigo-400 hover:text-indigo-600"
-            >
-              {calendarBusy ? 'Loading…' : 'Pick Calendar…'}
-            </button>
-          )}
-          {calendarPicker.error && (
-            <span className="text-xs text-red-500">{calendarPicker.error}</span>
-          )}
-          {calendarPicker.listOpen && calendarPicker.calendars && (
-            <div className="flex flex-col gap-1 p-2 rounded border border-gray-200 bg-gray-50 max-h-48 overflow-y-auto">
-              {calendarPicker.calendars.map((cal) => (
-                <button
-                  key={cal.id}
-                  onClick={() => void calendarPicker.select(cal)}
-                  disabled={calendarPicker.saving}
-                  className={`text-left text-sm px-2 py-1 rounded hover:bg-indigo-50 ${
-                    config.calendarId === cal.id
-                      ? 'bg-indigo-100 text-indigo-700 font-medium'
-                      : 'text-gray-700'
-                  }`}
-                >
-                  {cal.summary}
-                </button>
-              ))}
-              {calendarPicker.calendars.length === 0 && (
-                <span className="text-xs text-gray-400">No calendars found</span>
-              )}
-            </div>
-          )}
-        </div>
       </div>
 
       {/* Studio cards — use index key so renaming doesn't unmount the card */}

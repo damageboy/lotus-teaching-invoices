@@ -2,6 +2,8 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import type { CalendarPickerController } from '../../src/hooks/useCalendarPicker.js';
+import type { DriveFolderController } from '../../src/hooks/useDriveFolderController.js';
+import type { DriveInvoicesState } from '../../src/hooks/useDriveInvoices.js';
 import { AppConfig } from '../../src/lib/types.js';
 
 (globalThis as unknown as { __APP_VERSION__: string }).__APP_VERSION__ = 'test';
@@ -40,12 +42,36 @@ describe('RatesTab calendar picker', () => {
       select: vi.fn(async () => undefined),
       closeList: vi.fn(),
     };
+    const drive: Pick<DriveInvoicesState, 'status' | 'snapshot' | 'error' | 'operationKey'> = {
+      status: 'unconfigured',
+      snapshot: null,
+      error: null,
+      operationKey: null,
+    };
+    const driveFolder: DriveFolderController = {
+      dialogOpen: false,
+      opening: false,
+      cleanupPending: false,
+      error: null,
+      openDialog: vi.fn(async () => undefined),
+      closeDialog: vi.fn(),
+      scanCandidate: vi.fn(async () => ({
+        entries: [],
+        warnings: [],
+        blockingConflicts: [],
+        maxSequenceByYear: {},
+      })),
+      confirmRoot: vi.fn(async () => undefined),
+      retry: vi.fn(async () => undefined),
+    };
 
     const html = renderToStaticMarkup(
       React.createElement(RatesTab, {
         layout: 'mobile',
         config: { ...config, calendarId: opaqueCalendarId },
         calendarPicker,
+        drive,
+        driveFolder,
         isDirty: true,
         saveError: null,
         onUpdate: vi.fn(),

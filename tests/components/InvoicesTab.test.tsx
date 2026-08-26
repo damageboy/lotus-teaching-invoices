@@ -16,7 +16,7 @@ function render(ui: ReactNode) {
   const root = createRoot(container);
   roots.push({ root, container });
   act(() => root.render(ui));
-  return root;
+  return { root, container, render: root.render.bind(root) };
 }
 
 function button(name: string): HTMLButtonElement {
@@ -181,7 +181,6 @@ function props(overrides: Record<string, unknown> = {}) {
     onAcknowledgeFreshnessClear: vi.fn(),
     onRefreshFreshness: vi.fn(async () => {}),
     drive: driveState('ready'),
-    onChooseDriveFolder: vi.fn(async () => {}),
     dependencies: dependencies(),
     ...overrides,
   };
@@ -205,14 +204,18 @@ describe('Drive-backed InvoicesTab', () => {
     await waitFor(() => expect(drive.recoverReservation).toHaveBeenCalledOnce());
   });
 
-  it('keeps Preview available before Drive setup and disables persistent actions', () => {
-    render(<InvoicesTab {...(props({ drive: driveState('unconfigured') }) as any)} />);
-
-    expect(button('Preview PDF').disabled).toBe(false);
-    expect(button('Finalize PDF').disabled).toBe(true);
-    expect(button('Choose Drive folder').disabled).toBe(false);
-    expect(document.body.textContent).not.toContain('/legacy-output');
-  });
+  it.each(['desktop', 'mobile'] as const)(
+    'renders no invoice content when Drive is unconfigured on %s',
+    (layout) => {
+      const { container } = render(
+        <InvoicesTab {...(props({ layout, drive: driveState('unconfigured') }) as any)} />
+      );
+      expect(container.innerHTML).toBe('');
+      expect(document.querySelector('[role="alert"]')).toBeNull();
+      expect(document.querySelector('table')).toBeNull();
+      expect(document.body.textContent).not.toContain('Choose Drive');
+    }
+  );
 
   it('uses verified Drive bytes for open and draft without rendering a replacement', async () => {
     const bytes = new Uint8Array([37, 80, 68, 70]);
@@ -420,7 +423,7 @@ describe('Drive-backed InvoicesTab', () => {
     expect(button('Draft Email').disabled).toBe(true);
   });
 
-  it('shows historical Drive-only rows and the configured root with refresh and switch actions', async () => {
+  it('shows historical Drive-only rows and refreshes the configured Drive view', async () => {
     const historical = entry('fresh', {
       key: { studioSlug: 'former-studio', monthKey: '2025-11' },
       file: { ...entry().file, id: 'historical' },
@@ -432,10 +435,8 @@ describe('Drive-backed InvoicesTab', () => {
 
     expect(document.body.textContent).toContain('former-studio');
     expect(document.body.textContent).toContain('3/2025');
-    expect(document.body.textContent).toContain('Lotus Invoices');
     await click(button('Refresh Drive'));
     expect(drive.refresh).toHaveBeenCalledOnce();
-    expect(button('Change Drive folder…').disabled).toBe(false);
   });
 
   it('resolves a historical Drive-only slug to one configured studio for display and email', async () => {
@@ -531,22 +532,6 @@ describe('Drive-backed InvoicesTab', () => {
     expect(button('Draft Email').disabled).toBe(true);
     expect(button('Preview PDF').disabled).toBe(true);
     expect(button('Finalize PDF').disabled).toBe(true);
-  });
-
-  it('delegates Drive folder setup to the App-owned controller', async () => {
-    const onChooseDriveFolder = vi.fn(async () => undefined);
-    render(
-      <InvoicesTab
-        {...(props({
-          drive: driveState('authorizationRequired'),
-          onChooseDriveFolder,
-        }) as any)}
-      />
-    );
-
-    await click(button('Choose Drive folder'));
-    expect(onChooseDriveFolder).toHaveBeenCalledOnce();
-    expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
   it('shows a row-scoped operation indicator from the controller operation key', () => {

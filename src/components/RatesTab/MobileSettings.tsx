@@ -1,13 +1,5 @@
-import { useEffect, useState } from 'react';
-import type {
-  AppConfig,
-  BankDetails,
-  CalendarAccessRole,
-  RateTier,
-  StudioConfig,
-  TeacherInfo,
-} from '../../lib/types';
-import type { CalendarListEntry } from '../../lib/calendar/calendar-api';
+import { useEffect, useState, type ReactNode } from 'react';
+import type { AppConfig, BankDetails, RateTier, StudioConfig, TeacherInfo } from '../../lib/types';
 import type { AppLayout } from '../../hooks/useCompactLayout';
 import { ColorPickerPopup } from '../ColorPickerPopup';
 import { effectiveHex } from '../../lib/studioColors';
@@ -409,20 +401,10 @@ export interface MobileSettingsProps {
   config: AppConfig;
   isDirty: boolean;
   saveError: string | null;
-  selectedCalendarName: string;
-  calendars: readonly CalendarListEntry[] | null;
-  calendarListOpen: boolean;
-  calendarLoading: boolean;
-  calendarError: string | null;
+  connections: ReactNode;
   onSave: () => void | Promise<void>;
   onUpdateTeacher: (field: keyof Omit<TeacherInfo, 'bankDetails'>, value: string) => void;
   onUpdateBank: (field: keyof BankDetails, value: string) => void;
-  onPickCalendar: () => void | Promise<void>;
-  onSelectCalendar: (
-    id: string,
-    name: string,
-    accessRole: CalendarAccessRole | undefined
-  ) => void | Promise<void>;
   onRenameStudio: (oldName: string, newName: string) => void;
   onDeleteStudio: (name: string) => void;
   onUpdateTier: (studioName: string, index: number, field: keyof RateTier, raw: string) => void;
@@ -443,16 +425,10 @@ export function MobileSettings({
   config,
   isDirty,
   saveError,
-  selectedCalendarName,
-  calendars,
-  calendarListOpen,
-  calendarLoading,
-  calendarError,
+  connections,
   onSave,
   onUpdateTeacher,
   onUpdateBank,
-  onPickCalendar,
-  onSelectCalendar,
   onRenameStudio,
   onDeleteStudio,
   onUpdateTier,
@@ -490,6 +466,8 @@ export function MobileSettings({
           Save
         </button>
       </div>
+
+      {connections}
 
       <section className="flex min-w-0 flex-col gap-3 rounded-lg border border-gray-200 p-4">
         <h3 className="font-medium text-gray-800">Teacher</h3>
@@ -546,56 +524,6 @@ export function MobileSettings({
             onChange={(event) => onUpdateBank('bic', event.target.value)}
           />
         </label>
-      </section>
-
-      <section className="flex min-w-0 flex-col gap-3 rounded-lg border border-gray-200 p-4">
-        <h3 className="font-medium text-gray-800">Calendar</h3>
-        {config.calendarId ? (
-          <div className="flex min-w-0 flex-col gap-2">
-            <span className="break-words text-base text-gray-800">{selectedCalendarName}</span>
-            <button
-              type="button"
-              onClick={() => void onPickCalendar()}
-              disabled={calendarLoading}
-              className="min-h-12 rounded border border-gray-300 px-4 text-base text-indigo-600 disabled:opacity-40"
-            >
-              {calendarLoading ? 'Loading calendars…' : 'Change calendar'}
-            </button>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => void onPickCalendar()}
-            disabled={calendarLoading}
-            className="min-h-12 rounded border border-gray-300 px-4 text-base text-indigo-600 disabled:opacity-40"
-          >
-            {calendarLoading ? 'Loading calendars…' : 'Pick calendar'}
-          </button>
-        )}
-        {calendarError && <p className="text-sm text-red-600">{calendarError}</p>}
-        {calendarListOpen && calendars && (
-          <div className="flex max-h-60 flex-col gap-1 overflow-y-auto rounded border border-gray-200 bg-gray-50 p-2">
-            {calendars.map((calendar) => (
-              <button
-                type="button"
-                key={calendar.id}
-                onClick={() =>
-                  void onSelectCalendar(calendar.id, calendar.summary, calendar.accessRole)
-                }
-                className={`min-h-12 rounded px-3 text-left text-base ${
-                  config.calendarId === calendar.id
-                    ? 'bg-indigo-100 font-medium text-indigo-700'
-                    : 'text-gray-700'
-                }`}
-              >
-                {calendar.summary}
-              </button>
-            ))}
-            {calendars.length === 0 && (
-              <span className="px-2 py-3 text-sm text-gray-500">No calendars found</span>
-            )}
-          </div>
-        )}
       </section>
 
       <section className="flex min-w-0 flex-col gap-3">

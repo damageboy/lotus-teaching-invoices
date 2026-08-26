@@ -34,16 +34,10 @@ function mobileSettingsProps() {
     config,
     isDirty: true,
     saveError: null,
-    selectedCalendarName: 'Classes',
-    calendars: [{ id: 'opaque-calendar-id', summary: 'Classes', accessRole: 'owner' as const }],
-    calendarListOpen: false,
-    calendarLoading: false,
-    calendarError: null,
+    connections: React.createElement('section', null, 'Connections'),
     onSave: vi.fn(async () => undefined),
     onUpdateTeacher: vi.fn(),
     onUpdateBank: vi.fn(),
-    onPickCalendar: vi.fn(),
-    onSelectCalendar: vi.fn(),
     onRenameStudio: vi.fn(),
     onDeleteStudio: vi.fn(),
     onUpdateTier: vi.fn(),
@@ -60,11 +54,10 @@ describe('MobileSettings', () => {
     const html = renderToStaticMarkup(React.createElement(MobileSettings, mobileSettingsProps()));
     const document = new JSDOM(html).window.document;
 
-    for (const section of ['Teacher', 'Bank details', 'Calendar', 'Studios and rates']) {
+    for (const section of ['Connections', 'Teacher', 'Bank details', 'Studios and rates']) {
       expect(document.body.textContent).toContain(section);
     }
-    expect(document.body.textContent).toContain('Classes');
-    expect(document.body.textContent).not.toContain('opaque-calendar-id');
+    expect(html.indexOf('Connections')).toBeLessThan(html.indexOf('Teacher'));
     expect(document.body.textContent).not.toContain('Last invoice number');
     expect(document.body.textContent).not.toContain('output folder');
 

@@ -258,7 +258,6 @@ export default function App() {
             config={config}
             drive={driveInvoices}
             sourceError={invoiceSourceError}
-            onChooseDriveFolder={driveFolder.openDialog}
           />
         )}
         {activeTab === 'income' && <IncomeTab layout={layout} classes={classes} config={config} />}
@@ -267,6 +266,8 @@ export default function App() {
             layout={layout}
             config={config}
             calendarPicker={calendarPicker}
+            drive={driveInvoices}
+            driveFolder={driveFolder}
             isDirty={isDirty}
             saveError={configSaveError}
             onUpdate={updateConfig}

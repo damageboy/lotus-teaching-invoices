@@ -27,7 +27,6 @@ export interface InvoiceDisplayRow {
 interface Props {
   displayRows: InvoiceDisplayRow[];
   driveStatus: DriveInvoicesStatus;
-  rootName: string | null;
   globalMessages: readonly string[];
   recoveryRequired: boolean;
   operationKey: string | null;
@@ -37,7 +36,6 @@ interface Props {
   onFinalize: (row: InvoiceRow) => void;
   onOpen: (row: InvoiceRow) => void;
   onDraftEmail: (row: InvoiceRow) => void;
-  onChooseDriveFolder: () => void;
   onRefresh: () => void;
   onRecoverReservation: () => void;
 }
@@ -77,7 +75,6 @@ function operationLabel(
 export function MobileInvoices({
   displayRows,
   driveStatus,
-  rootName,
   globalMessages,
   recoveryRequired,
   operationKey,
@@ -87,54 +84,22 @@ export function MobileInvoices({
   onFinalize,
   onOpen,
   onDraftEmail,
-  onChooseDriveFolder,
   onRefresh,
   onRecoverReservation,
 }: Props) {
   const monthGroups = groupByMonth(displayRows);
-  const configured = rootName !== null;
-
   return (
     <div className="mobile-invoices p-4 flex flex-col gap-4">
-      <section className="rounded border border-indigo-100 bg-indigo-50 p-3 text-sm text-indigo-950">
-        {configured ? (
-          <>
-            <p>
-              Drive folder: <strong>{rootName}</strong>
-            </p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={onRefresh}
-                disabled={driveStatus === 'loading' || operationKey !== null}
-                className="min-h-12 rounded border border-indigo-300 bg-white px-3 font-medium disabled:opacity-40"
-              >
-                Refresh Drive
-              </button>
-              <button
-                type="button"
-                onClick={onChooseDriveFolder}
-                disabled={operationKey !== null}
-                className="min-h-12 rounded border border-indigo-300 bg-white px-3 font-medium disabled:opacity-40"
-              >
-                Change Drive folder…
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            <p>Choose a Drive folder before finalizing invoices.</p>
-            <button
-              type="button"
-              onClick={onChooseDriveFolder}
-              disabled={operationKey !== null}
-              className="mt-2 min-h-12 rounded border border-indigo-300 bg-white px-3 font-medium disabled:opacity-40"
-            >
-              Choose Drive folder
-            </button>
-          </>
-        )}
-      </section>
+      <div>
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={driveStatus === 'loading' || operationKey !== null}
+          className="min-h-12 rounded border border-indigo-300 px-3 font-medium text-indigo-700 disabled:opacity-40"
+        >
+          Refresh Drive
+        </button>
+      </div>
 
       {globalMessages.map((message) => (
         <p

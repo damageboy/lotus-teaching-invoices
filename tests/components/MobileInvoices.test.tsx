@@ -16,6 +16,7 @@ function render(ui: ReactNode) {
   const root = createRoot(container);
   roots.push({ root, container });
   act(() => root.render(ui));
+  return { root, container };
 }
 
 function button(name: string): HTMLButtonElement {
@@ -173,14 +174,6 @@ function props(overrides: Record<string, unknown> = {}) {
     onAcknowledgeFreshnessClear: vi.fn(),
     onRefreshFreshness: vi.fn(async () => {}),
     drive: driveState('ready'),
-    folderService: {
-      listLocations: vi.fn(async () => []),
-      listChildren: vi.fn(),
-      createChild: vi.fn(),
-      stageRoot: vi.fn(),
-    },
-    scanCandidate: vi.fn(),
-    onSaveConfig: vi.fn(async () => {}),
     dependencies: deps(),
     ...overrides,
   };
@@ -204,16 +197,18 @@ describe('mobile Drive invoice view', () => {
     await waitFor(() => expect(drive.recoverReservation).toHaveBeenCalledOnce());
   });
 
-  it('keeps disposable preview available before setup and exposes Drive activation', () => {
-    render(<InvoicesTab {...(props({ drive: driveState('unconfigured') }) as any)} />);
-
-    expect(document.querySelector('table')).toBeNull();
-    expect(button('Preview PDF').disabled).toBe(false);
-    expect(button('Finalize PDF').disabled).toBe(true);
-    expect(button('Choose Drive folder').disabled).toBe(false);
-    expect(document.body.textContent).toContain('Choose a Drive folder');
-    expect(document.body.textContent).not.toContain('output folder');
-  });
+  it.each(['desktop', 'mobile'] as const)(
+    'renders no invoice content when Drive is unconfigured on %s',
+    (layout) => {
+      const { container } = render(
+        <InvoicesTab {...(props({ layout, drive: driveState('unconfigured') }) as any)} />
+      );
+      expect(container.innerHTML).toBe('');
+      expect(document.querySelector('[role="alert"]')).toBeNull();
+      expect(document.querySelector('table')).toBeNull();
+      expect(document.body.textContent).not.toContain('Choose Drive');
+    }
+  );
 
   it('shows the Drive invoice number and only opens verified bytes', async () => {
     const finalized = driveEntry();

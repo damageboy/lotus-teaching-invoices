@@ -2,6 +2,8 @@ import React from 'react';
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import { parse as parseYaml } from 'yaml';
 import type { CalendarPickerController } from '../../src/hooks/useCalendarPicker.js';
+import type { DriveFolderController } from '../../src/hooks/useDriveFolderController.js';
+import type { DriveInvoicesState } from '../../src/hooks/useDriveInvoices.js';
 import type { AppConfig } from '../../src/lib/types.js';
 import { installReactTestEnvironment } from '../helpers/react-test-env.js';
 
@@ -69,6 +71,30 @@ const calendarPicker: CalendarPickerController = {
   openList: vi.fn(async () => undefined),
   select: vi.fn(async () => undefined),
   closeList: vi.fn(),
+};
+
+const drive: Pick<DriveInvoicesState, 'status' | 'snapshot' | 'error' | 'operationKey'> = {
+  status: 'unconfigured',
+  snapshot: null,
+  error: null,
+  operationKey: null,
+};
+
+const driveFolder: DriveFolderController = {
+  dialogOpen: false,
+  opening: false,
+  cleanupPending: false,
+  error: null,
+  openDialog: vi.fn(async () => undefined),
+  closeDialog: vi.fn(),
+  scanCandidate: vi.fn(async () => ({
+    entries: [],
+    warnings: [],
+    blockingConflicts: [],
+    maxSequenceByYear: {},
+  })),
+  confirmRoot: vi.fn(async () => undefined),
+  retry: vi.fn(async () => undefined),
 };
 
 describe('useConfig error boundaries', () => {
@@ -231,6 +257,8 @@ describe('useConfig error boundaries', () => {
           layout="mobile"
           config={latest.config}
           calendarPicker={calendarPicker}
+          drive={drive}
+          driveFolder={driveFolder}
           isDirty={latest.isDirty}
           saveError={latest.saveError}
           onUpdate={latest.updateConfig}

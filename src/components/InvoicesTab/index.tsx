@@ -43,7 +43,6 @@ interface Props {
   config: AppConfig;
   sourceError?: string | null;
   drive: DriveInvoicesState;
-  onChooseDriveFolder(): void | Promise<void>;
   dependencies?: Partial<InvoiceActionDependencies>;
 }
 
@@ -213,13 +212,23 @@ function availabilityFor(
   return { status, statusLabel, reasons, preview, finalize, open, draftEmail };
 }
 
-export function InvoicesTab({
+export function InvoicesTab(props: Props) {
+  const { drive } = props;
+  if (
+    drive.snapshot === null &&
+    (drive.status === 'authorizationRequired' || drive.status === 'unconfigured')
+  ) {
+    return null;
+  }
+  return <InvoicesTabContent {...props} />;
+}
+
+function InvoicesTabContent({
   layout = 'desktop',
   classes,
   config,
   sourceError = null,
   drive,
-  onChooseDriveFolder,
   dependencies: dependencyOverrides,
 }: Props) {
   const dependencies = { ...DEFAULT_DEPENDENCIES, ...dependencyOverrides };
@@ -377,12 +386,6 @@ export function InvoicesTab({
     });
   }
 
-  function openFolderDialog(): void {
-    if (sourceError !== null) return;
-    void onChooseDriveFolder();
-  }
-
-  const rootName = drive.snapshot?.stagedRoot.root.folderName ?? null;
   const scanWarnings = drive.snapshot?.scan.warnings ?? [];
   const scanConflicts = drive.snapshot?.scan.blockingConflicts ?? [];
   const scanConflictMessages = scanConflicts.map((conflict) => conflict.message);
@@ -407,7 +410,6 @@ export function InvoicesTab({
   const sharedMobileProps = {
     displayRows,
     driveStatus: drive.status,
-    rootName,
     globalMessages,
     recoveryRequired: drive.error?.code === 'recoveryRequired',
     operationKey: drive.operationKey,
@@ -417,7 +419,6 @@ export function InvoicesTab({
     onFinalize: handleFinalize,
     onOpen: handleOpen,
     onDraftEmail: handleDraftEmail,
-    onChooseDriveFolder: openFolderDialog,
     onRefresh: () => void drive.refresh().catch(() => undefined),
     onRecoverReservation: () => void drive.recoverReservation().catch(() => undefined),
   };
@@ -428,28 +429,14 @@ export function InvoicesTab({
         <MobileInvoices {...sharedMobileProps} />
       ) : (
         <div className="p-4 flex flex-col gap-4">
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-gray-600">Drive folder:</span>
-            <span className="flex-1 truncate text-sm font-medium text-gray-800">
-              {rootName ?? <span className="italic text-gray-400">not configured</span>}
-            </span>
-            {rootName !== null && (
-              <button
-                type="button"
-                onClick={() => void drive.refresh().catch(() => undefined)}
-                disabled={drive.status === 'loading' || drive.operationKey !== null}
-                className="rounded border border-gray-300 px-3 py-1 text-sm disabled:opacity-40"
-              >
-                Refresh Drive
-              </button>
-            )}
+          <div>
             <button
               type="button"
-              onClick={openFolderDialog}
-              disabled={drive.operationKey !== null || sourceError !== null}
+              onClick={() => void drive.refresh().catch(() => undefined)}
+              disabled={drive.status === 'loading' || drive.operationKey !== null}
               className="rounded border border-gray-300 px-3 py-1 text-sm disabled:opacity-40"
             >
-              {rootName === null ? 'Choose Drive folder' : 'Change Drive folder…'}
+              Refresh Drive
             </button>
           </div>
 

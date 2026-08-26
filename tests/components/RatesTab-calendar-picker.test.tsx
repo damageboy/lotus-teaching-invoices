@@ -3,6 +3,8 @@ import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import { installReactTestEnvironment } from '../helpers/react-test-env.js';
 import type { AppConfig } from '../../src/lib/types.js';
 import type { CalendarPickerController } from '../../src/hooks/useCalendarPicker.js';
+import type { DriveFolderController } from '../../src/hooks/useDriveFolderController.js';
+import type { DriveInvoicesState } from '../../src/hooks/useDriveInvoices.js';
 
 (globalThis as unknown as { __APP_VERSION__: string }).__APP_VERSION__ = 'test';
 (globalThis as unknown as { __APP_IS_OFFICIAL__: boolean }).__APP_IS_OFFICIAL__ = false;
@@ -21,6 +23,30 @@ const config: AppConfig = {
     bankDetails: { accountOwner: '', iban: '', bic: '' },
   },
   studios: {},
+};
+
+const drive: Pick<DriveInvoicesState, 'status' | 'snapshot' | 'error' | 'operationKey'> = {
+  status: 'unconfigured',
+  snapshot: null,
+  error: null,
+  operationKey: null,
+};
+
+const driveFolder: DriveFolderController = {
+  dialogOpen: false,
+  opening: false,
+  cleanupPending: false,
+  error: null,
+  openDialog: vi.fn(async () => undefined),
+  closeDialog: vi.fn(),
+  scanCandidate: vi.fn(async () => ({
+    entries: [],
+    warnings: [],
+    blockingConflicts: [],
+    maxSequenceByYear: {},
+  })),
+  confirmRoot: vi.fn(async () => undefined),
+  retry: vi.fn(async () => undefined),
 };
 
 afterEach(() => cleanup());
@@ -44,6 +70,8 @@ describe('RatesTab calendar picker controller', () => {
         layout="mobile"
         config={config}
         calendarPicker={calendarPicker}
+        drive={drive}
+        driveFolder={driveFolder}
         isDirty={false}
         saveError={null}
         onUpdate={vi.fn()}
@@ -51,8 +79,12 @@ describe('RatesTab calendar picker controller', () => {
       />
     );
 
+    expect(view.container.innerHTML.indexOf('Connections')).toBeLessThan(
+      view.container.innerHTML.indexOf('Teacher')
+    );
+
     await act(async () => {
-      fireEvent.click(view.getByRole('button', { name: 'Pick calendar' }));
+      fireEvent.click(view.getByRole('button', { name: 'Pick calendar…' }));
       await Promise.resolve();
     });
 
