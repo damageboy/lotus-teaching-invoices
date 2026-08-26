@@ -1,127 +1,31 @@
-import { useState, useEffect } from 'react';
-import { AppConfig, CalendarAccessRole, RateTier, TeacherInfo, BankDetails } from '../../lib/types';
+import { useState } from 'react';
+import { AppConfig, RateTier, TeacherInfo, BankDetails } from '../../lib/types';
 import { nextUnusedColor } from '../../lib/studioColors';
 import { APP_VERSION, APP_IS_OFFICIAL } from '../../lib/version';
-import {
-  calendarErrorMessage,
-  listCalendars,
-  type CalendarListEntry,
-} from '../../lib/calendar/calendar-api';
 import type { AppLayout } from '../../hooks/useCompactLayout';
+import type { CalendarPickerController } from '../../hooks/useCalendarPicker';
 import { MobileSettings, StudioCard } from './MobileSettings';
 
 interface Props {
   layout?: AppLayout;
   config: AppConfig;
+  calendarPicker: CalendarPickerController;
   isDirty: boolean;
   saveError: string | null;
   onUpdate: (c: AppConfig) => void;
   onSave: (next?: AppConfig) => Promise<void>;
 }
 
-export function calendarPickerErrorMessage(error: unknown): string {
-  return calendarErrorMessage(error);
-}
-
-export function selectedCalendarDisplayName(
-  config: Pick<AppConfig, 'calendarId' | 'calendarName'>,
-  calendars: readonly CalendarListEntry[] | null,
-  loading: boolean
-): string {
-  return (
-    config.calendarName?.trim() ||
-    calendars?.find((calendar) => calendar.id === config.calendarId)?.summary.trim() ||
-    (loading ? 'Loading calendar…' : 'Selected calendar')
-  );
-}
-
-export async function selectCalendar(
-  config: AppConfig,
-  id: string,
-  name: string,
-  accessRole: CalendarAccessRole | undefined,
-  onUpdate: (c: AppConfig) => void,
-  onSave: (next?: AppConfig) => Promise<void>,
-  closeCalendarList: (
-    next: { id: string; summary: string; accessRole?: CalendarAccessRole }[] | null
-  ) => void
-): Promise<void> {
-  const { calendarAccessRole: _previousAccessRole, ...configWithoutAccessRole } = config;
-  const next: AppConfig = {
-    ...configWithoutAccessRole,
-    calendarId: id,
-    calendarName: name,
-    ...(accessRole ? { calendarAccessRole: accessRole } : {}),
-  };
-  onUpdate(next);
-  await onSave(next);
-  closeCalendarList(null);
-}
-
 export function RatesTab({
   layout = 'desktop',
   config,
+  calendarPicker,
   isDirty,
   saveError,
   onUpdate,
   onSave,
 }: Props) {
-  const [calendars, setCalendars] = useState<
-    { id: string; summary: string; accessRole?: CalendarAccessRole }[] | null
-  >(null);
-  const [calendarListOpen, setCalendarListOpen] = useState(false);
-  const [calendarLoading, setCalendarLoading] = useState(false);
-  const [calendarError, setCalendarError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!config.calendarId || config.calendarName?.trim()) return;
-
-    let active = true;
-    setCalendarLoading(true);
-    setCalendarError(null);
-    void listCalendars()
-      .then((list) => {
-        if (active) setCalendars(list);
-      })
-      .catch((error) => {
-        if (active) setCalendarError(calendarPickerErrorMessage(error));
-      })
-      .finally(() => {
-        if (active) setCalendarLoading(false);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [config.calendarId, config.calendarName]);
-
-  const selectedCalendarName = selectedCalendarDisplayName(config, calendars, calendarLoading);
-
-  async function handlePickCalendar() {
-    setCalendarLoading(true);
-    setCalendarError(null);
-    setCalendarListOpen(false);
-    try {
-      const list = await listCalendars(undefined, { interactive: true });
-      setCalendars(list);
-      setCalendarListOpen(true);
-    } catch (e) {
-      setCalendarError(calendarPickerErrorMessage(e));
-    } finally {
-      setCalendarLoading(false);
-    }
-  }
-
-  async function handleSelectCalendar(
-    id: string,
-    name: string,
-    accessRole: CalendarAccessRole | undefined
-  ) {
-    await selectCalendar(config, id, name, accessRole, onUpdate, onSave, (next) => {
-      setCalendars(next);
-      if (next === null) setCalendarListOpen(false);
-    });
-  }
+  const calendarBusy = calendarPicker.loading || calendarPicker.saving;
 
   function updateTeacher(key: keyof Omit<TeacherInfo, 'bankDetails'>, value: string) {
     onUpdate({ ...config, teacher: { ...config.teacher, [key]: value } });
@@ -262,16 +166,18 @@ export function RatesTab({
         config={config}
         isDirty={isDirty}
         saveError={saveError}
-        selectedCalendarName={selectedCalendarName}
-        calendars={calendars}
-        calendarListOpen={calendarListOpen}
-        calendarLoading={calendarLoading}
-        calendarError={calendarError}
+        selectedCalendarName={calendarPicker.selectedName}
+        calendars={calendarPicker.calendars}
+        calendarListOpen={calendarPicker.listOpen}
+        calendarLoading={calendarBusy}
+        calendarError={calendarPicker.error}
         onSave={() => onSave()}
         onUpdateTeacher={updateTeacher}
         onUpdateBank={updateBank}
-        onPickCalendar={handlePickCalendar}
-        onSelectCalendar={handleSelectCalendar}
+        onPickCalendar={calendarPicker.openList}
+        onSelectCalendar={(id, summary, accessRole) =>
+          calendarPicker.select({ id, summary, ...(accessRole ? { accessRole } : {}) })
+        }
         onRenameStudio={updateStudioName}
         onDeleteStudio={deleteStudio}
         onUpdateTier={updateTier}
@@ -366,32 +272,35 @@ export function RatesTab({
           {config.calendarId ? (
             <div className="flex min-w-0 items-center gap-2">
               <span className="min-w-0 flex-1 truncate text-sm text-gray-800">
-                {selectedCalendarName}
+                {calendarPicker.selectedName}
               </span>
               <button
-                onClick={handlePickCalendar}
-                disabled={calendarLoading}
+                onClick={() => void calendarPicker.openList()}
+                disabled={calendarBusy}
                 className="flex-shrink-0 text-xs text-indigo-500 hover:text-indigo-700"
               >
-                {calendarLoading ? 'Loading…' : 'Change…'}
+                {calendarBusy ? 'Loading…' : 'Change…'}
               </button>
             </div>
           ) : (
             <button
-              onClick={handlePickCalendar}
-              disabled={calendarLoading}
+              onClick={() => void calendarPicker.openList()}
+              disabled={calendarBusy}
               className="self-start px-3 py-1.5 rounded border border-gray-300 text-sm text-gray-600 hover:border-indigo-400 hover:text-indigo-600"
             >
-              {calendarLoading ? 'Loading…' : 'Pick Calendar…'}
+              {calendarBusy ? 'Loading…' : 'Pick Calendar…'}
             </button>
           )}
-          {calendarError && <span className="text-xs text-red-500">{calendarError}</span>}
-          {calendarListOpen && calendars && (
+          {calendarPicker.error && (
+            <span className="text-xs text-red-500">{calendarPicker.error}</span>
+          )}
+          {calendarPicker.listOpen && calendarPicker.calendars && (
             <div className="flex flex-col gap-1 p-2 rounded border border-gray-200 bg-gray-50 max-h-48 overflow-y-auto">
-              {calendars.map((cal) => (
+              {calendarPicker.calendars.map((cal) => (
                 <button
                   key={cal.id}
-                  onClick={() => handleSelectCalendar(cal.id, cal.summary, cal.accessRole)}
+                  onClick={() => void calendarPicker.select(cal)}
+                  disabled={calendarPicker.saving}
                   className={`text-left text-sm px-2 py-1 rounded hover:bg-indigo-50 ${
                     config.calendarId === cal.id
                       ? 'bg-indigo-100 text-indigo-700 font-medium'
@@ -401,7 +310,7 @@ export function RatesTab({
                   {cal.summary}
                 </button>
               ))}
-              {calendars.length === 0 && (
+              {calendarPicker.calendars.length === 0 && (
                 <span className="text-xs text-gray-400">No calendars found</span>
               )}
             </div>

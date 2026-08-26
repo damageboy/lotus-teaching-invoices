@@ -6,6 +6,7 @@ import { useCalendarData } from './hooks/useCalendarData';
 import { useGoogleAuthorization } from './hooks/useGoogleAuthorization';
 import { useCalendarEditing } from './hooks/useCalendarEditing';
 import { useDriveInvoices } from './hooks/useDriveInvoices';
+import { useCalendarPicker } from './hooks/useCalendarPicker';
 import { useCompactLayout, type AppLayout } from './hooks/useCompactLayout';
 import { CalendarTab } from './components/CalendarTab';
 import { InvoicesTab } from './components/InvoicesTab';
@@ -42,6 +43,7 @@ export default function App() {
     save,
     saveOrThrow,
   } = useConfig();
+  const calendarPicker = useCalendarPicker({ config, saveConfig: saveOrThrow });
   const {
     classes,
     isLoading: calLoading,
@@ -252,6 +254,7 @@ export default function App() {
           <RatesTab
             layout={layout}
             config={config}
+            calendarPicker={calendarPicker}
             isDirty={isDirty}
             saveError={configSaveError}
             onUpdate={updateConfig}
