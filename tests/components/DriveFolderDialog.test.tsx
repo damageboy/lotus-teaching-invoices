@@ -810,6 +810,48 @@ describe('DriveFolderDialog', () => {
     window.removeEventListener('popstate', dismissUnderlyingWizard);
   });
 
+  it('removes only its mobile history entry when activation continues on desktop', async () => {
+    const user = userEvent.setup({ document });
+    const activation = deferred<void>();
+    const onConfirm = vi.fn(() => activation.promise);
+    const onClose = vi.fn();
+    const historyBack = vi.spyOn(window.history, 'back').mockImplementation(() => undefined);
+    const parentPopstate = vi.fn();
+    const props = dialogProps({ layout: 'mobile', onConfirm, onClose });
+
+    try {
+      const view = render(<DriveFolderDialog {...props} />);
+      await enterSharedCandidate(user);
+      await user.click(screen.getByRole('button', { name: 'Use this folder' }));
+      await screen.findByText('3 recognized invoices');
+      await user.click(screen.getByRole('button', { name: 'Activate for all devices' }));
+      expect(onConfirm).toHaveBeenCalledOnce();
+
+      view.rerender(<DriveFolderDialog {...props} layout="desktop" />);
+      expect(historyBack).toHaveBeenCalledOnce();
+      expect(onClose).not.toHaveBeenCalled();
+
+      window.addEventListener('popstate', parentPopstate);
+      window.history.replaceState({ lotusSetupWizard: 1 }, '');
+      fireEvent.popState(window);
+      expect(parentPopstate).not.toHaveBeenCalled();
+      expect(onClose).not.toHaveBeenCalled();
+      expect(window.history.state).toEqual({ lotusSetupWizard: 1 });
+
+      activation.resolve();
+      await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+      expect(historyBack).toHaveBeenCalledOnce();
+
+      fireEvent.popState(window);
+      expect(onClose).toHaveBeenCalledOnce();
+      expect(parentPopstate).toHaveBeenCalledOnce();
+    } finally {
+      historyBack.mockRestore();
+      window.removeEventListener('popstate', parentPopstate);
+      window.history.replaceState(null, '');
+    }
+  });
+
   it('owns one mobile history entry under React Strict Mode', () => {
     const pushState = vi.spyOn(window.history, 'pushState');
     const onClose = vi.fn();

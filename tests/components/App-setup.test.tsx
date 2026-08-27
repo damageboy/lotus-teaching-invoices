@@ -346,7 +346,7 @@ describe('App required Google setup', () => {
     expect(namedButton('Invoices').disabled).toBe(false);
   });
 
-  it('keeps mobile Welcome and Drive dialog alive through activation checking, then closes both histories', async () => {
+  it('keeps activation alive across mobile-to-desktop history transfer and closes the dialog', async () => {
     const activation = deferred<void>();
     const activateRoot = vi.fn(() => activation.promise);
     configState = { ...configState, calendarId: 'calendar-a', calendarName: 'Teaching' };
@@ -376,6 +376,18 @@ describe('App required Google setup', () => {
     expect(screen.getByRole('dialog', { name: 'Choose Drive invoice folder' })).toBeTruthy();
     expect(document.body.textContent).toContain('Rates content');
 
+    compactLayout = false;
+    view.rerender();
+    await waitFor(() => expect(historyBack).toHaveBeenCalledOnce());
+    window.history.replaceState(wizardHistoryState, '');
+    await act(async () => {
+      window.dispatchEvent(new window.PopStateEvent('popstate'));
+      await Promise.resolve();
+    });
+    expect(screen.getByRole('dialog', { name: 'Welcome to Lotus' })).toBeTruthy();
+    expect(screen.getByRole('dialog', { name: 'Choose Drive invoice folder' })).toBeTruthy();
+    expect(window.history.state).toBe(wizardHistoryState);
+
     driveState = { ...readyDriveState, activateRoot };
     view.rerender();
     await act(async () => {
@@ -383,18 +395,11 @@ describe('App required Google setup', () => {
       await activation.promise;
       await Promise.resolve();
     });
-    await waitFor(() => expect(historyBack).toHaveBeenCalledOnce());
-
-    window.history.replaceState(wizardHistoryState, '');
-    await act(async () => {
-      window.dispatchEvent(new window.PopStateEvent('popstate'));
-      await Promise.resolve();
-    });
     await waitFor(() =>
       expect(screen.queryByRole('dialog', { name: 'Choose Drive invoice folder' })).toBeNull()
     );
     expect(document.body.textContent).toContain('Calendar content');
-    await waitFor(() => expect(historyBack).toHaveBeenCalledTimes(2));
+    expect(historyBack).toHaveBeenCalledTimes(2);
   });
 
   it('unlocks without leaving Rates when completion came after dismissal', async () => {

@@ -311,6 +311,7 @@ describe('App Drive setup without an existing grant', () => {
     expect(buildCurrentInvoiceSources).toHaveBeenCalledOnce();
     expect(bootstrap).toHaveBeenCalledOnce();
     expect(storeRefresh).toHaveBeenCalledOnce();
+    expect(storeRefresh.mock.calls[0][0][0].fingerprint.sourceSha256).toBe('source-a');
     expect(container.textContent).toContain('Calendar');
 
     await act(async () => {
@@ -320,6 +321,56 @@ describe('App Drive setup without an existing grant', () => {
     await waitFor(() => expect(button('Invoices').disabled).toBe(false));
     expect(buildCurrentInvoiceSources).toHaveBeenCalledOnce();
     expect(bootstrap).toHaveBeenCalledOnce();
+  });
+
+  it('keeps setup unlocked and retryable after a real-hook transient full-source error', async () => {
+    const fullSourceRefresh = deferred<DriveStoreSnapshot>();
+    publishReadySnapshot = true;
+    refreshOverride = () => fullSourceRefresh.promise;
+    authorizationState = {
+      ...authorizationState,
+      hasDrive: true,
+      authorizationIncarnation: 1,
+    };
+    const { container, rerender } = renderApp();
+
+    await waitFor(() => expect(storeRefresh).toHaveBeenCalledOnce());
+    act(() => {
+      fullSourceRefresh.reject(
+        new DriveStoreError('offline', 'Google Drive is temporarily unavailable', true)
+      );
+    });
+
+    await waitFor(() =>
+      expect(container.textContent).toContain('Google Drive is temporarily unavailable')
+    );
+    expect(button('Invoices').disabled).toBe(false);
+    expect(button('Retry Google Drive').disabled).toBe(false);
+    expect(buildCurrentInvoiceSources).toHaveBeenCalledOnce();
+    expect(bootstrap).toHaveBeenCalledOnce();
+    expect(storeRefresh).toHaveBeenCalledOnce();
+    expect(storeRefresh.mock.calls[0][0][0].fingerprint.sourceSha256).toBe('source-a');
+
+    rerender();
+    expect(buildCurrentInvoiceSources).toHaveBeenCalledOnce();
+    expect(bootstrap).toHaveBeenCalledOnce();
+    expect(storeRefresh).toHaveBeenCalledOnce();
+
+    refreshOverride = () => Promise.resolve(readySnapshot);
+    await click(button('Retry Google Drive'));
+    await waitFor(() => expect(storeRefresh).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(container.textContent).not.toContain('Google Drive is temporarily unavailable')
+    );
+    expect(button('Invoices').disabled).toBe(false);
+    expect(buildCurrentInvoiceSources).toHaveBeenCalledOnce();
+    expect(bootstrap).toHaveBeenCalledTimes(2);
+    expect(storeRefresh.mock.calls[1][0][0].fingerprint.sourceSha256).toBe('source-a');
+
+    rerender();
+    expect(buildCurrentInvoiceSources).toHaveBeenCalledOnce();
+    expect(bootstrap).toHaveBeenCalledTimes(2);
+    expect(storeRefresh).toHaveBeenCalledTimes(2);
   });
 
   it('clears retained setup evidence after a conclusive real-hook source refresh error', async () => {

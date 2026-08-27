@@ -29,6 +29,12 @@ export interface DriveFolderDialogProps {
 
 type DialogPhase = 'browse' | 'scanning' | 'confirm';
 
+interface MobileHistoryEntry {
+  id: number;
+  closing: boolean;
+  popping: boolean;
+}
+
 const TITLE_ID = 'drive-folder-dialog-title';
 const DESCRIPTION_ID = 'drive-folder-dialog-description';
 
@@ -72,7 +78,7 @@ export function DriveFolderDialog({
   const closeRef = useRef<HTMLButtonElement>(null);
   const requestRef = useRef(0);
   const confirmingRef = useRef(false);
-  const mobileHistoryRef = useRef<{ id: number; closing: boolean } | null>(null);
+  const mobileHistoryRef = useRef<MobileHistoryEntry | null>(null);
   const mobileHistorySequenceRef = useRef(0);
   const [phase, setPhase] = useState<DialogPhase>('browse');
   const [locations, setLocations] = useState<DriveLocation[]>([]);
@@ -94,18 +100,29 @@ export function DriveFolderDialog({
   const finishClose = useCallback(
     (fromHistory: boolean) => {
       const historyEntry = mobileHistoryRef.current;
+      if (fromHistory && historyEntry !== null) {
+        mobileHistoryRef.current = null;
+        if (historyEntry.closing || !historyEntry.popping) {
+          if (!historyEntry.closing) requestRef.current += 1;
+          onClose();
+        }
+        return;
+      }
       if (
-        !fromHistory &&
         historyEntry !== null &&
         window.history.state?.lotusDriveFolderDialog === historyEntry.id
       ) {
-        if (historyEntry.closing) return;
-        historyEntry.closing = true;
-        requestRef.current += 1;
-        window.history.back();
+        if (!historyEntry.closing) {
+          historyEntry.closing = true;
+          requestRef.current += 1;
+        }
+        if (!historyEntry.popping) {
+          historyEntry.popping = true;
+          window.history.back();
+        }
         return;
       }
-      requestRef.current += 1;
+      if (historyEntry?.closing !== true) requestRef.current += 1;
       mobileHistoryRef.current = null;
       onClose();
     },
@@ -231,24 +248,38 @@ export function DriveFolderDialog({
   }, [close, open]);
 
   useEffect(() => {
-    if (!open || layout !== 'mobile') return;
-    let historyEntry = mobileHistoryRef.current;
-    if (historyEntry === null) {
-      const id = ++mobileHistorySequenceRef.current;
-      window.history.pushState({ lotusDriveFolderDialog: id }, '');
-      historyEntry = { id, closing: false };
-      mobileHistoryRef.current = historyEntry;
-    }
-
+    if (!open) return;
     function handlePopState(event: PopStateEvent): void {
-      if (mobileHistoryRef.current !== historyEntry) return;
+      if (mobileHistoryRef.current === null) return;
       event.stopImmediatePropagation();
       finishClose(true);
     }
 
     window.addEventListener('popstate', handlePopState, true);
     return () => window.removeEventListener('popstate', handlePopState, true);
-  }, [finishClose, layout, open]);
+  }, [finishClose, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    let historyEntry = mobileHistoryRef.current;
+    if (layout === 'mobile') {
+      if (historyEntry === null) {
+        const id = ++mobileHistorySequenceRef.current;
+        window.history.pushState({ lotusDriveFolderDialog: id }, '');
+        historyEntry = { id, closing: false, popping: false };
+        mobileHistoryRef.current = historyEntry;
+      }
+      return;
+    }
+    if (
+      historyEntry !== null &&
+      !historyEntry.popping &&
+      window.history.state?.lotusDriveFolderDialog === historyEntry.id
+    ) {
+      historyEntry.popping = true;
+      window.history.back();
+    }
+  }, [layout, open]);
 
   if (!open) return null;
 
