@@ -8,7 +8,7 @@ import { installReactTestEnvironment } from '../helpers/react-test-env.js';
 
 const restoreDom = installReactTestEnvironment();
 afterAll(() => restoreDom());
-const { cleanup, fireEvent, render, screen, waitFor } = await import('@testing-library/react');
+const { act, cleanup, fireEvent, render, screen, waitFor } = await import('@testing-library/react');
 const { SetupWizard } = await import('../../src/components/setup/SetupWizard.js');
 
 afterEach(() => {
@@ -165,7 +165,7 @@ describe('SetupWizard', () => {
   });
 
   it('routes Drive error recovery through the shared folder controller', () => {
-    const retry = vi.fn();
+    const retry = vi.fn(async () => undefined);
     render(
       <SetupWizard
         {...props({
@@ -178,6 +178,26 @@ describe('SetupWizard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry Google Drive' }));
 
     expect(retry).toHaveBeenCalledOnce();
+  });
+
+  it('contains an expected rejected Drive retry after the controller publishes its error', () => {
+    const rejectedRetry = Promise.reject(new Error('Drive retry failed'));
+    void rejectedRetry.catch(() => undefined);
+    const catchRejection = vi.spyOn(rejectedRetry, 'catch');
+    const retry = vi.fn(() => rejectedRetry);
+    render(
+      <SetupWizard
+        {...props({
+          step: 'drive',
+          driveFolder: driveController({ error: 'Drive retry failed', retry }),
+        })}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry Google Drive' }));
+
+    expect(catchRejection).toHaveBeenCalledOnce();
+    expect(screen.getByRole('alert').textContent).toBe('Drive retry failed');
   });
 
   it('contains focus and restores the opener when it closes', async () => {
@@ -216,6 +236,81 @@ describe('SetupWizard', () => {
     view.rerender(<SetupWizard {...wizardProps} open={false} />);
     expect(document.activeElement).toBe(opener);
     opener.remove();
+  });
+
+  it('defers opener focus restoration while a completing Drive dialog remains active', async () => {
+    const opener = document.createElement('button');
+    opener.textContent = 'Open setup';
+    document.body.append(opener);
+    opener.focus();
+    const baseProps = props({ step: 'drive' });
+    const view = render(<SetupWizard {...baseProps} />);
+    const driveAction = document.createElement('button');
+    driveAction.textContent = 'Confirm Drive folder';
+    document.body.append(driveAction);
+
+    try {
+      await waitFor(() =>
+        expect(document.activeElement).toBe(
+          screen.getByRole('button', { name: 'Pick Drive folder…' })
+        )
+      );
+      driveAction.focus();
+      view.rerender(
+        <SetupWizard
+          {...baseProps}
+          open={false}
+          driveFolder={driveController({ dialogOpen: true })}
+        />
+      );
+      await act(async () => Promise.resolve());
+      expect(document.activeElement).toBe(driveAction);
+
+      view.rerender(
+        <SetupWizard
+          {...baseProps}
+          open={false}
+          driveFolder={driveController({ dialogOpen: false })}
+        />
+      );
+      expect(document.activeElement).toBe(opener);
+    } finally {
+      driveAction.remove();
+      opener.remove();
+    }
+  });
+
+  it('focuses Set up later when the initial primary action is busy', async () => {
+    const opener = document.createElement('button');
+    opener.textContent = 'Open setup';
+    document.body.append(opener);
+    opener.focus();
+
+    try {
+      render(<SetupWizard {...props({ calendarPicker: calendarController({ loading: true }) })} />);
+
+      await waitFor(() =>
+        expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Set up later' }))
+      );
+    } finally {
+      opener.remove();
+    }
+  });
+
+  it('focuses Set up later when a step transition has a busy primary action', async () => {
+    const baseProps = props();
+    const view = render(<SetupWizard {...baseProps} />);
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Pick calendar…' }))
+    );
+
+    view.rerender(
+      <SetupWizard {...baseProps} step="drive" driveFolder={driveController({ opening: true })} />
+    );
+
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Set up later' }))
+    );
   });
 
   it('uses reduced-motion, dynamic viewport, safe-area, and touch-safe mobile classes', () => {
@@ -304,6 +399,35 @@ describe('SetupWizard', () => {
       />
     );
     fireEvent.popState(window);
+    expect(onDismiss).not.toHaveBeenCalled();
+  });
+
+  it('removes its buried history entry after completion waits for Drive to close', () => {
+    const historyBack = vi.spyOn(window.history, 'back').mockImplementation(() => undefined);
+    const onDismiss = vi.fn();
+    const baseProps = props({ layout: 'mobile', step: 'drive', onDismiss });
+    const view = render(<SetupWizard {...baseProps} />);
+    const wizardHistoryState = window.history.state;
+
+    window.history.pushState({ lotusDriveFolderDialog: 1 }, '');
+    view.rerender(
+      <SetupWizard
+        {...baseProps}
+        open={false}
+        driveFolder={driveController({ dialogOpen: true })}
+      />
+    );
+    expect(historyBack).not.toHaveBeenCalled();
+
+    window.history.replaceState(wizardHistoryState, '');
+    view.rerender(
+      <SetupWizard
+        {...baseProps}
+        open={false}
+        driveFolder={driveController({ dialogOpen: false })}
+      />
+    );
+    expect(historyBack).toHaveBeenCalledOnce();
     expect(onDismiss).not.toHaveBeenCalled();
   });
 });

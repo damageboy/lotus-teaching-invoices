@@ -89,7 +89,8 @@ export function SetupWizard({
   onDismiss,
 }: SetupWizardProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
-  const primaryRef = useRef<HTMLButtonElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+  const focusSessionActiveRef = useRef(false);
   const mobileHistoryRef = useRef<MobileHistoryEntry | null>(null);
   const currentRef = useRef({ calendarPicker, driveFolder, layout, onDismiss });
   currentRef.current = { calendarPicker, driveFolder, layout, onDismiss };
@@ -119,18 +120,40 @@ export function SetupWizard({
     current.onDismiss();
   }, []);
 
+  const focusFirstEnabledAction = useCallback((): void => {
+    dialogRef.current?.querySelector<HTMLElement>('button:not(:disabled)')?.focus();
+  }, []);
+
+  const restorePreviousFocus = useCallback((): void => {
+    if (!focusSessionActiveRef.current) return;
+    const previousFocus = previousFocusRef.current;
+    focusSessionActiveRef.current = false;
+    previousFocusRef.current = null;
+    previousFocus?.focus();
+  }, []);
+
   useEffect(() => {
-    if (!open) return;
-    const previouslyFocused =
-      document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    primaryRef.current?.focus();
-    return () => previouslyFocused?.focus();
-  }, [open]);
+    if (open && !focusSessionActiveRef.current) {
+      previousFocusRef.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      focusSessionActiveRef.current = true;
+      focusFirstEnabledAction();
+      return;
+    }
+    if (!open && !driveFolder.dialogOpen) restorePreviousFocus();
+  }, [driveFolder.dialogOpen, focusFirstEnabledAction, open, restorePreviousFocus]);
+
+  useEffect(
+    () => () => {
+      if (!currentRef.current.driveFolder.dialogOpen) restorePreviousFocus();
+    },
+    [restorePreviousFocus]
+  );
 
   useEffect(() => {
     if (!open || driveFolder.dialogOpen || calendarPicker.listOpen) return;
-    primaryRef.current?.focus();
-  }, [calendarPicker.listOpen, driveFolder.dialogOpen, open, step]);
+    focusFirstEnabledAction();
+  }, [calendarPicker.listOpen, driveFolder.dialogOpen, focusFirstEnabledAction, open, step]);
 
   useEffect(() => {
     if (!open) return;
@@ -173,6 +196,7 @@ export function SetupWizard({
   useEffect(() => {
     if (!open || layout !== 'mobile') {
       const historyEntry = mobileHistoryRef.current;
+      if (historyEntry !== null && driveFolder.dialogOpen) return;
       if (
         historyEntry !== null &&
         !historyEntry.consumed &&
@@ -215,7 +239,7 @@ export function SetupWizard({
 
     window.addEventListener('popstate', handlePopState, true);
     return () => window.removeEventListener('popstate', handlePopState, true);
-  }, [layout, open]);
+  }, [driveFolder.dialogOpen, layout, open]);
 
   if (!open) return null;
 
@@ -266,7 +290,6 @@ export function SetupWizard({
 
           <div className={`${mobile ? 'mt-auto pt-10' : 'mt-8'} flex flex-col gap-3`}>
             <button
-              ref={primaryRef}
               type="button"
               onClick={() => void primaryAction()}
               disabled={primaryBusy}
@@ -305,7 +328,7 @@ export function SetupWizard({
             {step === 'drive' && driveError && (
               <button
                 type="button"
-                onClick={() => void driveFolder.retry()}
+                onClick={() => void driveFolder.retry().catch(() => undefined)}
                 disabled={driveBusy}
                 className="min-h-12 min-w-12 self-center px-3 text-base font-medium text-indigo-600 disabled:opacity-40"
               >
