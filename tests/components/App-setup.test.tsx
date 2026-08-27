@@ -1,7 +1,10 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { DriveInvoicesState } from '../../src/hooks/useDriveInvoices.js';
+import type {
+  DriveInvoicesState,
+  UseDriveInvoicesOptions,
+} from '../../src/hooks/useDriveInvoices.js';
 import type { DriveStoreSnapshot } from '../../src/lib/drive/invoiceStore.js';
 import type { AppConfig } from '../../src/lib/types.js';
 import { installReactTestEnvironment } from '../helpers/react-test-env.js';
@@ -49,6 +52,8 @@ let driveState: DriveInvoicesState;
 const mocks = {
   buildCurrentInvoiceSources: vi.fn(async () => []),
   calendarPermissionOpen: false,
+  driveOptions: null as UseDriveInvoicesOptions | null,
+  driveStateForOptions: null as ((options: UseDriveInvoicesOptions) => DriveInvoicesState) | null,
 };
 
 (globalThis as unknown as { __APP_VERSION__: string }).__APP_VERSION__ = 'test';
@@ -90,7 +95,10 @@ vi.mock('../../src/hooks/useCalendarEditing.js', () => ({
   }),
 }));
 vi.mock('../../src/hooks/useDriveInvoices.js', () => ({
-  useDriveInvoices: () => driveState,
+  useDriveInvoices: (options: UseDriveInvoicesOptions) => {
+    mocks.driveOptions = options;
+    return mocks.driveStateForOptions?.(options) ?? driveState;
+  },
 }));
 vi.mock('../../src/hooks/useCompactLayout.js', () => ({
   useCompactLayout: () => compactLayout,
@@ -217,6 +225,8 @@ beforeEach(() => {
   mocks.buildCurrentInvoiceSources.mockReset();
   mocks.buildCurrentInvoiceSources.mockImplementation(() => new Promise(() => {}));
   mocks.calendarPermissionOpen = false;
+  mocks.driveOptions = null;
+  mocks.driveStateForOptions = null;
 });
 
 afterEach(() => {
@@ -298,14 +308,46 @@ describe('App required Google setup', () => {
     expect(document.body.textContent).toContain('Step 2 of 2');
   });
 
-  it('keeps Drive authorization available before discovery can run', async () => {
+  it('discovers the real authorization requirement without an existing grant', async () => {
     configState = { ...configState, calendarId: 'calendar-a', calendarName: 'Teaching' };
-    driveState = { ...driveState, status: 'loading', snapshot: null };
+    driveState = { ...driveState, status: 'authorizationRequired', snapshot: null };
     renderApp();
+    expect(mocks.driveOptions?.discoveryEnabled).toBe(true);
     const pickDrive = namedButton('Pick Drive folder…');
     expect(pickDrive.disabled).toBe(false);
     await click(pickDrive);
     expect(authorizationState.allowDrive).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the full source context while Drive reconciles the built sources', async () => {
+    configState = { ...configState, calendarId: 'calendar-a', calendarName: 'Teaching' };
+    authorizationState = { ...authorizationState, hasDrive: true };
+    let fullSourceReady = false;
+    mocks.driveStateForOptions = (options) =>
+      options.sourceContextKey === 'setup-discovery'
+        ? readyDriveState
+        : fullSourceReady
+          ? readyDriveState
+          : { ...readyDriveState, status: 'loading', snapshot: null };
+    mocks.buildCurrentInvoiceSources
+      .mockReset()
+      .mockResolvedValueOnce([])
+      .mockImplementation(() => new Promise(() => {}));
+    const view = renderApp();
+
+    await waitFor(() => expect(mocks.driveOptions?.sourceContextKey).toBe('fixture'));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(mocks.buildCurrentInvoiceSources).toHaveBeenCalledOnce();
+    expect(mocks.driveOptions?.sourceContextKey).toBe('fixture');
+    expect(document.body.textContent).not.toBe('Loading…');
+
+    fullSourceReady = true;
+    view.rerender();
+    expect(mocks.driveOptions?.sourceContextKey).toBe('fixture');
+    expect(document.body.textContent).toContain('Calendar content');
   });
 
   it('starts on Calendar when Drive is already configured', () => {

@@ -6,8 +6,9 @@ import { useConfig } from './hooks/useConfig';
 import { useCalendarData } from './hooks/useCalendarData';
 import { useGoogleAuthorization } from './hooks/useGoogleAuthorization';
 import { useCalendarEditing } from './hooks/useCalendarEditing';
-import { useDriveInvoices, type DriveInvoicesState } from './hooks/useDriveInvoices';
+import { useDriveInvoices } from './hooks/useDriveInvoices';
 import { useDriveFolderController } from './hooks/useDriveFolderController';
+import { useDriveSetupSnapshot } from './hooks/useDriveSetupSnapshot';
 import { useCalendarPicker } from './hooks/useCalendarPicker';
 import { useSetupOnboarding } from './hooks/useSetupOnboarding';
 import { useCompactLayout, type AppLayout } from './hooks/useCompactLayout';
@@ -94,8 +95,14 @@ export default function App() {
     sources: driveSources,
     sourceContextKey: driveSourceContextKey,
     authorizationIncarnation: googleAuthorization.authorizationIncarnation,
-    discoveryEnabled: !googleAuthorization.isLoading && googleAuthorization.hasDrive,
+    discoveryEnabled: !googleAuthorization.isLoading,
     foregroundRefreshEnabled: activeTab === 'invoices' && invoiceSourcesReady,
+  });
+  const setupDriveSnapshot = useDriveSetupSnapshot({
+    store: driveStore,
+    authorizationIncarnation: googleAuthorization.authorizationIncarnation,
+    status: driveInvoices.status,
+    snapshot: driveInvoices.snapshot,
   });
   const setupReadiness = deriveSetupReadiness({
     configLoading,
@@ -103,12 +110,8 @@ export default function App() {
     authorizationLoading: googleAuthorization.isLoading,
     hasDrive: googleAuthorization.hasDrive,
     driveStatus: driveInvoices.status,
-    driveSnapshot: driveInvoices.snapshot,
+    driveSnapshot: setupDriveSnapshot,
   });
-  const setupDriveInvoices: DriveInvoicesState =
-    !googleAuthorization.hasDrive && driveInvoices.status === 'loading'
-      ? { ...driveInvoices, status: 'authorizationRequired' }
-      : driveInvoices;
   const scanDriveFolderCandidate = useCallback(
     (
       stagedRoot: Parameters<typeof scanFinalFolder>[1],
@@ -120,7 +123,7 @@ export default function App() {
     hasDriveAuthorization: googleAuthorization.hasDrive,
     authorizationIncarnation: googleAuthorization.authorizationIncarnation,
     authorizeDrive: googleAuthorization.allowDrive,
-    drive: setupDriveInvoices,
+    drive: driveInvoices,
     config,
     saveConfig: saveUpdateOrThrow,
     sources: driveSources,
@@ -312,7 +315,7 @@ export default function App() {
             layout={layout}
             config={config}
             calendarPicker={calendarPicker}
-            drive={setupDriveInvoices}
+            drive={driveInvoices}
             driveFolder={driveFolder}
             isDirty={isDirty}
             saveError={configSaveError}
@@ -398,7 +401,7 @@ export default function App() {
         layout={layout}
         step={onboarding.step}
         calendarPicker={calendarPicker}
-        drive={setupDriveInvoices}
+        drive={driveInvoices}
         driveFolder={driveFolder}
         onDismiss={onboarding.dismiss}
       />
