@@ -6,6 +6,8 @@ import { MobileNavigation, type AppTab } from './MobileNavigation';
 interface Props {
   activeTab: AppTab;
   onSelectTab: (tab: AppTab) => void;
+  disabledTabs?: readonly AppTab[];
+  calendarActionsEnabled?: boolean;
   calendarLoading: boolean;
   calendarError: string | null;
   onRefresh: () => void | Promise<void>;
@@ -24,13 +26,19 @@ const titles: Record<AppTab, string> = {
 export function MobileAppShell({
   activeTab,
   onSelectTab,
+  disabledTabs = [],
+  calendarActionsEnabled = true,
   calendarLoading,
   calendarError,
   onRefresh,
   children,
 }: Props) {
   const refreshLabel = calendarLoading ? 'Syncing' : 'Refresh calendar';
-  const refreshStatus = calendarLoading ? 'Syncing' : calendarError ? 'Retry' : 'Synced';
+  const refreshStatus = calendarLoading
+    ? 'Syncing'
+    : calendarActionsEnabled && calendarError
+      ? 'Retry'
+      : 'Synced';
   const contentRef = useRef<HTMLElement>(null);
 
   useLayoutEffect(() => {
@@ -55,7 +63,7 @@ export function MobileAppShell({
         <button
           type="button"
           onClick={() => void onRefresh()}
-          disabled={calendarLoading}
+          disabled={calendarLoading || !calendarActionsEnabled}
           aria-label={refreshLabel}
           className="flex min-h-12 items-center justify-center gap-2 rounded-full px-3 text-sm font-medium text-indigo-600 hover:bg-indigo-50 disabled:text-gray-400"
         >
@@ -68,7 +76,7 @@ export function MobileAppShell({
         </button>
       </header>
 
-      {calendarError && (
+      {calendarError && calendarActionsEnabled && (
         <div
           role="alert"
           className="mx-4 mt-3 flex items-center gap-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700"
@@ -96,7 +104,11 @@ export function MobileAppShell({
         className="fixed inset-x-0 bottom-0 z-50 bg-white"
         style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 1.5rem)' }}
       >
-        <MobileNavigation activeTab={activeTab} onSelect={onSelectTab} />
+        <MobileNavigation
+          activeTab={activeTab}
+          onSelect={onSelectTab}
+          disabledTabs={disabledTabs}
+        />
       </div>
     </div>
   );

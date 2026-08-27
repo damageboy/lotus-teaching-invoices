@@ -82,6 +82,25 @@ describe('MobileNavigation', () => {
     expect(namedButton('Invoices').classList.contains('font-semibold')).toBe(false);
     expect(document.querySelector('nav')?.getAttribute('aria-label')).toBe('Mobile navigation');
   });
+
+  it('cannot select disabled destinations and exposes native disabled semantics', async () => {
+    const onSelect = vi.fn();
+    render(
+      <MobileNavigation
+        activeTab="rates"
+        onSelect={onSelect}
+        disabledTabs={['calendar', 'invoices', 'income']}
+      />
+    );
+    for (const name of ['Calendar', 'Invoices', 'Income']) {
+      const destination = namedButton(name);
+      expect(destination.disabled).toBe(true);
+      expect(destination.querySelector('[data-lock]')).toBeTruthy();
+      await click(destination);
+    }
+    expect(namedButton('Settings').disabled).toBe(false);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
 });
 
 describe('MobileAppShell', () => {
@@ -102,6 +121,24 @@ describe('MobileAppShell', () => {
     await click(namedButton('Retry calendar sync'));
 
     expect(onRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('suppresses Calendar refresh and Calendar errors while setup is blocked', () => {
+    render(
+      <MobileAppShell
+        activeTab="rates"
+        onSelectTab={vi.fn()}
+        disabledTabs={['calendar', 'invoices', 'income']}
+        calendarActionsEnabled={false}
+        calendarLoading={false}
+        calendarError="No calendar configured"
+        onRefresh={vi.fn()}
+      >
+        <div>Settings</div>
+      </MobileAppShell>
+    );
+    expect(document.body.textContent).not.toContain('No calendar configured');
+    expect(namedButton('Refresh calendar').disabled).toBe(true);
   });
 
   it('reports syncing while keeping the active destination', () => {
