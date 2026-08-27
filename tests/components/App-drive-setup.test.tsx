@@ -1,12 +1,18 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
+import { AuthorizationRequiredError } from '../../src/lib/google/mobile-authorization.js';
+import type { DriveStoreSnapshot } from '../../src/lib/drive/invoiceStore.js';
 import { installReactTestEnvironment } from '../helpers/react-test-env.js';
 
 const restoreEnvironment = installReactTestEnvironment();
 const roots: Array<{ root: Root; container: HTMLElement }> = [];
 const allowDrive = vi.fn(async () => undefined);
+const getAccessToken = vi.fn(async () => {
+  throw new AuthorizationRequiredError('Drive access needs user action');
+});
 const classes: never[] = [];
+let publishReadySnapshot = false;
 
 (globalThis as unknown as { __APP_VERSION__: string }).__APP_VERSION__ = 'test';
 (globalThis as unknown as { __APP_IS_OFFICIAL__: boolean }).__APP_IS_OFFICIAL__ = false;
@@ -18,7 +24,7 @@ const config = {
     taxNumber: '',
     bankDetails: { accountOwner: '', iban: '', bic: '' },
   },
-  calendarId: '',
+  calendarId: 'calendar-a',
   studios: {},
 };
 
@@ -45,19 +51,20 @@ vi.mock('../../src/hooks/useCalendarData.js', () => ({
   }),
 }));
 vi.mock('../../src/hooks/useGoogleAuthorization.js', () => ({
-  useGoogleAuthorization: () => ({
-    hasDrive: false,
-    hasCalendarWrite: false,
-    isLoading: false,
-    authorizationIncarnation: 0,
-    promptOpen: false,
-    isAuthorizing: false,
-    error: null,
-    allowDrive,
-    allowCalendarEditing: vi.fn(),
-    dismissCalendarEditingPrompt: vi.fn(),
-  }),
+  useGoogleAuthorization: () => authorizationState,
 }));
+let authorizationState = {
+  hasDrive: false,
+  hasCalendarWrite: false,
+  isLoading: false,
+  authorizationIncarnation: 0,
+  promptOpen: false,
+  isAuthorizing: false,
+  error: null,
+  allowDrive,
+  allowCalendarEditing: vi.fn(),
+  dismissCalendarEditingPrompt: vi.fn(),
+};
 vi.mock('../../src/hooks/useCalendarEditing.js', () => ({
   useCalendarEditing: () => ({
     canEdit: false,
@@ -105,12 +112,8 @@ vi.mock('../../src/lib/logger.js', () => ({
   logWarn: vi.fn(),
 }));
 vi.mock('../../src/lib/gmail/auth.js', async () => {
-  const { AuthorizationRequiredError } =
-    await import('../../src/lib/google/mobile-authorization.js');
   return {
-    getAccessToken: vi.fn(async () => {
-      throw new AuthorizationRequiredError('Drive access needs user action');
-    }),
+    getAccessToken,
     clearEphemeralAccessToken: vi.fn(async () => undefined),
   };
 });
@@ -135,6 +138,22 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({ message: vi.fn(), confirm: vi.fn()
 vi.mock('@tauri-apps/plugin-process', () => ({ exit: vi.fn() }));
 
 const { waitFor } = await import('@testing-library/react');
+const { DriveInvoiceStore } = await import('../../src/lib/drive/invoiceStore.js');
+const realBootstrap = DriveInvoiceStore.prototype.bootstrap;
+const readySnapshot = {
+  control: { control: { reservation: null } },
+  stagedRoot: {
+    root: { folderId: 'root-a', driveId: null, folderName: 'Lotus invoices' },
+  },
+  scan: { entries: [], warnings: [], blockingConflicts: [] },
+} as DriveStoreSnapshot;
+const bootstrap = vi
+  .spyOn(DriveInvoiceStore.prototype, 'bootstrap')
+  .mockImplementation(function (sources) {
+    return publishReadySnapshot
+      ? Promise.resolve(readySnapshot)
+      : realBootstrap.call(this, sources);
+  });
 const { default: App } = await import('../../src/App.js');
 
 function button(name: string): HTMLButtonElement {
@@ -152,13 +171,13 @@ async function click(target: HTMLButtonElement): Promise<void> {
   });
 }
 
-function renderApp(): HTMLElement {
+function renderApp() {
   const container = document.createElement('div');
   document.body.append(container);
   const root = createRoot(container);
   roots.push({ root, container });
   act(() => root.render(<App />));
-  return container;
+  return { container, rerender: () => act(() => root.render(<App />)) };
 }
 
 afterEach(() => {
@@ -167,23 +186,49 @@ afterEach(() => {
     container.remove();
   }
   allowDrive.mockClear();
+  getAccessToken.mockClear();
+  publishReadySnapshot = false;
+  authorizationState = {
+    ...authorizationState,
+    hasDrive: false,
+    authorizationIncarnation: 0,
+  };
 });
-afterAll(() => restoreEnvironment());
+afterAll(() => {
+  bootstrap.mockRestore();
+  restoreEnvironment();
+});
 
 describe('App Drive setup without an existing grant', () => {
-  it('authorizes from Connections and keeps Invoices strictly empty', async () => {
-    const container = renderApp();
+  it('gates Invoices through real no-grant discovery, then unlocks an empty Drive', async () => {
+    const { container, rerender } = renderApp();
 
-    await click(button('Rates & Config'));
     await waitFor(() => expect(button('Pick Drive folder…').disabled).toBe(false));
+    expect(button('Invoices').disabled).toBe(true);
     const pickDrive = button('Pick Drive folder…');
     await click(pickDrive);
     expect(allowDrive).toHaveBeenCalledOnce();
 
+    authorizationState = {
+      ...authorizationState,
+      hasDrive: true,
+      authorizationIncarnation: 1,
+    };
+    rerender();
+    await waitFor(() =>
+      expect(container.textContent).toContain('Google Drive authorization is required')
+    );
+    expect(getAccessToken).toHaveBeenCalledWith({ requireDrive: true, interactive: false });
+    expect(button('Invoices').disabled).toBe(true);
+
+    publishReadySnapshot = true;
+    authorizationState = { ...authorizationState, authorizationIncarnation: 2 };
+    rerender();
+    await waitFor(() => expect(button('Invoices').disabled).toBe(false));
     await click(button('Invoices'));
     const content = container.querySelector('.flex-1.overflow-auto');
-    expect(content?.innerHTML).toBe('');
+    expect(content?.textContent).toContain('No invoices');
     expect(container.querySelector('[role="alert"]')).toBeNull();
-    expect(container.querySelector('table')).toBeNull();
+    expect(container.querySelector('table')).toBeTruthy();
   });
 });

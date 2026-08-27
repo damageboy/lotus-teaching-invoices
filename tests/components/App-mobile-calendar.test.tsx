@@ -9,7 +9,7 @@ let compactLayout = true;
 let latestCalendarActivation: number | undefined;
 
 const config = {
-  calendarId: '',
+  calendarId: 'calendar-a',
   studios: {},
   personal: { name: '', address: '', taxId: '' },
 };
@@ -45,6 +45,7 @@ vi.mock('../../src/hooks/useCalendarData.js', () => ({
 }));
 vi.mock('../../src/hooks/useGoogleAuthorization.js', () => ({
   useGoogleAuthorization: () => ({
+    hasDrive: true,
     hasCalendarWrite: false,
     isLoading: false,
     authorizationIncarnation: 0,
@@ -67,7 +68,22 @@ vi.mock('../../src/hooks/useCalendarEditing.js', () => ({
   }),
 }));
 vi.mock('../../src/hooks/useDriveInvoices.js', () => ({
-  useDriveInvoices: () => ({}),
+  useDriveInvoices: () => ({
+    status: 'ready',
+    snapshot: {
+      stagedRoot: {
+        root: { folderId: 'root-a', driveId: null, folderName: 'Lotus invoices' },
+      },
+    },
+    error: null,
+    operationKey: null,
+    refresh: vi.fn(async () => undefined),
+    activateRoot: vi.fn(async () => undefined),
+    finalize: vi.fn(),
+    refinalize: vi.fn(),
+    recoverReservation: vi.fn(),
+    downloadVerified: vi.fn(),
+  }),
 }));
 vi.mock('../../src/hooks/useCompactLayout.js', () => ({
   useCompactLayout: () => compactLayout,
