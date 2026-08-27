@@ -12,7 +12,7 @@ mod gmail_api;
 mod oauth;
 mod temp_pdfs;
 
-struct ConfigPath(Option<String>);
+pub(crate) struct ConfigPath(Option<String>);
 
 fn application_log_targets() -> Vec<tauri_plugin_log::Target> {
     vec![
@@ -379,6 +379,8 @@ pub fn run() {
         clear_calendar_cache,
         app_storage::read_auth_tokens,
         app_storage::write_auth_tokens,
+        app_storage::read_legacy_config,
+        app_storage::remove_verified_legacy_config,
         app_storage::read_calendar_edit_prompt_preference,
         app_storage::write_calendar_edit_prompt_preference,
         oauth::start_oauth_server,
@@ -413,6 +415,8 @@ pub fn run() {
         clear_calendar_cache,
         app_storage::read_auth_tokens,
         app_storage::write_auth_tokens,
+        app_storage::read_legacy_config,
+        app_storage::remove_verified_legacy_config,
         app_storage::read_calendar_edit_prompt_preference,
         app_storage::write_calendar_edit_prompt_preference,
         oauth::start_oauth_server,

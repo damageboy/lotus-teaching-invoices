@@ -5,14 +5,54 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::State;
 
-const AUTH_TOKENS_FILE: &str = "gmail-tokens.json";
+const AUTH_TOKENS_FILE: &str = "google-tokens.json";
+const LEGACY_AUTH_TOKENS_FILE: &str = "gmail-tokens.json";
 const PROMPT_PREFERENCE_FILE: &str = "calendar-edit-prompt-preference.json";
 const CALENDAR_CACHE_FILE: &str = "calendar-cache.sqlite";
-const AUTH_LOCK_FILE: &str = ".gmail-tokens.lock";
+const AUTH_LOCK_FILE: &str = ".google-tokens.lock";
+const LEGACY_AUTH_LOCK_FILE: &str = ".gmail-tokens.lock";
+const LEGACY_CONFIG_FILE: &str = "config.yaml";
 const TEMP_FILE_MARKER: &str = "lotus-write-v1";
 const MAX_TEMP_CREATE_ATTEMPTS: usize = 32;
 static NEXT_TEMP_FILE_ID: AtomicU64 = AtomicU64::new(0);
 static AUTH_WRITE_MUTEX: Mutex<()> = Mutex::new(());
+static CONFIG_DELETE_MUTEX: Mutex<()> = Mutex::new(());
+
+fn migrate_auth_storage(root: &Path) -> io::Result<()> {
+    let current = root.join(AUTH_TOKENS_FILE);
+    let legacy = root.join(LEGACY_AUTH_TOKENS_FILE);
+    if current.exists() && legacy.exists() {
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "Both google-tokens.json and gmail-tokens.json exist",
+        ));
+    }
+
+    let current_lock = root.join(AUTH_LOCK_FILE);
+    let legacy_lock = root.join(LEGACY_AUTH_LOCK_FILE);
+    if legacy_lock.exists() {
+        if current_lock.exists() {
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "Both Google token lock files exist",
+            ));
+        }
+        std::fs::rename(&legacy_lock, &current_lock)?;
+    }
+
+    if legacy.exists() {
+        let _lock = AuthFileLock::acquire(&current_lock)?;
+        if current.exists() {
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "Both google-tokens.json and gmail-tokens.json exist",
+            ));
+        }
+        std::fs::rename(&legacy, &current)?;
+        sync_parent_directory(root)?;
+    }
+    Ok(())
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(tag = "status", rename_all = "camelCase")]
@@ -214,7 +254,11 @@ fn parse_canonical_u128(value: &str) -> Option<u128> {
 }
 
 fn owned_temp_writer_pid(file_name: &str) -> Option<u32> {
-    for managed_file in [AUTH_TOKENS_FILE, PROMPT_PREFERENCE_FILE] {
+    for managed_file in [
+        AUTH_TOKENS_FILE,
+        LEGACY_AUTH_TOKENS_FILE,
+        PROMPT_PREFERENCE_FILE,
+    ] {
         let prefix = format!(".{managed_file}.");
         let Some(body) = file_name
             .strip_prefix(&prefix)
@@ -293,6 +337,7 @@ pub struct AppStorage {
 impl AppStorage {
     pub fn new(root: PathBuf) -> io::Result<Self> {
         std::fs::create_dir_all(&root)?;
+        migrate_auth_storage(&root)?;
         cleanup_owned_temp_files(&root)?;
         Ok(Self { root })
     }
@@ -315,6 +360,10 @@ impl AppStorage {
 
     pub fn calendar_cache_path(&self) -> PathBuf {
         self.root.join(CALENDAR_CACHE_FILE)
+    }
+
+    fn legacy_config_path(&self, explicit_path: Option<&str>) -> PathBuf {
+        explicit_path.map_or_else(|| self.root.join(LEGACY_CONFIG_FILE), PathBuf::from)
     }
 
     fn read_optional(path: PathBuf) -> io::Result<Option<String>> {
@@ -357,6 +406,35 @@ impl AppStorage {
     pub fn write_prompt_preference(&self, raw: &str) -> io::Result<StorageWriteOutcome> {
         self.write_atomic(self.prompt_preference_path(), raw)
     }
+
+    pub fn read_legacy_config(&self, explicit_path: Option<&str>) -> io::Result<Option<String>> {
+        Self::read_optional(self.legacy_config_path(explicit_path))
+    }
+
+    pub fn remove_verified_legacy_config(
+        &self,
+        explicit_path: Option<&str>,
+        expected_raw: &str,
+    ) -> io::Result<StorageWriteOutcome> {
+        let _guard = CONFIG_DELETE_MUTEX
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let path = self.legacy_config_path(explicit_path);
+        if Self::read_optional(path.clone())?.as_deref() != Some(expected_raw) {
+            return Ok(StorageWriteOutcome::Conflict);
+        }
+        std::fs::remove_file(&path)?;
+        let parent = path.parent().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Missing configuration parent directory",
+            )
+        })?;
+        Ok(match sync_parent_directory(parent) {
+            Ok(()) => StorageWriteOutcome::Durable,
+            Err(_) => StorageWriteOutcome::CommittedButDurabilityUncertain,
+        })
+    }
 }
 
 #[tauri::command]
@@ -374,6 +452,27 @@ pub fn write_auth_tokens(
 ) -> Result<StorageWriteOutcome, String> {
     storage
         .compare_and_write_auth_tokens(&raw, expected_raw.as_deref())
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn read_legacy_config(
+    storage: State<'_, AppStorage>,
+    config_path: State<'_, crate::ConfigPath>,
+) -> Result<Option<String>, String> {
+    storage
+        .read_legacy_config(config_path.0.as_deref())
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn remove_verified_legacy_config(
+    storage: State<'_, AppStorage>,
+    config_path: State<'_, crate::ConfigPath>,
+    expected_raw: String,
+) -> Result<StorageWriteOutcome, String> {
+    storage
+        .remove_verified_legacy_config(config_path.0.as_deref(), &expected_raw)
         .map_err(|error| error.to_string())
 }
 
@@ -400,7 +499,8 @@ pub fn write_calendar_edit_prompt_preference(
 mod tests {
     use super::{
         cleanup_owned_temp_files_with, commit_staged_with, stage_atomic_write_with, AppStorage,
-        StorageWriteOutcome, AUTH_TOKENS_FILE,
+        StorageWriteOutcome, AUTH_LOCK_FILE, AUTH_TOKENS_FILE, LEGACY_AUTH_LOCK_FILE,
+        LEGACY_AUTH_TOKENS_FILE,
     };
     use std::cell::Cell;
     use std::io;
@@ -418,6 +518,94 @@ mod tests {
 
         assert_eq!(storage.read_auth_tokens().unwrap(), None);
         assert_eq!(storage.read_prompt_preference().unwrap(), None);
+    }
+
+    #[test]
+    fn startup_renames_the_legacy_auth_record_byte_for_byte() {
+        let root = tempfile::tempdir().unwrap();
+        let raw = b"{\n  \"refresh_token\": \"keep exact bytes\"\n}\n";
+        std::fs::write(root.path().join(LEGACY_AUTH_TOKENS_FILE), raw).unwrap();
+
+        let storage = AppStorage::new(root.path().to_path_buf()).unwrap();
+
+        assert_eq!(std::fs::read(storage.auth_tokens_path()).unwrap(), raw);
+        assert!(!root.path().join(LEGACY_AUTH_TOKENS_FILE).exists());
+    }
+
+    #[test]
+    fn startup_renames_the_legacy_auth_lock() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join(LEGACY_AUTH_LOCK_FILE), b"").unwrap();
+
+        AppStorage::new(root.path().to_path_buf()).unwrap();
+
+        assert!(root.path().join(AUTH_LOCK_FILE).exists());
+        assert!(!root.path().join(LEGACY_AUTH_LOCK_FILE).exists());
+    }
+
+    #[test]
+    fn startup_rejects_both_auth_records() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join(AUTH_TOKENS_FILE), "new").unwrap();
+        std::fs::write(root.path().join(LEGACY_AUTH_TOKENS_FILE), "old").unwrap();
+
+        let error = match AppStorage::new(root.path().to_path_buf()) {
+            Ok(_) => panic!("dual token records must be rejected"),
+            Err(error) => error,
+        };
+
+        assert!(error.to_string().contains("Both google-tokens.json and gmail-tokens.json"));
+        assert_eq!(std::fs::read_to_string(root.path().join(AUTH_TOKENS_FILE)).unwrap(), "new");
+        assert_eq!(
+            std::fs::read_to_string(root.path().join(LEGACY_AUTH_TOKENS_FILE)).unwrap(),
+            "old"
+        );
+    }
+
+    #[test]
+    fn verified_legacy_config_removal_requires_exact_unchanged_bytes() {
+        let root = tempfile::tempdir().unwrap();
+        let storage = AppStorage::new(root.path().to_path_buf()).unwrap();
+        let path = root.path().join("config.yaml");
+        std::fs::write(&path, "teacher: old\n").unwrap();
+
+        assert_eq!(
+            storage
+                .remove_verified_legacy_config(None, "teacher: different\n")
+                .unwrap(),
+            StorageWriteOutcome::Conflict
+        );
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "teacher: old\n");
+        assert_eq!(
+            storage
+                .remove_verified_legacy_config(None, "teacher: old\n")
+                .unwrap(),
+            StorageWriteOutcome::Durable
+        );
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn legacy_config_uses_the_explicit_path_when_supplied() {
+        let root = tempfile::tempdir().unwrap();
+        let storage = AppStorage::new(root.path().join("app-data")).unwrap();
+        let explicit = root.path().join("profile.yaml");
+        std::fs::write(&explicit, "studios: {}\n").unwrap();
+
+        assert_eq!(
+            storage
+                .read_legacy_config(explicit.to_str())
+                .unwrap()
+                .as_deref(),
+            Some("studios: {}\n")
+        );
+        assert_eq!(
+            storage
+                .remove_verified_legacy_config(explicit.to_str(), "studios: {}\n")
+                .unwrap(),
+            StorageWriteOutcome::Durable
+        );
+        assert!(!explicit.exists());
     }
 
     #[test]
