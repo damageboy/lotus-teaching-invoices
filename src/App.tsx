@@ -134,7 +134,15 @@ export default function App() {
   const visibleActiveTab: AppTab = setupBlocked ? 'rates' : activeTab;
   const disabledTabs: readonly AppTab[] = setupBlocked ? ['calendar', 'invoices', 'income'] : [];
   const onboarding = useSetupOnboarding(setupReadiness);
-  const previousWizardOpenRef = useRef(false);
+  const setupPresenterResolvedRef = useRef(false);
+  const completionOriginRef = useRef<'welcome' | 'dismissed' | null>(null);
+  const wizardOpen =
+    onboarding.open ||
+    (setupReadiness.status === 'checking' && completionOriginRef.current === 'welcome');
+  const dismissOnboarding = useCallback(() => {
+    completionOriginRef.current = 'dismissed';
+    onboarding.dismiss();
+  }, [onboarding]);
 
   useEffect(() => {
     if (setupReadiness.status !== 'ready') {
@@ -170,10 +178,16 @@ export default function App() {
   }, [activeTab, setupBlocked]);
 
   useEffect(() => {
-    if (setupReadiness.status === 'ready' && previousWizardOpenRef.current) {
+    if (setupReadiness.status !== 'checking') setupPresenterResolvedRef.current = true;
+  }, [setupReadiness.status]);
+
+  useEffect(() => {
+    if (onboarding.open) completionOriginRef.current = 'welcome';
+    if (setupReadiness.status !== 'ready') return;
+    if (completionOriginRef.current === 'welcome') {
       setMobileTabState((state) => selectMobileTab(state, 'calendar'));
     }
-    previousWizardOpenRef.current = onboarding.open;
+    completionOriginRef.current = null;
   }, [onboarding.open, setupReadiness.status]);
 
   function handleAddStudio(name: string) {
@@ -260,7 +274,7 @@ export default function App() {
     void showFatalConfigError();
   }, [configLoading, configLoadError]);
 
-  if (setupReadiness.status === 'checking') {
+  if (setupReadiness.status === 'checking' && !setupPresenterResolvedRef.current) {
     return <div className="flex items-center justify-center h-screen text-gray-500">Loading…</div>;
   }
 
@@ -397,13 +411,13 @@ export default function App() {
         </MobileAppShell>
       )}
       <SetupWizard
-        open={onboarding.open}
+        open={wizardOpen}
         layout={layout}
         step={onboarding.step}
         calendarPicker={calendarPicker}
         drive={driveInvoices}
         driveFolder={driveFolder}
-        onDismiss={onboarding.dismiss}
+        onDismiss={dismissOnboarding}
       />
       <DriveFolderDialog
         open={driveFolder.dialogOpen}

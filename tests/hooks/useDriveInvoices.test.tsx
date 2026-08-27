@@ -484,6 +484,38 @@ describe('useDriveInvoices', () => {
     );
   });
 
+  it('never publishes an old-store snapshot after rebinding to a loading store', async () => {
+    const storeA = storeDouble();
+    const storeB = storeDouble();
+    const storeBDiscovery = deferred<DriveStoreSnapshot>();
+    storeA.bootstrap.mockResolvedValueOnce(snapshotFor('store-a'));
+    storeB.bootstrap.mockReturnValueOnce(storeBDiscovery.promise);
+    const { result, rerender } = renderHook(
+      ({ store, render }) => {
+        void render;
+        return useDriveInvoices(options({ store, sources: [] }));
+      },
+      { initialProps: { store: storeA, render: 0 } }
+    );
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(result.current.snapshot?.stagedRoot.root.folderId).toBe('store-a-root');
+
+    rerender({ store: storeB, render: 1 });
+    expect(result.current.status).toBe('loading');
+    expect(result.current.snapshot).toBeNull();
+    await waitFor(() => expect(storeB.bootstrap).toHaveBeenCalledOnce());
+
+    rerender({ store: storeB, render: 2 });
+    expect(result.current.status).toBe('loading');
+    expect(result.current.snapshot).toBeNull();
+
+    await act(async () => {
+      storeBDiscovery.resolve(snapshotFor('store-b'));
+      await storeBDiscovery.promise;
+    });
+    expect(result.current.snapshot?.stagedRoot.root.folderId).toBe('store-b-root');
+  });
+
   it('does not let an older source request overwrite a newer request generation', async () => {
     const older = deferred<DriveStoreSnapshot>();
     const newer = deferred<DriveStoreSnapshot>();

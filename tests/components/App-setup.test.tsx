@@ -14,6 +14,43 @@ const roots: Array<{ root: Root; container: HTMLElement }> = [];
 const classes: never[] = [];
 let compactLayout = false;
 let configState: AppConfig;
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+const candidateFolder = {
+  id: 'invoice-root',
+  name: 'Invoice Root',
+  mimeType: 'application/vnd.google-apps.folder',
+  parents: ['root'],
+  driveId: null,
+  ownedByMe: true,
+  trashed: false,
+  capabilities: {
+    canAddChildren: true,
+    canDownload: false,
+    canEdit: true,
+    canListChildren: true,
+  },
+  properties: {},
+  size: null,
+  sha256Checksum: null,
+  md5Checksum: null,
+  etag: '"invoice-root"',
+  version: '1',
+};
+const candidateRoot = {
+  root: { folderId: 'invoice-root', driveId: null, folderName: 'Invoice Root' },
+  rootFile: candidateFolder,
+  finalFolder: { ...candidateFolder, id: 'final-root', name: 'Final', parents: ['invoice-root'] },
+};
 let authorizationState: {
   isLoading: boolean;
   isAuthorizing: boolean;
@@ -134,9 +171,29 @@ vi.mock('../../src/lib/logger.js', () => ({
 }));
 vi.mock('../../src/lib/drive/transport.js', () => ({ createTauriDriveApi: () => ({}) }));
 vi.mock('../../src/lib/drive/folders.js', () => ({
-  DriveFolderService: class DriveFolderService {},
+  DriveFolderService: class DriveFolderService {
+    async listLocations() {
+      return [{ kind: 'myDrive', id: 'root', name: 'My Drive', driveId: null }];
+    }
+    async listChildren(_location: unknown, parentId: string) {
+      return { folders: parentId === 'root' ? [candidateFolder] : [], nextPageToken: null };
+    }
+    async createChild() {
+      return candidateFolder;
+    }
+    async stageRoot() {
+      return candidateRoot;
+    }
+  },
 }));
-vi.mock('../../src/lib/drive/invoiceCatalog.js', () => ({ scanFinalFolder: vi.fn() }));
+vi.mock('../../src/lib/drive/invoiceCatalog.js', () => ({
+  scanFinalFolder: vi.fn(async () => ({
+    entries: [],
+    warnings: [],
+    blockingConflicts: [],
+    maxSequenceByYear: {},
+  })),
+}));
 vi.mock('../../src/lib/drive/invoiceStore.js', () => ({
   DriveInvoiceStore: class DriveInvoiceStore {},
 }));
@@ -234,6 +291,7 @@ afterEach(() => {
     act(() => root.unmount());
     container.remove();
   }
+  vi.restoreAllMocks();
   window.history.replaceState(null, '');
 });
 
@@ -288,9 +346,63 @@ describe('App required Google setup', () => {
     expect(namedButton('Invoices').disabled).toBe(false);
   });
 
+  it('keeps mobile Welcome and Drive dialog alive through activation checking, then closes both histories', async () => {
+    const activation = deferred<void>();
+    const activateRoot = vi.fn(() => activation.promise);
+    configState = { ...configState, calendarId: 'calendar-a', calendarName: 'Teaching' };
+    authorizationState = { ...authorizationState, hasDrive: true };
+    driveState = {
+      ...driveState,
+      status: 'unconfigured',
+      snapshot: null,
+      activateRoot,
+    };
+    const historyBack = vi.spyOn(window.history, 'back').mockImplementation(() => undefined);
+    const view = renderApp({ compact: true });
+    const wizardHistoryState = window.history.state;
+
+    await click(namedButton('Pick Drive folder…'));
+    expect(await screen.findByRole('dialog', { name: 'Choose Drive invoice folder' })).toBeTruthy();
+    await click(await screen.findByRole('button', { name: 'My Drive' }));
+    await click(await screen.findByRole('button', { name: 'Invoice Root' }));
+    await click(namedButton('Use this folder'));
+    expect(await screen.findByText('0 recognized invoices')).toBeTruthy();
+    await click(namedButton('Activate for all devices'));
+    await waitFor(() => expect(activateRoot).toHaveBeenCalledOnce());
+
+    driveState = { ...driveState, status: 'loading', snapshot: null };
+    view.rerender();
+    expect(screen.getByRole('dialog', { name: 'Welcome to Lotus' })).toBeTruthy();
+    expect(screen.getByRole('dialog', { name: 'Choose Drive invoice folder' })).toBeTruthy();
+    expect(document.body.textContent).toContain('Rates content');
+
+    driveState = { ...readyDriveState, activateRoot };
+    view.rerender();
+    await act(async () => {
+      activation.resolve();
+      await activation.promise;
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(historyBack).toHaveBeenCalledOnce());
+
+    window.history.replaceState(wizardHistoryState, '');
+    await act(async () => {
+      window.dispatchEvent(new window.PopStateEvent('popstate'));
+      await Promise.resolve();
+    });
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Choose Drive invoice folder' })).toBeNull()
+    );
+    expect(document.body.textContent).toContain('Calendar content');
+    await waitFor(() => expect(historyBack).toHaveBeenCalledTimes(2));
+  });
+
   it('unlocks without leaving Rates when completion came after dismissal', async () => {
     const view = renderDriveStepApp();
     await click(namedButton('Set up later'));
+    driveState = { ...driveState, status: 'loading', snapshot: null };
+    view.rerender();
+    expect(document.body.textContent).toContain('Rates content');
     driveState = readyDriveState;
     view.rerender();
     expect(document.body.textContent).toContain('Rates content');

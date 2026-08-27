@@ -50,6 +50,7 @@ export interface UseDriveInvoicesOptions {
 }
 
 interface MachineState {
+  store: DriveInvoiceStoreController;
   authorizationIncarnation: number;
   sourceSignature: string;
   status: DriveInvoicesStatus;
@@ -79,8 +80,13 @@ interface OperationToken {
   context: SemanticContext;
 }
 
-function initialState(authorizationIncarnation: number, signature: string): MachineState {
+function initialState(
+  store: DriveInvoiceStoreController,
+  authorizationIncarnation: number,
+  signature: string
+): MachineState {
   return {
+    store,
     authorizationIncarnation,
     sourceSignature: signature,
     status: 'loading',
@@ -187,7 +193,7 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
   const operationSequenceRef = useRef(0);
   const currentOperationRef = useRef<OperationToken | null>(null);
   const [machine, setMachine] = useState<MachineState>(() =>
-    initialState(options.authorizationIncarnation, signature)
+    initialState(options.store, options.authorizationIncarnation, signature)
   );
   const [repairWakeup, setRepairWakeup] = useState(0);
   const machineRef = useRef(machine);
@@ -268,17 +274,19 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
       const sources = current.sources;
       const hasSnapshot =
         knownConfigured ||
-        (machineRef.current.authorizationIncarnation === authorizationIncarnation &&
+        (machineRef.current.store === store &&
+          machineRef.current.authorizationIncarnation === authorizationIncarnation &&
           machineRef.current.snapshot !== null);
       const refreshGeneration = ++refreshGenerationRef.current;
       const actionErrorGeneration = actionErrorGenerationRef.current;
 
       updateMachine((state) => {
         if (
+          state.store !== store ||
           state.authorizationIncarnation !== authorizationIncarnation ||
           state.sourceSignature !== current.sourceSignature
         ) {
-          return initialState(authorizationIncarnation, current.sourceSignature);
+          return initialState(store, authorizationIncarnation, current.sourceSignature);
         }
         return {
           ...state,
@@ -298,6 +306,7 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
               const latest = committedOptionsRef.current;
               const currentMachine = machineRef.current;
               const currentGenerationConfigured =
+                currentMachine.store === latest.store &&
                 currentMachine.authorizationIncarnation === latest.authorizationIncarnation &&
                 currentMachine.sourceSignature === latest.sourceSignature &&
                 currentMachine.snapshot !== null;
@@ -324,6 +333,7 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
             if (recoveryError !== null) {
               return {
                 ...state,
+                store,
                 authorizationIncarnation,
                 sourceSignature: current.sourceSignature,
                 status: 'blocked',
@@ -332,9 +342,16 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
               };
             }
             return preserveActionError
-              ? { ...state, authorizationIncarnation, snapshot }
+              ? {
+                  ...state,
+                  store,
+                  authorizationIncarnation,
+                  sourceSignature: current.sourceSignature,
+                  snapshot,
+                }
               : {
                   ...state,
+                  store,
                   authorizationIncarnation,
                   sourceSignature: current.sourceSignature,
                   status: snapshot === null ? 'unconfigured' : 'ready',
@@ -351,6 +368,7 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
           ) {
             updateMachine((state) => ({
               ...state,
+              store,
               authorizationIncarnation,
               sourceSignature: current.sourceSignature,
               status: statusForError(error),
@@ -585,12 +603,15 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
   });
 
   useLayoutEffect(() => {
-    if (machineRef.current.authorizationIncarnation !== options.authorizationIncarnation) {
-      const reset = initialState(options.authorizationIncarnation, signature);
+    if (
+      machineRef.current.store !== options.store ||
+      machineRef.current.authorizationIncarnation !== options.authorizationIncarnation
+    ) {
+      const reset = initialState(options.store, options.authorizationIncarnation, signature);
       machineRef.current = reset;
       setMachine(reset);
     }
-  }, [options.authorizationIncarnation, signature]);
+  }, [options.authorizationIncarnation, options.store, signature]);
 
   useEffect(() => {
     if (options.discoveryEnabled) void runRefresh().catch(() => undefined);
@@ -634,10 +655,11 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
   }, []);
 
   const visibleMachine =
+    machine.store === options.store &&
     machine.authorizationIncarnation === options.authorizationIncarnation &&
     machine.sourceSignature === signature
       ? machine
-      : initialState(options.authorizationIncarnation, signature);
+      : initialState(options.store, options.authorizationIncarnation, signature);
 
   return {
     status: visibleMachine.status,

@@ -2,6 +2,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import { AuthorizationRequiredError } from '../../src/lib/google/mobile-authorization.js';
+import type { CurrentInvoiceSource } from '../../src/lib/drive/invoiceCatalog.js';
 import type { DriveStoreSnapshot } from '../../src/lib/drive/invoiceStore.js';
 import { installReactTestEnvironment } from '../helpers/react-test-env.js';
 
@@ -13,6 +14,39 @@ const getAccessToken = vi.fn(async () => {
 });
 const classes: never[] = [];
 let publishReadySnapshot = false;
+let publishUnconfiguredSnapshot = false;
+let refreshOverride: (() => Promise<DriveStoreSnapshot>) | null = null;
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+const buildCurrentInvoiceSources = vi.fn(
+  async (): Promise<CurrentInvoiceSource[]> => [
+    {
+      key: { studioSlug: 'studio-a', monthKey: '2026-08' },
+      studioName: 'Studio A',
+      invoice: {
+        studioName: 'Studio A',
+        invoicePeriod: { from: '2026-08-01', to: '2026-08-31' },
+        generatedAt: '2026-08-27T00:00:00.000Z',
+        issueDate: '2026-08-27',
+        classes: [],
+        totalClasses: 0,
+        totalAmount: 0,
+      },
+      classes: [],
+      config,
+      fingerprint: { sourceSha256: 'source-a', calendarSha256: 'calendar-a' },
+    },
+  ]
+);
 
 (globalThis as unknown as { __APP_VERSION__: string }).__APP_VERSION__ = 'test';
 (globalThis as unknown as { __APP_IS_OFFICIAL__: boolean }).__APP_IS_OFFICIAL__ = false;
@@ -129,17 +163,24 @@ vi.mock('../../src/lib/pdf/generatePdf.js', () => ({
   createGmailDraft: vi.fn(),
 }));
 vi.mock('../../src/lib/invoice/rows.js', () => ({
-  buildCurrentInvoiceSources: async () => [],
+  buildCurrentInvoiceSources,
   currentInvoiceSourceInputKey: () => 'fixture',
-  visibleCurrentInvoiceSourceBuild: () => ({ sources: [], ready: true, error: null }),
+  visibleCurrentInvoiceSourceBuild: (
+    inputKey: string,
+    build: { inputKey: string | null; sources: never[]; error: string | null }
+  ) =>
+    build.inputKey === inputKey
+      ? { sources: build.sources, ready: true, error: build.error }
+      : { sources: [], ready: false, error: null },
   buildInvoiceRows: () => [],
 }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ message: vi.fn(), confirm: vi.fn() }));
 vi.mock('@tauri-apps/plugin-process', () => ({ exit: vi.fn() }));
 
 const { waitFor } = await import('@testing-library/react');
-const { DriveInvoiceStore } = await import('../../src/lib/drive/invoiceStore.js');
+const { DriveInvoiceStore, DriveStoreError } = await import('../../src/lib/drive/invoiceStore.js');
 const realBootstrap = DriveInvoiceStore.prototype.bootstrap;
+const realRefresh = DriveInvoiceStore.prototype.refresh;
 const readySnapshot = {
   control: { control: { reservation: null } },
   stagedRoot: {
@@ -150,9 +191,16 @@ const readySnapshot = {
 const bootstrap = vi
   .spyOn(DriveInvoiceStore.prototype, 'bootstrap')
   .mockImplementation(function (sources) {
-    return publishReadySnapshot
-      ? Promise.resolve(readySnapshot)
-      : realBootstrap.call(this, sources);
+    if (publishReadySnapshot) return Promise.resolve(readySnapshot);
+    if (publishUnconfiguredSnapshot) return Promise.resolve(null);
+    return realBootstrap.call(this, sources);
+  });
+const storeRefresh = vi
+  .spyOn(DriveInvoiceStore.prototype, 'refresh')
+  .mockImplementation(function (sources) {
+    if (refreshOverride !== null) return refreshOverride();
+    if (publishReadySnapshot) return Promise.resolve(readySnapshot);
+    return realRefresh.call(this, sources);
   });
 const { default: App } = await import('../../src/App.js');
 
@@ -180,14 +228,23 @@ function renderApp() {
   return { container, rerender: () => act(() => root.render(<App />)) };
 }
 
-afterEach(() => {
+afterEach(async () => {
   for (const { root, container } of roots.splice(0)) {
-    act(() => root.unmount());
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
     container.remove();
   }
+  await new Promise((resolve) => setTimeout(resolve, 0));
   allowDrive.mockClear();
   getAccessToken.mockClear();
+  bootstrap.mockClear();
+  storeRefresh.mockClear();
+  buildCurrentInvoiceSources.mockClear();
   publishReadySnapshot = false;
+  publishUnconfiguredSnapshot = false;
+  refreshOverride = null;
   authorizationState = {
     ...authorizationState,
     hasDrive: false,
@@ -196,6 +253,7 @@ afterEach(() => {
 });
 afterAll(() => {
   bootstrap.mockRestore();
+  storeRefresh.mockRestore();
   restoreEnvironment();
 });
 
@@ -230,5 +288,64 @@ describe('App Drive setup without an existing grant', () => {
     expect(content?.textContent).toContain('No invoices');
     expect(container.querySelector('[role="alert"]')).toBeNull();
     expect(container.querySelector('table')).toBeTruthy();
+  });
+
+  it('keeps the built source context while the real hook masks a slow full-source refresh', async () => {
+    const fullSourceRefresh = deferred<DriveStoreSnapshot>();
+    publishReadySnapshot = true;
+    refreshOverride = () => fullSourceRefresh.promise;
+    authorizationState = {
+      ...authorizationState,
+      hasDrive: true,
+      authorizationIncarnation: 1,
+    };
+    const { container, rerender } = renderApp();
+
+    await waitFor(() => expect(storeRefresh).toHaveBeenCalledOnce());
+    expect(buildCurrentInvoiceSources).toHaveBeenCalledOnce();
+    expect(container.textContent).toContain('Calendar');
+    expect(container.textContent).not.toBe('Loading…');
+    expect(button('Invoices').disabled).toBe(false);
+
+    rerender();
+    expect(buildCurrentInvoiceSources).toHaveBeenCalledOnce();
+    expect(bootstrap).toHaveBeenCalledOnce();
+    expect(storeRefresh).toHaveBeenCalledOnce();
+    expect(container.textContent).toContain('Calendar');
+
+    await act(async () => {
+      fullSourceRefresh.resolve(readySnapshot);
+      await fullSourceRefresh.promise;
+    });
+    await waitFor(() => expect(button('Invoices').disabled).toBe(false));
+    expect(buildCurrentInvoiceSources).toHaveBeenCalledOnce();
+    expect(bootstrap).toHaveBeenCalledOnce();
+  });
+
+  it('clears retained setup evidence after a conclusive real-hook source refresh error', async () => {
+    const fullSourceRefresh = deferred<DriveStoreSnapshot>();
+    publishReadySnapshot = true;
+    refreshOverride = () => fullSourceRefresh.promise;
+    authorizationState = {
+      ...authorizationState,
+      hasDrive: true,
+      authorizationIncarnation: 1,
+    };
+    const { container } = renderApp();
+
+    await waitFor(() => expect(storeRefresh).toHaveBeenCalledOnce());
+    expect(container.textContent).toContain('Calendar');
+    publishReadySnapshot = false;
+    publishUnconfiguredSnapshot = true;
+    refreshOverride = null;
+    act(() => {
+      fullSourceRefresh.reject(new DriveStoreError('unconfigured', 'Drive root removed', false));
+    });
+
+    await waitFor(() => expect(button('Invoices').disabled).toBe(true));
+    await waitFor(() => expect(bootstrap).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(button('Pick Drive folder…').disabled).toBe(false));
+    expect(container.textContent).toContain('Choose your invoice folder');
+    expect(buildCurrentInvoiceSources).toHaveBeenCalledOnce();
   });
 });
