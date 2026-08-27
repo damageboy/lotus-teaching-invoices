@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { join } from 'node:path';
 import { loadConfig } from '../../src/lib/config/loader.js';
-import { validateConfig, withoutLegacyInvoiceStorage } from '../../src/lib/config/schema.js';
+import { parseLegacyLocalConfigYaml, validateConfig } from '../../src/lib/config/schema.js';
 
 const fixturesDir = join(import.meta.dirname, '..', 'fixtures');
 
@@ -13,7 +13,7 @@ describe('loadConfig', () => {
     expect(config.teacher.name).toBe('');
     expect(config.teacher.taxNumber).toBe('');
     expect(config.teacher.bankDetails.iban).toBe('');
-    expect(config.outputDir).toBeUndefined();
+    expect(config.invoiceSequenceByYear).toEqual({});
     expect(Object.keys(config.studios)).toEqual(['Zen Yoga', 'Power House']);
     expect(config.studios['Zen Yoga'].rateTiers).toHaveLength(3);
     expect(config.studios['Power House'].rateTiers).toHaveLength(3);
@@ -25,10 +25,18 @@ describe('loadConfig', () => {
     expect(() => loadConfig('/nonexistent/config.yaml')).toThrow('Cannot read config file');
   });
 
-  it('normalizes a whitespace-only legacy invoice seed while loading YAML', () => {
-    const config = loadConfig(join(fixturesDir, 'config-legacy-whitespace.yaml'));
+  it('rejects local-only legacy fields as cloud configuration', () => {
+    expect(() => loadConfig(join(fixturesDir, 'config-legacy-whitespace.yaml'))).toThrow(
+      /lastInvoice/
+    );
+  });
 
-    expect(config.lastInvoice).toBe('');
+  it('parses whitespace-only legacy seeds only through the migration boundary', () => {
+    const migrated = parseLegacyLocalConfigYaml(
+      `lastInvoice: '   '\nstudios:\n  Foo:\n    rateTiers: [{ minStudents: 1, maxStudents: null, rate: 80 }]\n`
+    );
+    expect(migrated.lastInvoice).toBeUndefined();
+    expect(migrated.config.invoiceSequenceByYear).toEqual({});
   });
 });
 
@@ -182,56 +190,42 @@ describe('validateRateTiers (via validateConfig)', () => {
   });
 });
 
-describe('legacy finalized-invoice config fields', () => {
-  it('does not emit legacy fields when they are absent', () => {
+describe('unified invoice sequence config', () => {
+  it('defaults a missing sequence map to empty', () => {
     const cfg = validateConfig({
       studios: { Foo: { rateTiers: [{ minStudents: 1, maxStudents: null, rate: 80 }] } },
     });
-    expect(cfg).not.toHaveProperty('outputDir');
-    expect(cfg).not.toHaveProperty('lastInvoice');
+    expect(cfg.invoiceSequenceByYear).toEqual({});
   });
 
-  it('loads legacy fields as optional activation seeds', () => {
-    const cfg = validateConfig({
-      outputDir: '/old/local/invoices',
-      lastInvoice: '7/2026',
-      studios: { Foo: { rateTiers: [{ minStudents: 1, maxStudents: null, rate: 80 }] } },
-    });
-    expect(cfg.outputDir).toBe('/old/local/invoices');
-    expect(cfg.lastInvoice).toBe('7/2026');
+  it('rejects legacy local fields from the unified schema', () => {
+    expect(() =>
+      validateConfig({
+        outputDir: '/old/local/invoices',
+        lastInvoice: '7/2026',
+        studios: { Foo: { rateTiers: [{ minStudents: 1, maxStudents: null, rate: 80 }] } },
+      })
+    ).toThrow(/outputDir|lastInvoice/);
   });
 
-  it.each(['', ' ', '  \t\n'])('normalizes blank legacy lastInvoice %j to no seed', (seed) => {
-    const cfg = validateConfig({
-      lastInvoice: seed,
-      studios: { Foo: { rateTiers: [{ minStudents: 1, maxStudents: null, rate: 80 }] } },
-    });
-
-    expect(cfg.lastInvoice).toBe('');
-  });
-
-  it('removes both legacy authorities without mutating the loaded config', () => {
-    const legacy = validateConfig({
-      outputDir: '/old/local/invoices',
-      lastInvoice: '7/2026',
-      studios: { Foo: { rateTiers: [{ minStudents: 1, maxStudents: null, rate: 80 }] } },
-    });
-
-    expect(withoutLegacyInvoiceStorage(legacy)).toEqual(
-      expect.not.objectContaining({ outputDir: expect.anything(), lastInvoice: expect.anything() })
-    );
-    expect(legacy).toMatchObject({
-      outputDir: '/old/local/invoices',
-      lastInvoice: '7/2026',
-    });
+  it('extracts legacy fields without retaining them in AppConfig', () => {
+    const migrated = parseLegacyLocalConfigYaml(`
+      outputDir: /old/local/invoices
+      lastInvoice: '7/2026'
+      studios:
+        Foo:
+          rateTiers: [{ minStudents: 1, maxStudents: null, rate: 80 }]
+    `);
+    expect(migrated.lastInvoice).toBe('7/2026');
+    expect(migrated.config).not.toHaveProperty('outputDir');
+    expect(migrated.config).not.toHaveProperty('lastInvoice');
   });
 
   it('rejects an invalid format', () => {
     expect(() =>
-      validateConfig({
-        lastInvoice: 'bad',
-        studios: { Foo: { rateTiers: [{ minStudents: 1, maxStudents: null, rate: 80 }] } },
-      })
+      parseLegacyLocalConfigYaml(
+        `lastInvoice: bad\nstudios:\n  Foo:\n    rateTiers: [{ minStudents: 1, maxStudents: null, rate: 80 }]\n`
+      )
     ).toThrow(/lastInvoice/);
   });
 });

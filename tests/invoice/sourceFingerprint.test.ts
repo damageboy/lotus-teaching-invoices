@@ -92,8 +92,6 @@ function sourceInput(overrides: SourceOverrides = {}): BuildInvoiceSourceInput {
       },
     },
     calendarId,
-    outputDir: '/render-only/output',
-    lastInvoice: '7/2026',
     studios: {
       [studioName]: {
         fullName: overrides.studioFullName ?? 'Studio A GmbH',
@@ -106,6 +104,7 @@ function sourceInput(overrides: SourceOverrides = {}): BuildInvoiceSourceInput {
         ],
       },
     },
+    invoiceSequenceByYear: { '2026': 7 },
   };
   const invoice: Invoice = {
     studioName,

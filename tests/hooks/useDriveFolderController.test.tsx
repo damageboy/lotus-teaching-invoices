@@ -30,8 +30,8 @@ const config: AppConfig = {
     bankDetails: { accountOwner: '', iban: '', bic: '' },
   },
   calendarId: 'calendar-a',
-  lastInvoice: '8/2026',
   studios: {},
+  invoiceSequenceByYear: { '2026': 8 },
 };
 
 function driveFile(id: string, name: string, parents: string[]): DriveFileRecord {
@@ -267,7 +267,6 @@ describe('useDriveFolderController', () => {
     const activateRoot = vi.fn(async () => undefined);
     const latestConfig: AppConfig = {
       ...config,
-      outputDir: '/latest-output',
       teacher: { ...config.teacher, name: 'Latest Teacher' },
     };
     const attemptedConfigs: AppConfig[] = [];
@@ -292,8 +291,7 @@ describe('useDriveFolderController', () => {
     expect(attemptedConfigs.at(-1)).toEqual(
       expect.objectContaining({ teacher: expect.objectContaining({ name: 'Latest Teacher' }) })
     );
-    expect(attemptedConfigs.at(-1)).not.toHaveProperty('outputDir');
-    expect(attemptedConfigs.at(-1)).not.toHaveProperty('lastInvoice');
+    expect(attemptedConfigs.at(-1)?.invoiceSequenceByYear).toEqual({ '2026': 8 });
     expect(view.result.current.cleanupPending).toBe(false);
   });
 
@@ -303,7 +301,7 @@ describe('useDriveFolderController', () => {
     const saveConfig = vi.fn<UseDriveFolderControllerOptions['saveConfig']>(async (update) => {
       const next = update(config);
       expect(next).not.toBeNull();
-      expect(next).not.toHaveProperty('lastInvoice');
+      expect(next?.invoiceSequenceByYear).toEqual({ '2026': 8 });
     });
     const base = options({ saveConfig });
     const view = renderHook(
@@ -350,7 +348,7 @@ describe('useDriveFolderController', () => {
       await continueCleanup.promise;
       const next = update(config);
       expect(next).not.toBeNull();
-      expect(next).not.toHaveProperty('lastInvoice');
+      expect(next?.invoiceSequenceByYear).toEqual({ '2026': 8 });
     });
     const base = options({ saveConfig });
     const view = renderHook(

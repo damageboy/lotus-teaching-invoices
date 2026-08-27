@@ -31,7 +31,7 @@ export function currentInvoiceSourceInputKey(
   classes: readonly ParsedClass[],
   config: AppConfig
 ): string {
-  const { outputDir: _outputDir, lastInvoice: _lastInvoice, ...sourceConfig } = config;
+  const { invoiceSequenceByYear: _invoiceSequenceByYear, ...sourceConfig } = config;
   return JSON.stringify([classes, sourceConfig]);
 }
 

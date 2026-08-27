@@ -53,7 +53,7 @@
 - `src/hooks/useDriveSetupSnapshot.ts`, `tests/hooks/useDriveSetupSnapshot.test.tsx` — preserve the last current cloud snapshot only for transient presentation states.
 - `src/App.tsx` and App/component tests — authorize and discover Drive before exposing config-dependent behavior.
 - `src/components/InvoicesTab/index.tsx`, `src/components/InvoicesTab/MobileInvoices.tsx`, and their tests — remove reservation recovery UI.
-- `src/lib/invoice/rows.ts` and fingerprint/row tests — hash the unified config directly without legacy-field stripping.
+- `src/lib/invoice/rows.ts` and fingerprint/row tests — exclude only `invoiceSequenceByYear` from business-input invalidation; counter changes must not make PDFs stale.
 - `src-tauri/src/app_storage.rs` — atomically migrate token filenames and provide verified legacy-config read/removal commands.
 - `src-tauri/src/lib.rs` — register the legacy-config migration commands.
 - `src/lib/gmail/constants.ts` and auth/build tests — rename the desktop token constant.
@@ -148,7 +148,7 @@ const LegacyLocalConfigSchema = ConfigSchema.omit({ invoiceSequenceByYear: true 
   .strip();
 ```
 
-Serialize only the normalized `AppConfig`; remove `withoutLegacyInvoiceStorage`. Update invoice source hashing to hash `config` directly.
+Serialize only the normalized `AppConfig`; remove `withoutLegacyInvoiceStorage`. Exclude `invoiceSequenceByYear` from invoice-source input keys because allocation state does not change PDF content.
 
 - [ ] **Step 4: Run focused tests and both TypeScript projects**
 

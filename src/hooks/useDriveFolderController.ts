@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { withoutLegacyInvoiceStorage } from '../lib/config/schema.js';
 import type { StagedDriveRoot } from '../lib/drive/folders.js';
 import type { CurrentInvoiceSource, DriveInvoiceScan } from '../lib/drive/invoiceCatalog.js';
 import type { DriveStoreSnapshot } from '../lib/drive/invoiceStore.js';
@@ -348,9 +347,7 @@ export function useDriveFolderController(
         pendingCleanupRef.current === pending &&
         (contextIsCurrent(context) ||
           adoptSuccessfulActivation(context, pending.stagedRoot, pendingCleanupIncarnation));
-      await current.saveConfig((latest) =>
-        cleanupIsCurrent() ? withoutLegacyInvoiceStorage(latest) : null
-      );
+      await current.saveConfig((latest) => (cleanupIsCurrent() ? latest : null));
       if (!cleanupIsCurrent()) throw obsoleteError(context, operation);
       requireCurrent(context, operation);
       if (pendingCleanupRef.current === pending) {
@@ -373,7 +370,7 @@ export function useDriveFolderController(
         if (pending?.rootKey !== rootKey) {
           if (pending !== null) await savePendingCleanup(pending, context, 'confirmation');
           const pendingCleanupIncarnation = pendingCleanupIncarnationRef.current;
-          await current.drive.activateRoot(stagedRoot, current.config.lastInvoice);
+          await current.drive.activateRoot(stagedRoot);
           context.activationSourceAdoptionAvailable =
             context.sourceContextOrigin === SETUP_DISCOVERY_SOURCE_CONTEXT;
           const activationIsCurrent =

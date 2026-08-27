@@ -55,7 +55,7 @@ function driveEntry(
 
 describe('buildInvoiceRows', () => {
   describe('source build visibility', () => {
-    it('does not invalidate Drive state when first activation removes legacy storage fields', () => {
+    it('does not invalidate invoice sources when only the allocation counter changes', () => {
       const classes = [parsedClass()];
       const current: AppConfig = {
         teacher: {
@@ -66,13 +66,13 @@ describe('buildInvoiceRows', () => {
         },
         calendarId: 'calendar-a',
         studios: {},
+        invoiceSequenceByYear: {},
       };
 
       expect(
         currentInvoiceSourceInputKey(classes, {
           ...current,
-          outputDir: '/legacy',
-          lastInvoice: '8/2026',
+          invoiceSequenceByYear: { '2026': 8 },
         })
       ).toBe(currentInvoiceSourceInputKey(classes, current));
     });

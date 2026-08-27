@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { AppConfig, RateTier, TeacherInfo, AppError } from '../types.js';
 import { getRateTierValidation } from './rateTiers.js';
 
@@ -90,27 +91,27 @@ const StudioConfigSchema = z.object({
     .optional(),
 });
 
-const ConfigSchema = z.object({
-  teacher: TeacherInfoSchema,
-  calendarId: z.string().optional(),
-  calendarName: z.string().optional(),
-  calendarAccessRole: z.enum(['owner', 'writer', 'reader', 'freeBusyReader']).optional(),
-  calendarUrl: z.string().optional(),
-  outputDir: z.string().optional(),
-  lastInvoice: z
-    .string()
-    .transform((value) => (value.trim().length === 0 ? '' : value))
-    .refine((v) => v === '' || /^\d+\/\d{4}$/.test(v), {
-      message: 'lastInvoice must be in N/YYYY format or empty',
-    })
-    .optional(),
-  studios: z
-    .record(StudioConfigSchema, { required_error: 'Config must have a studios object' })
-    .refine(
-      (record: Record<string, any>) => Object.keys(record).length > 0,
-      'Config must have at least one studio'
-    ),
-});
+const InvoiceSequenceByYearSchema = z.record(
+  z.string().regex(/^[1-9]\d{3}$/, 'invoice sequence year must be four digits'),
+  z.number().int().nonnegative().safe('invoice sequence must be a non-negative safe integer')
+);
+
+const ConfigSchema = z
+  .object({
+    teacher: TeacherInfoSchema,
+    calendarId: z.string().optional(),
+    calendarName: z.string().optional(),
+    calendarAccessRole: z.enum(['owner', 'writer', 'reader', 'freeBusyReader']).optional(),
+    calendarUrl: z.string().optional(),
+    studios: z
+      .record(StudioConfigSchema, { required_error: 'Config must have a studios object' })
+      .refine(
+        (record: Record<string, any>) => Object.keys(record).length > 0,
+        'Config must have at least one studio'
+      ),
+    invoiceSequenceByYear: InvoiceSequenceByYearSchema.default({}),
+  })
+  .strict();
 
 function extractCalendarIdFromLegacyUrl(calendarUrl: string | undefined): string | undefined {
   if (!calendarUrl) return undefined;
@@ -167,9 +168,8 @@ export function validateConfig(raw: unknown): AppConfig {
     calendarId: configData.calendarId ?? extractCalendarIdFromLegacyUrl(configData.calendarUrl),
     calendarName: configData.calendarName,
     calendarAccessRole: configData.calendarAccessRole,
-    ...(configData.outputDir === undefined ? {} : { outputDir: configData.outputDir }),
-    ...(configData.lastInvoice === undefined ? {} : { lastInvoice: configData.lastInvoice }),
     studios: {},
+    invoiceSequenceByYear: { ...configData.invoiceSequenceByYear },
   };
 
   for (const [name, studioRaw] of Object.entries(configData.studios)) {
@@ -187,8 +187,60 @@ export function validateConfig(raw: unknown): AppConfig {
   return config;
 }
 
-/** Remove the former local finalized-invoice authorities after Drive activation succeeds. */
-export function withoutLegacyInvoiceStorage(config: AppConfig): AppConfig {
-  const { outputDir: _outputDir, lastInvoice: _lastInvoice, ...current } = config;
-  return current;
+export function parseConfigYaml(raw: string): AppConfig {
+  let parsed: unknown;
+  try {
+    parsed = parseYaml(raw);
+  } catch (error) {
+    throw new AppError(
+      `Invalid YAML in config file: ${(error as Error).message}`,
+      'INVALID_CONFIG'
+    );
+  }
+  return validateConfig(parsed);
+}
+
+export function serializeConfigYaml(config: AppConfig): string {
+  return stringifyYaml(validateConfig(config));
+}
+
+export interface LegacyLocalConfig {
+  config: AppConfig;
+  lastInvoice?: string;
+}
+
+export function parseLegacyLocalConfigYaml(raw: string): LegacyLocalConfig {
+  let parsed: unknown;
+  try {
+    parsed = parseYaml(raw);
+  } catch (error) {
+    throw new AppError(
+      `Invalid YAML in config file: ${(error as Error).message}`,
+      'INVALID_CONFIG'
+    );
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new AppError('Config must be an object', 'INVALID_CONFIG');
+  }
+  const legacy = parsed as Record<string, unknown>;
+  const lastInvoice = legacy.lastInvoice;
+  if (
+    lastInvoice !== undefined &&
+    (typeof lastInvoice !== 'string' ||
+      (lastInvoice.trim().length > 0 && !/^\d+\/\d{4}$/.test(lastInvoice.trim())))
+  ) {
+    throw new AppError('lastInvoice must be in N/YYYY format or empty', 'INVALID_CONFIG');
+  }
+  const {
+    outputDir: _outputDir,
+    lastInvoice: _lastInvoice,
+    invoiceSequenceByYear: _invoiceSequenceByYear,
+    ...behavior
+  } = legacy;
+  const config = validateConfig({ ...behavior, invoiceSequenceByYear: {} });
+  const normalizedLastInvoice = typeof lastInvoice === 'string' ? lastInvoice.trim() : '';
+  return {
+    config,
+    ...(normalizedLastInvoice.length === 0 ? {} : { lastInvoice: normalizedLastInvoice }),
+  };
 }

@@ -427,7 +427,7 @@ export default function App() {
         detectedFolders={
           driveInvoices.snapshot === null ? [] : [driveInvoices.snapshot.stagedRoot.rootFile]
         }
-        legacyLastInvoice={config.lastInvoice}
+        legacyLastInvoice={undefined}
         folderService={driveFolderService}
         scanCandidate={driveFolder.scanCandidate}
         onConfirm={driveFolder.confirmRoot}

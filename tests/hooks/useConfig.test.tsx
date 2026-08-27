@@ -42,7 +42,7 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-const legacyConfig: AppConfig = {
+const appConfig: AppConfig = {
   teacher: {
     name: 'Teacher',
     address: 'Street',
@@ -50,8 +50,6 @@ const legacyConfig: AppConfig = {
     bankDetails: { accountOwner: 'Teacher', iban: 'DE00', bic: 'BIC' },
   },
   calendarId: 'calendar-id',
-  outputDir: '/legacy/invoices',
-  lastInvoice: '7/2026',
   studios: {
     Studio: {
       fullName: 'Studio',
@@ -59,6 +57,7 @@ const legacyConfig: AppConfig = {
       rateTiers: [{ minStudents: 1, maxStudents: null, rate: 50 }],
     },
   },
+  invoiceSequenceByYear: { '2026': 7 },
 };
 
 const calendarPicker: CalendarPickerController = {
@@ -111,7 +110,7 @@ describe('useConfig error boundaries', () => {
     fs.writeTextFile.mockRejectedValueOnce(new Error('disk full'));
     const { result } = renderHook(() => useConfig());
     await waitFor(() => expect(result.current.isLoading).toBe(false));
-    act(() => result.current.updateConfig(legacyConfig));
+    act(() => result.current.updateConfig(appConfig));
 
     let rejection: unknown;
     await act(async () => {
@@ -123,7 +122,7 @@ describe('useConfig error boundaries', () => {
     });
 
     expect(rejection).toBeUndefined();
-    expect(result.current.config).toEqual(legacyConfig);
+    expect(result.current.config).toEqual(appConfig);
     expect(result.current.isDirty).toBe(true);
     expect(result.current.loadError).toBeNull();
     expect(result.current.saveError).toContain('disk full');
@@ -133,7 +132,7 @@ describe('useConfig error boundaries', () => {
     fs.writeTextFile.mockRejectedValueOnce(new Error('disk full'));
     const { result } = renderHook(() => useConfig());
     await waitFor(() => expect(result.current.isLoading).toBe(false));
-    act(() => result.current.updateConfig(legacyConfig));
+    act(() => result.current.updateConfig(appConfig));
 
     let rejection: unknown;
     await act(async () => {
@@ -167,8 +166,8 @@ describe('useConfig error boundaries', () => {
     const { result } = renderHook(() => useConfig());
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     const ratesConfig: AppConfig = {
-      ...legacyConfig,
-      teacher: { ...legacyConfig.teacher, name: 'Edited Teacher' },
+      ...appConfig,
+      teacher: { ...appConfig.teacher, name: 'Edited Teacher' },
     };
     act(() => result.current.updateConfig(ratesConfig));
     let ratesSave!: Promise<void>;
@@ -218,8 +217,8 @@ describe('useConfig error boundaries', () => {
     });
     await waitFor(() => expect(fs.writeTextFile).toHaveBeenCalledTimes(1));
     const latestConfig: AppConfig = {
-      ...legacyConfig,
-      teacher: { ...legacyConfig.teacher, name: 'Latest Teacher' },
+      ...appConfig,
+      teacher: { ...appConfig.teacher, name: 'Latest Teacher' },
     };
     active = false;
     act(() => result.current.updateConfig(latestConfig));
