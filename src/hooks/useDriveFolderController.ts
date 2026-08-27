@@ -48,6 +48,8 @@ interface CommittedOptions extends UseDriveFolderControllerOptions {
 interface OperationContext {
   semanticIncarnation: number;
   sourceIncarnation: number;
+  sourceContextOrigin: string;
+  activationSourceAdoptionAvailable: boolean;
   authorizationIncarnation: number;
   session: number;
 }
@@ -59,6 +61,8 @@ interface ActivationSnapshotEvidence {
 }
 
 type OperationName = 'opening' | 'scan' | 'confirmation' | 'retry';
+
+const SETUP_DISCOVERY_SOURCE_CONTEXT = 'setup-discovery';
 
 function sourceSignature(
   sourceContextKey: string,
@@ -174,6 +178,8 @@ export function useDriveFolderController(
     return {
       semanticIncarnation: semanticIncarnationRef.current,
       sourceIncarnation: sourceIncarnationRef.current,
+      sourceContextOrigin: current.sourceContextKey,
+      activationSourceAdoptionAvailable: false,
       authorizationIncarnation: current.authorizationIncarnation,
       session: sessionRef.current,
     };
@@ -257,6 +263,9 @@ export function useDriveFolderController(
         !mountedRef.current ||
         context.session !== sessionRef.current ||
         context.authorizationIncarnation !== current.authorizationIncarnation ||
+        !context.activationSourceAdoptionAvailable ||
+        context.sourceContextOrigin !== SETUP_DISCOVERY_SOURCE_CONTEXT ||
+        current.sourceContextKey === SETUP_DISCOVERY_SOURCE_CONTEXT ||
         context.sourceIncarnation + 1 !== sourceIncarnationRef.current ||
         context.semanticIncarnation + 1 !== semanticIncarnationRef.current ||
         pendingCleanupIncarnation !== pendingCleanupIncarnationRef.current ||
@@ -271,6 +280,7 @@ export function useDriveFolderController(
       ) {
         return false;
       }
+      context.activationSourceAdoptionAvailable = false;
       context.sourceIncarnation = sourceIncarnationRef.current;
       context.semanticIncarnation = semanticIncarnationRef.current;
       return true;
@@ -364,6 +374,8 @@ export function useDriveFolderController(
           if (pending !== null) await savePendingCleanup(pending, context, 'confirmation');
           const pendingCleanupIncarnation = pendingCleanupIncarnationRef.current;
           await current.drive.activateRoot(stagedRoot, current.config.lastInvoice);
+          context.activationSourceAdoptionAvailable =
+            context.sourceContextOrigin === SETUP_DISCOVERY_SOURCE_CONTEXT;
           const activationIsCurrent =
             contextIsCurrent(context) ||
             adoptSuccessfulActivation(context, stagedRoot, pendingCleanupIncarnation);

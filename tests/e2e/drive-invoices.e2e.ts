@@ -338,7 +338,7 @@ function googleDriveConnectionRow() {
   );
 }
 
-async function clickWelcomeAction(label: string): Promise<void> {
+async function getWelcomeAction(label: string) {
   const welcome = await $(WELCOME_DIALOG);
   await expect(welcome).toBeDisplayed();
   const buttons = await welcome.$$('button');
@@ -349,7 +349,11 @@ async function clickWelcomeAction(label: string): Promise<void> {
     }
   }
   expect(actions).toHaveLength(1);
-  await actions[0]!.click();
+  return actions[0]!;
+}
+
+async function clickWelcomeAction(label: string): Promise<void> {
+  await (await getWelcomeAction(label)).click();
 }
 
 async function createAndActivateRoot(
@@ -465,7 +469,7 @@ describe('Drive invoices across desktop and Android clients', () => {
     await browser.refresh();
     await expect($(WELCOME_DIALOG)).toBeDisplayed();
     await expect($('p=Step 2 of 2')).toBeDisplayed();
-    await expect($('button=Pick Drive folder…')).toBeDisplayed();
+    await expect(await getWelcomeAction('Pick Drive folder…')).toBeDisplayed();
   });
 
   it('retries cold initial Drive unavailability and resolves discovery', async () => {
@@ -496,7 +500,7 @@ describe('Drive invoices across desktop and Android clients', () => {
     await $('button=Retry Google Drive').click();
     await browser.waitUntil(
       async () =>
-        (await $('button=Pick Drive folder…').isEnabled()) &&
+        (await (await getWelcomeAction('Pick Drive folder…')).isEnabled()) &&
         (await browser.execute(() =>
           document.body.innerText.includes('Google Drive is temporarily unavailable')
         )) === false,

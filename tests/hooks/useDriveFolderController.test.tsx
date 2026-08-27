@@ -391,6 +391,91 @@ describe('useDriveFolderController', () => {
     expect(view.result.current.error).toBeNull();
   });
 
+  it('does not adopt a single built source transition after activation', async () => {
+    const activation = deferred<void>();
+    const activateRoot = vi.fn(() => activation.promise);
+    const saveConfig = vi.fn<UseDriveFolderControllerOptions['saveConfig']>();
+    const base = options({ saveConfig });
+    const view = renderHook(
+      ({ sourceContextKey, drive }) =>
+        useDriveFolderController({ ...base, sourceContextKey, drive }),
+      {
+        initialProps: {
+          sourceContextKey: 'built-a',
+          drive: driveState({ activateRoot }),
+        },
+      }
+    );
+    let confirmation!: Promise<void>;
+    act(() => {
+      confirmation = view.result.current.confirmRoot(stagedRoot);
+    });
+
+    view.rerender({
+      sourceContextKey: 'built-b',
+      drive: driveState({ status: 'ready', snapshot: configuredSnapshot(), activateRoot }),
+    });
+    await act(async () => {
+      activation.resolve();
+      await expect(confirmation).rejects.toThrow(
+        'Current invoice sources changed before the Drive folder confirmation completed'
+      );
+    });
+
+    expect(saveConfig).not.toHaveBeenCalled();
+    expect(view.result.current.cleanupPending).toBe(true);
+  });
+
+  it('does not adopt a second source transition during activated-root cleanup', async () => {
+    const activation = deferred<void>();
+    const cleanupStarted = deferred<void>();
+    const continueCleanup = deferred<void>();
+    const activateRoot = vi.fn(() => activation.promise);
+    const saveConfig = vi.fn<UseDriveFolderControllerOptions['saveConfig']>(async (update) => {
+      cleanupStarted.resolve();
+      await continueCleanup.promise;
+      update(config);
+    });
+    const base = options({ saveConfig });
+    const view = renderHook(
+      ({ sourceContextKey, drive }) =>
+        useDriveFolderController({ ...base, sourceContextKey, drive }),
+      {
+        initialProps: {
+          sourceContextKey: 'setup-discovery',
+          drive: driveState({ activateRoot }),
+        },
+      }
+    );
+    let confirmation!: Promise<void>;
+    act(() => {
+      confirmation = view.result.current.confirmRoot(stagedRoot);
+    });
+
+    view.rerender({
+      sourceContextKey: 'built-a',
+      drive: driveState({ status: 'ready', snapshot: configuredSnapshot(), activateRoot }),
+    });
+    await act(async () => {
+      activation.resolve();
+      await cleanupStarted.promise;
+    });
+    view.rerender({
+      sourceContextKey: 'built-b',
+      drive: driveState({ status: 'loading', snapshot: null, activateRoot }),
+    });
+    await act(async () => {
+      continueCleanup.resolve();
+      await expect(confirmation).rejects.toThrow(
+        'Current invoice sources changed before the Drive folder confirmation completed'
+      );
+    });
+
+    expect(activateRoot).toHaveBeenCalledOnce();
+    expect(saveConfig).toHaveBeenCalledOnce();
+    expect(view.result.current.cleanupPending).toBe(true);
+  });
+
   it('rejects A to B to A source changes even when the activated root matches', async () => {
     const activation = deferred<void>();
     const activateRoot = vi.fn(() => activation.promise);
