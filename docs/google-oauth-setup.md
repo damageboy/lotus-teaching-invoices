@@ -62,10 +62,10 @@ An Android OAuth client has no client secret to embed. Do not add the desktop cl
 
 Lotus deliberately uses ordinary Drive storage:
 
-- `.lotus-teaching-invoices.json` is an ordinary, visible file owned by the account in the My Drive root. It has the standard Drive property `lotusConfigSchema=1`.
+- `lotus-invoices-config.yaml` is an ordinary, visible file directly inside the selected invoice root. It has the standard Drive property `lotusConfigSchema=1`; its one parent is the root.
 - Managed PDFs use standard Drive `properties` such as `lotusSchema`, `lotusInvoiceNumber`, `lotusSourceSha256`, and `lotusPdfSha256`.
 
-Never move the control file to `appDataFolder`. Only the application that created `appDataFolder` data can access it, and it is hidden from the Drive UI. Never replace standard `properties` with `appProperties`; `appProperties` are private to the requesting OAuth application. Either substitution would prevent the separate desktop and Android OAuth clients from sharing the same authority.
+Never move the configuration file to `appDataFolder`. Only the application that created `appDataFolder` data can access it, and it is hidden from the Drive UI. Never replace standard `properties` with `appProperties`; `appProperties` are private to the requesting OAuth application. Either substitution would prevent the separate desktop and Android OAuth clients from sharing the same authority.
 
 ## Official references
 

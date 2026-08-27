@@ -7,6 +7,8 @@ import {
   type DriveStoreSnapshot,
   type FinalizationInput,
 } from '../lib/drive/invoiceStore.js';
+import type { DriveConfigSnapshot } from '../lib/drive/configFile.js';
+import type { AppConfig } from '../lib/types.js';
 
 export type DriveInvoicesStatus =
   | 'authorizationRequired'
@@ -22,10 +24,10 @@ export interface DriveInvoicesState {
   error: DriveStoreError | null;
   operationKey: string | null;
   refresh(): Promise<void>;
-  activateRoot(staged: StagedDriveRoot, legacyLastInvoice?: string): Promise<void>;
+  activateRoot(staged: StagedDriveRoot, initialConfig?: AppConfig): Promise<void>;
+  saveConfig(next: AppConfig): Promise<DriveConfigSnapshot>;
   finalize(input: FinalizationInput): Promise<DriveInvoiceEntry>;
   refinalize(input: FinalizationInput, entry: DriveInvoiceEntry): Promise<DriveInvoiceEntry>;
-  recoverReservation(): Promise<void>;
   downloadVerified(entry: DriveInvoiceEntry): Promise<Uint8Array>;
 }
 
@@ -34,9 +36,9 @@ type DriveInvoiceStoreController = Pick<
   | 'bootstrap'
   | 'refresh'
   | 'activateRoot'
+  | 'saveConfig'
   | 'finalize'
   | 'refinalize'
-  | 'recoverReservation'
   | 'downloadVerified'
 >;
 
@@ -47,6 +49,7 @@ export interface UseDriveInvoicesOptions {
   authorizationIncarnation: number;
   discoveryEnabled: boolean;
   foregroundRefreshEnabled: boolean;
+  legacyLocalYaml?: string;
 }
 
 interface MachineState {
@@ -138,16 +141,6 @@ function statusForError(error: DriveStoreError): DriveInvoicesStatus {
     default:
       return 'blocked';
   }
-}
-
-function recoveryErrorForSnapshot(snapshot: DriveStoreSnapshot | null): DriveStoreError | null {
-  const reservation = snapshot?.control.control.reservation;
-  if (reservation == null) return null;
-  return new DriveStoreError(
-    'recoveryRequired',
-    `Recover the active ${reservation.invoiceNumber} reservation for ${reservation.studioSlug}/${reservation.month}`,
-    false
-  );
 }
 
 function obsoleteContextError(context: SemanticContext, current: SemanticContext): DriveStoreError {
@@ -281,16 +274,13 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
       const actionErrorGeneration = actionErrorGenerationRef.current;
 
       updateMachine((state) => {
-        if (
-          state.store !== store ||
-          state.authorizationIncarnation !== authorizationIncarnation ||
-          state.sourceSignature !== current.sourceSignature
-        ) {
+        if (state.store !== store || state.authorizationIncarnation !== authorizationIncarnation) {
           return initialState(store, authorizationIncarnation, current.sourceSignature);
         }
         return {
           ...state,
-          status: 'loading',
+          sourceSignature: current.sourceSignature,
+          status: state.snapshot === null ? 'loading' : 'ready',
           error: null,
         };
       });
@@ -301,7 +291,7 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
           if (hasSnapshot) {
             snapshot = await store.refresh(sources);
           } else {
-            snapshot = await store.bootstrap([]);
+            snapshot = await store.bootstrap([], current.legacyLocalYaml);
             if (!contextIsCurrent(context) || refreshGenerationRef.current !== refreshGeneration) {
               const latest = committedOptionsRef.current;
               const currentMachine = machineRef.current;
@@ -328,19 +318,7 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
             return;
           }
           const preserveActionError = actionErrorGenerationRef.current !== actionErrorGeneration;
-          const recoveryError = recoveryErrorForSnapshot(snapshot);
           updateMachine((state) => {
-            if (recoveryError !== null) {
-              return {
-                ...state,
-                store,
-                authorizationIncarnation,
-                sourceSignature: current.sourceSignature,
-                status: 'blocked',
-                snapshot,
-                error: recoveryError,
-              };
-            }
             return preserveActionError
               ? {
                   ...state,
@@ -366,12 +344,17 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
             refreshGenerationRef.current === refreshGeneration &&
             actionErrorGenerationRef.current === actionErrorGeneration
           ) {
+            const status = statusForError(error);
             updateMachine((state) => ({
               ...state,
               store,
               authorizationIncarnation,
               sourceSignature: current.sourceSignature,
-              status: statusForError(error),
+              status,
+              snapshot:
+                status === 'unconfigured' || status === 'authorizationRequired'
+                  ? (error.snapshot ?? null)
+                  : state.snapshot,
               error,
             }));
           }
@@ -464,7 +447,12 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
       const error = normalizeError(cause);
       if (contextIsCurrent(context)) {
         actionErrorGenerationRef.current += 1;
-        updateMachine((state) => ({ ...state, status: statusForError(error), error }));
+        updateMachine((state) => ({
+          ...state,
+          status: statusForError(error),
+          snapshot: error.snapshot ?? state.snapshot,
+          error,
+        }));
       }
       return error;
     },
@@ -534,16 +522,33 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
   const refresh = useCallback(() => runRefresh(), [runRefresh]);
 
   const activateRoot = useCallback(
-    (staged: StagedDriveRoot, legacyLastInvoice?: string): Promise<void> => {
+    (staged: StagedDriveRoot, initialConfig?: AppConfig): Promise<void> => {
       const driveKey = staged.root.driveId ?? 'my-drive';
       const key = `activateRoot:${driveKey}:${staged.root.folderId}`;
       return enqueueMutation(
         key,
         (store) =>
           store
-            .activateRoot(staged, committedOptionsRef.current.sources, legacyLastInvoice)
+            .activateRoot(staged, committedOptionsRef.current.sources, initialConfig)
             .then(() => undefined),
         false
+      );
+    },
+    [enqueueMutation]
+  );
+
+  const saveConfig = useCallback(
+    (next: AppConfig): Promise<DriveConfigSnapshot> => {
+      const snapshot = machineRef.current.snapshot;
+      if (snapshot === null) {
+        return Promise.reject(
+          new DriveStoreError('unconfigured', 'Drive invoice storage is not configured', false)
+        );
+      }
+      return enqueueMutation('saveConfig', (store) =>
+        store
+          .saveConfig(snapshot, next, committedOptionsRef.current.sources)
+          .then((result) => result.config)
       );
     },
     [enqueueMutation]
@@ -552,21 +557,15 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
   const finalize = useCallback(
     (input: FinalizationInput): Promise<DriveInvoiceEntry> =>
       enqueueMutation(`finalize:${input.key.studioSlug}:${input.key.monthKey}`, (store) =>
-        store.finalize(input)
+        store.finalize(input).then((result) => result.entry)
       ),
     [enqueueMutation]
   );
 
   const refinalize = useCallback(
     (input: FinalizationInput, entry: DriveInvoiceEntry): Promise<DriveInvoiceEntry> =>
-      enqueueMutation(`refinalize:${entry.file.id}`, (store) => store.refinalize(input, entry)),
-    [enqueueMutation]
-  );
-
-  const recoverReservation = useCallback(
-    (): Promise<void> =>
-      enqueueMutation('recoverReservation', (store) =>
-        store.recoverReservation(committedOptionsRef.current.sources).then(() => undefined)
+      enqueueMutation(`refinalize:${entry.file.id}`, (store) =>
+        store.refinalize(input, entry).then((result) => result.entry)
       ),
     [enqueueMutation]
   );
@@ -665,9 +664,14 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
 
   const visibleMachine =
     machine.store === options.store &&
-    machine.authorizationIncarnation === options.authorizationIncarnation &&
-    machine.sourceSignature === signature
-      ? machine
+    machine.authorizationIncarnation === options.authorizationIncarnation
+      ? machine.sourceSignature === signature
+        ? machine
+        : {
+            ...machine,
+            sourceSignature: signature,
+            status: machine.snapshot === null ? ('loading' as const) : ('ready' as const),
+          }
       : initialState(options.store, options.authorizationIncarnation, signature);
 
   return {
@@ -677,9 +681,9 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
     operationKey: visibleMachine.operationKey,
     refresh,
     activateRoot,
+    saveConfig,
     finalize,
     refinalize,
-    recoverReservation,
     downloadVerified,
   };
 }

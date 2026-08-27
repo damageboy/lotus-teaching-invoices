@@ -34,6 +34,7 @@ vi.mock('../../src/hooks/useConfig.js', () => ({
     saveUpdateOrThrow,
   }),
 }));
+vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async () => null) }));
 vi.mock('../../src/hooks/useCalendarData.js', () => ({
   useCalendarData: () => ({
     classes,
@@ -79,9 +80,9 @@ vi.mock('../../src/hooks/useDriveInvoices.js', () => ({
     operationKey: null,
     refresh: vi.fn(async () => undefined),
     activateRoot: vi.fn(async () => undefined),
+    saveConfig: vi.fn(async () => ({})),
     finalize: vi.fn(),
     refinalize: vi.fn(),
-    recoverReservation: vi.fn(),
     downloadVerified: vi.fn(),
   }),
 }));

@@ -5,7 +5,6 @@ import { installReactTestEnvironment } from '../helpers/react-test-env.js';
 import type { AppConfig, ParsedClass } from '../../src/lib/types.js';
 import type { DriveInvoiceEntry } from '../../src/lib/drive/invoiceCatalog.js';
 import type { DriveInvoicesState } from '../../src/hooks/useDriveInvoices.js';
-import { DriveStoreError } from '../../src/lib/drive/invoiceStore.js';
 
 const restoreEnvironment = installReactTestEnvironment();
 const roots: Array<{ root: Root; container: HTMLElement }> = [];
@@ -154,9 +153,9 @@ function driveState(
     operationKey: null,
     refresh: vi.fn(async () => {}),
     activateRoot: vi.fn(async () => {}),
+    saveConfig: vi.fn(async () => ({}) as never),
     finalize: vi.fn(async () => entry()),
     refinalize: vi.fn(async () => entry()),
-    recoverReservation: vi.fn(async () => {}),
     downloadVerified: vi.fn(async () => new Uint8Array([37, 80, 68, 70])),
     ...overrides,
   };
@@ -187,23 +186,6 @@ function props(overrides: Record<string, unknown> = {}) {
 }
 
 describe('Drive-backed InvoicesTab', () => {
-  it('offers app-driven recovery only for a durable reservation error', async () => {
-    const ready = driveState('ready');
-    const drive = driveState('blocked', {
-      snapshot: ready.snapshot,
-      error: new DriveStoreError(
-        'recoveryRequired',
-        'Invoice upload response was not confirmed; recover the reservation',
-        false
-      ),
-    });
-    render(<InvoicesTab {...(props({ drive }) as any)} />);
-
-    expect(document.body.textContent).toContain('recover the reservation');
-    await click(button('Recover invoice reservation'));
-    await waitFor(() => expect(drive.recoverReservation).toHaveBeenCalledOnce());
-  });
-
   it.each(['desktop', 'mobile'] as const)(
     'renders no invoice content when Drive is unconfigured on %s',
     (layout) => {

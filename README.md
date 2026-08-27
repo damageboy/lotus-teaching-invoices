@@ -9,7 +9,7 @@ A yoga teaching invoice generator that reads your Google Calendar and produces p
 
 Grab the latest `.dmg` from the [Releases](https://github.com/damageboy/lotus-teaching-invoices/releases/latest) page.
 
-## Setup
+## CLI setup
 
 1. Copy `config.example.yaml` to `config.yaml`
 2. Set `calendarUrl` to your public Google Calendar ICS URL
@@ -88,18 +88,22 @@ Google Drive is the only authority for finalized invoice PDFs in the desktop and
 
 Before activating a Drive root, manually copy any existing finalized PDFs into its `Final` folder, refresh the staged scan, resolve duplicate or malformed entries, and then confirm activation. Lotus does not automatically upload, move, or delete old local invoice files. After activation, those local files remain untouched but are ignored.
 
-Lotus stores the shared root pointer and invoice-number sequence in an ordinary, visible My Drive file named `.lotus-teaching-invoices.json`. The control file uses the standard Drive property `lotusConfigSchema=1`; managed PDFs use standard Drive `properties` for invoice identity, source freshness, checksums, and operation IDs. This ordinary file and visible metadata allow the separate desktop and Android OAuth clients to share one authority.
+Lotus stores all behavior-defining desktop/Android configuration in an ordinary, visible file named `lotus-invoices-config.yaml` directly inside the selected invoice root. Its parent is the root; no separate root pointer exists. The file contains the teacher, Calendar, studios, rates, email/color settings, and `invoiceSequenceByYear`, and uses the Drive property `lotusConfigSchema=1`.
+
+Configuration and invoice-number writes use the file's ETag. Conflicts are reloaded and shown instead of merged. A new invoice number is saved before PDF rendering/upload; a later failure deliberately leaves a gap. There is no reservation or recovery file.
+
+The desktop keeps only Google authorization in `google-tokens.json` as durable local authority. Calendar databases, logs, temporary PDFs, and other disposable caches may remain local. The standalone CLI still accepts an explicit local `config.yaml` and is separate from desktop/Android cloud authority.
 
 Finalized list, finalize, re-finalize, open, and draft-email actions are online-only and read verified Drive state or bytes. There is no persistent local finalized-PDF cache or offline fallback. `Preview` still renders locally, and disposable temporary copies may be created only to open or attach a verified Drive PDF.
 
-Google Cloud client registration and release validation are documented in [Google OAuth Setup](docs/google-oauth-setup.md) and the [Drive release checklist](docs/release/google-drive-invoice-storage-checklist.md).
+Google Cloud client registration, migration, and release validation are documented in [Google OAuth Setup](docs/google-oauth-setup.md), [Cloud Configuration Migration](docs/release/cloud-config-migration.md), and the [Drive release checklist](docs/release/google-drive-invoice-storage-checklist.md).
 
 ## How It Works
 
-Calendar events must follow the format `"Studio Name / Class Type"`. The event description must contain a standalone integer for the student count. Each studio in `config.yaml` has `rateTiers` that map student counts to flat per-class rates.
+Calendar events must follow the format `"Studio Name / Class Type"`. The event description must contain a standalone integer for the student count. Each studio in the active configuration has `rateTiers` that map student counts to flat per-class rates.
 
 ```
-config.yaml + calendar ICS
+configuration + Google Calendar
       ↓
 parse events → group by studio → calculate rates → generate invoices → write PDF
 ```

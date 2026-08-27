@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { LockSimple } from '@phosphor-icons/react';
 import { message } from '@tauri-apps/plugin-dialog';
 import { exit } from '@tauri-apps/plugin-process';
+import { invoke } from '@tauri-apps/api/core';
 import { useConfig } from './hooks/useConfig';
 import { useCalendarData } from './hooks/useCalendarData';
 import { useGoogleAuthorization } from './hooks/useGoogleAuthorization';
@@ -30,6 +31,8 @@ import { createTauriDriveApi } from './lib/drive/transport';
 import { DriveFolderService } from './lib/drive/folders';
 import { scanFinalFolder } from './lib/drive/invoiceCatalog';
 import { DriveInvoiceStore } from './lib/drive/invoiceStore';
+import type { DriveConfigSnapshot } from './lib/drive/configFile';
+import type { DriveInvoicesState } from './hooks/useDriveInvoices';
 import { renderFinalPdf } from './lib/pdf/generatePdf';
 import { deriveSetupReadiness } from './lib/setup/readiness';
 import {
@@ -40,16 +43,43 @@ import {
 } from './lib/invoice/rows';
 
 export default function App() {
+  const googleAuthorization = useGoogleAuthorization();
+  const driveApi = useMemo(() => createTauriDriveApi(), []);
+  const driveStore = useMemo(() => new DriveInvoiceStore(driveApi, { renderFinalPdf }), [driveApi]);
+  const driveFolderService = useMemo(() => new DriveFolderService(driveApi), [driveApi]);
+  const driveInvoicesRef = useRef<DriveInvoicesState | null>(null);
+  const [remoteConfig, setRemoteConfig] = useState<DriveConfigSnapshot | null>(null);
+  const [driveConfigUnavailable, setDriveConfigUnavailable] = useState(false);
+  const [legacyConfig, setLegacyConfig] = useState<{
+    loaded: boolean;
+    raw?: string;
+    error: string | null;
+  }>({ loaded: false, error: null });
+  const [migrationCleanupError, setMigrationCleanupError] = useState<string | null>(null);
+  const cleanedMigrationRef = useRef<string | null>(null);
+  const saveRemoteConfig = useCallback((next: Parameters<DriveInvoicesState['saveConfig']>[0]) => {
+    const drive = driveInvoicesRef.current;
+    if (drive === null) return Promise.reject(new Error('Drive configuration is not ready'));
+    return drive.saveConfig(next);
+  }, []);
   const {
     config,
     isDirty,
-    isLoading: configLoading,
-    loadError: configLoadError,
-    saveError: configSaveError,
+    isLoading: remoteConfigLoading,
+    loadError: remoteConfigLoadError,
+    saveError: remoteConfigSaveError,
     updateConfig,
     save,
     saveUpdateOrThrow,
-  } = useConfig();
+  } = useConfig({
+    remote: remoteConfig,
+    unconfigured: driveConfigUnavailable,
+    ...(legacyConfig.raw === undefined ? {} : { legacyLocalYaml: legacyConfig.raw }),
+    saveRemote: saveRemoteConfig,
+  });
+  const configLoading = remoteConfigLoading;
+  const configLoadError = legacyConfig.error ?? remoteConfigLoadError;
+  const configSaveError = migrationCleanupError ?? remoteConfigSaveError;
   const calendarPicker = useCalendarPicker({ config, saveConfig: saveUpdateOrThrow });
   const {
     classes,
@@ -58,7 +88,6 @@ export default function App() {
     refresh,
     reloadCache,
   } = useCalendarData(config);
-  const googleAuthorization = useGoogleAuthorization();
   const calendarEditing = useCalendarEditing({
     calendarId: configLoading ? undefined : config.calendarId,
     persistedAccessRole: config.calendarAccessRole,
@@ -85,9 +114,6 @@ export default function App() {
     error: invoiceSourceError,
   } = visibleCurrentInvoiceSourceBuild(invoiceSourceInputKey, invoiceSourceBuild);
   const fatalConfigHandled = useRef(false);
-  const driveApi = useMemo(() => createTauriDriveApi(), []);
-  const driveStore = useMemo(() => new DriveInvoiceStore(driveApi, { renderFinalPdf }), [driveApi]);
-  const driveFolderService = useMemo(() => new DriveFolderService(driveApi), [driveApi]);
   const driveSources = invoiceSourcesReady ? invoiceSources : [];
   const driveSourceContextKey = invoiceSourcesReady ? invoiceSourceInputKey : 'setup-discovery';
   const driveInvoices = useDriveInvoices({
@@ -95,9 +121,53 @@ export default function App() {
     sources: driveSources,
     sourceContextKey: driveSourceContextKey,
     authorizationIncarnation: googleAuthorization.authorizationIncarnation,
-    discoveryEnabled: !googleAuthorization.isLoading,
+    discoveryEnabled: !googleAuthorization.isLoading && legacyConfig.loaded,
     foregroundRefreshEnabled: activeTab === 'invoices' && invoiceSourcesReady,
+    ...(legacyConfig.raw === undefined ? {} : { legacyLocalYaml: legacyConfig.raw }),
   });
+  driveInvoicesRef.current = driveInvoices;
+
+  useEffect(() => {
+    let current = true;
+    void invoke<string | null>('read_legacy_config').then(
+      (raw) => {
+        if (!current) return;
+        setLegacyConfig({ loaded: true, ...(raw === null ? {} : { raw }), error: null });
+      },
+      (cause) => {
+        if (!current) return;
+        setLegacyConfig({ loaded: true, error: String(cause) });
+      }
+    );
+    return () => {
+      current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    setRemoteConfig(driveInvoices.snapshot?.config ?? null);
+    setDriveConfigUnavailable(
+      driveInvoices.snapshot === null && driveInvoices.status !== 'loading'
+    );
+  }, [driveInvoices.snapshot, driveInvoices.status]);
+
+  useEffect(() => {
+    const receipt = legacyConfig.raw;
+    if (
+      receipt === undefined ||
+      driveInvoices.snapshot === null ||
+      cleanedMigrationRef.current === receipt
+    ) {
+      return;
+    }
+    cleanedMigrationRef.current = receipt;
+    setMigrationCleanupError(null);
+    void invoke('remove_verified_legacy_config', { expectedRaw: receipt }).catch((cause) => {
+      setMigrationCleanupError(
+        `Cloud migration succeeded, but local config cleanup failed: ${cause}`
+      );
+    });
+  }, [driveInvoices.snapshot, legacyConfig.raw]);
   const setupDriveSnapshot = useDriveSetupSnapshot({
     store: driveStore,
     authorizationIncarnation: googleAuthorization.authorizationIncarnation,
@@ -125,7 +195,6 @@ export default function App() {
     authorizeDrive: googleAuthorization.allowDrive,
     drive: driveInvoices,
     config,
-    saveConfig: saveUpdateOrThrow,
     sources: driveSources,
     sourceContextKey: driveSourceContextKey,
     scanCandidate: scanDriveFolderCandidate,
@@ -427,7 +496,6 @@ export default function App() {
         detectedFolders={
           driveInvoices.snapshot === null ? [] : [driveInvoices.snapshot.stagedRoot.rootFile]
         }
-        legacyLastInvoice={undefined}
         folderService={driveFolderService}
         scanCandidate={driveFolder.scanCandidate}
         onConfirm={driveFolder.confirmRoot}

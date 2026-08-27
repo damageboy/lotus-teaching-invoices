@@ -76,18 +76,19 @@ const readyDriveState: DriveInvoicesState = {
   operationKey: null,
   refresh: vi.fn(async () => undefined),
   activateRoot: vi.fn(async () => undefined),
+  saveConfig: vi.fn(async () => ({}) as never),
   finalize: vi.fn(async () => {
     throw new Error('finalize is not used by setup tests');
   }),
   refinalize: vi.fn(async () => {
     throw new Error('refinalize is not used by setup tests');
   }),
-  recoverReservation: vi.fn(async () => undefined),
   downloadVerified: vi.fn(async () => new Uint8Array()),
 };
 let driveState: DriveInvoicesState;
 const mocks = {
   buildCurrentInvoiceSources: vi.fn(async () => []),
+  invoke: vi.fn(async (command: string) => (command === 'read_legacy_config' ? null : null)),
   calendarPermissionOpen: false,
   driveOptions: null as UseDriveInvoicesOptions | null,
   driveStateForOptions: null as ((options: UseDriveInvoicesOptions) => DriveInvoicesState) | null,
@@ -211,6 +212,7 @@ vi.mock('../../src/lib/invoice/rows.js', () => ({
 }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ message: vi.fn() }));
 vi.mock('@tauri-apps/plugin-process', () => ({ exit: vi.fn() }));
+vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
 
 const { screen, waitFor } = await import('@testing-library/react');
 const { default: App } = await import('../../src/App.js');
@@ -284,6 +286,10 @@ beforeEach(() => {
   mocks.calendarPermissionOpen = false;
   mocks.driveOptions = null;
   mocks.driveStateForOptions = null;
+  mocks.invoke.mockReset();
+  mocks.invoke.mockImplementation(async (command: string) =>
+    command === 'read_legacy_config' ? null : null
+  );
 });
 
 afterEach(() => {
@@ -298,6 +304,22 @@ afterEach(() => {
 afterAll(() => restoreEnvironment());
 
 describe('App required Google setup', () => {
+  it('removes the exact legacy YAML after a cloud config is loaded', async () => {
+    const raw = 'teacher:\n  name: Legacy\nstudios: {}\n';
+    mocks.invoke.mockImplementation(async (command: string) =>
+      command === 'read_legacy_config' ? raw : null
+    );
+    authorizationState = { ...authorizationState, hasDrive: true };
+    driveState = readyDriveState;
+    renderApp();
+
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith('remove_verified_legacy_config', {
+        expectedRaw: raw,
+      })
+    );
+  });
+
   it('shows only loading while authorized Drive discovery is unresolved', () => {
     authorizationState = { ...authorizationState, isLoading: false, hasDrive: true };
     driveState = { ...driveState, status: 'loading', snapshot: null };
@@ -443,7 +465,7 @@ describe('App required Google setup', () => {
     configState = { ...configState, calendarId: 'calendar-a', calendarName: 'Teaching' };
     driveState = { ...driveState, status: 'authorizationRequired', snapshot: null };
     renderApp();
-    expect(mocks.driveOptions?.discoveryEnabled).toBe(true);
+    expect(mocks.driveOptions?.discoveryEnabled).toBe(false);
     const pickDrive = namedButton('Pick Drive folder…');
     expect(pickDrive.disabled).toBe(false);
     await click(pickDrive);

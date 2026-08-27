@@ -12,7 +12,7 @@ import type {
   UpdateDriveFileRequest,
 } from '../../src/lib/drive/api.js';
 import { DriveError, type DriveFileRecord } from '../../src/lib/drive/types.js';
-import type { DriveControl } from '../../src/lib/drive/controlFile.js';
+import { parseConfigYaml } from '../../src/lib/config/schema.js';
 import { sha256Hex } from '../../src/lib/invoice/sourceFingerprint.js';
 
 export interface MemoryDriveFile extends DriveFileRecord {
@@ -78,14 +78,6 @@ function supportsFile(file: DriveFileRecord, supportsAllDrives: boolean): void {
   }
 }
 
-function parseJson(bytes: Uint8Array): unknown {
-  try {
-    return JSON.parse(new TextDecoder().decode(bytes));
-  } catch {
-    return null;
-  }
-}
-
 export class MemoryDriveApi implements DriveApi {
   private readonly files = new Map<string, MemoryDriveFile>();
   private readonly generatedIds: string[];
@@ -137,16 +129,6 @@ export class MemoryDriveApi implements DriveApi {
   patchRequest(fileId: string): PatchDriveMetadataRequest | null {
     const request = this.patchRequests.get(fileId);
     return request == null ? null : { ...request, properties: { ...request.properties } };
-  }
-
-  control(): DriveControl {
-    const controls = [...this.files.values()].filter(
-      (file) => file.properties.lotusConfigSchema === '1' && file.trashed === false
-    );
-    if (controls.length !== 1) {
-      throw new TypeError(`Expected one memory Drive control file, found ${controls.length}`);
-    }
-    return parseJson(controls[0].bytes) as DriveControl;
   }
 
   async listSharedDrives(request: ListSharedDrivesRequest): Promise<DriveListPage<SharedDrive>> {
@@ -325,7 +307,9 @@ export class MemoryDriveApi implements DriveApi {
     };
     this.files.set(file.id, file);
     this.operationLog.push(
-      file.mimeType === 'application/json' ? `control:create:${file.id}` : `pdf:create:${file.id}`
+      file.properties.lotusConfigSchema === '1'
+        ? `config:create:${file.id}`
+        : `pdf:create:${file.id}`
     );
     return cloneRecord(file);
   }
@@ -441,24 +425,23 @@ export class MemoryDriveApi implements DriveApi {
   }
 
   private logUpdate(previous: MemoryDriveFile, next: MemoryDriveFile): void {
-    if (next.mimeType !== 'application/json') {
+    if (next.properties.lotusConfigSchema !== '1') {
       this.operationLog.push(`pdf:update:${next.id}`);
       return;
     }
-    const previousControl = parseJson(previous.bytes) as {
-      reservation?: unknown;
-      sequenceByYear?: unknown;
-    } | null;
-    const nextControl = parseJson(next.bytes) as {
-      reservation?: unknown;
-      sequenceByYear?: unknown;
-    } | null;
-    if (previousControl?.reservation == null && nextControl?.reservation != null) {
-      this.operationLog.push('control:reserve:if-match');
-    } else if (previousControl?.reservation != null && nextControl?.reservation == null) {
-      this.operationLog.push('control:commit:if-match');
-    } else {
-      this.operationLog.push('control:update:if-match');
+    try {
+      const previousConfig = parseConfigYaml(new TextDecoder().decode(previous.bytes));
+      const nextConfig = parseConfigYaml(new TextDecoder().decode(next.bytes));
+      if (
+        JSON.stringify(previousConfig.invoiceSequenceByYear) !==
+        JSON.stringify(nextConfig.invoiceSequenceByYear)
+      ) {
+        this.operationLog.push('config:sequence:if-match');
+        return;
+      }
+    } catch {
+      // Legacy JSON migration is a normal configuration update.
     }
+    this.operationLog.push('config:update:if-match');
   }
 }

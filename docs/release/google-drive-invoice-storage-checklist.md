@@ -126,7 +126,7 @@ Device and identity evidence:
 - [ ] Restricted/sensitive-scope verification is approved for production use.
 - [ ] Public homepage and privacy policy are live on verified domains and match actual data handling.
 - [ ] Android APK contains no client secret and Lotus stores no Android refresh token.
-- [ ] Ordinary visible My Drive control file plus standard Drive `properties` were confirmed; no `appDataFolder` or `appProperties` substitution exists.
+- [ ] Ordinary visible `lotus-invoices-config.yaml` plus standard Drive `properties` were confirmed; no `appDataFolder` or `appProperties` substitution exists.
 
 Evidence:
 

@@ -75,6 +75,7 @@ vi.mock('../../src/hooks/useConfig.js', () => ({
     saveUpdateOrThrow: vi.fn(async () => undefined),
   }),
 }));
+vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async () => null) }));
 vi.mock('../../src/hooks/useCalendarData.js', () => ({
   useCalendarData: () => ({
     classes,
@@ -182,7 +183,10 @@ const { DriveInvoiceStore, DriveStoreError } = await import('../../src/lib/drive
 const realBootstrap = DriveInvoiceStore.prototype.bootstrap;
 const realRefresh = DriveInvoiceStore.prototype.refresh;
 const readySnapshot = {
-  control: { control: { reservation: null } },
+  config: {
+    file: { id: 'config-file', parents: ['root-a'] },
+    config,
+  },
   stagedRoot: {
     root: { folderId: 'root-a', driveId: null, folderName: 'Lotus invoices' },
   },
@@ -365,12 +369,12 @@ describe('App Drive setup without an existing grant', () => {
     );
     expect(button('Invoices').disabled).toBe(false);
     expect(buildCurrentInvoiceSources).toHaveBeenCalledOnce();
-    expect(bootstrap).toHaveBeenCalledTimes(2);
+    expect(bootstrap).toHaveBeenCalledOnce();
     expect(storeRefresh.mock.calls[1][0][0].fingerprint.sourceSha256).toBe('source-a');
 
     rerender();
     expect(buildCurrentInvoiceSources).toHaveBeenCalledOnce();
-    expect(bootstrap).toHaveBeenCalledTimes(2);
+    expect(bootstrap).toHaveBeenCalledOnce();
     expect(storeRefresh).toHaveBeenCalledTimes(2);
   });
 

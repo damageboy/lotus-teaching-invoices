@@ -392,7 +392,7 @@ describe('DriveFolderDialog', () => {
     expect(listLocations).not.toHaveBeenCalled();
   });
 
-  it('stages a Shared Drive root and passes the legacy seed only after explicit activation', async () => {
+  it('stages a Shared Drive root only after explicit activation', async () => {
     const user = userEvent.setup({ document });
     const onConfirm = vi.fn(async () => {});
     render(
@@ -403,7 +403,6 @@ describe('DriveFolderDialog', () => {
             driveId: null,
             folderName: 'Old Invoices',
           },
-          legacyLastInvoice: '8/2026',
           onConfirm,
         })}
       />
@@ -421,7 +420,7 @@ describe('DriveFolderDialog', () => {
     ).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: 'Activate for all devices' }));
-    expect(onConfirm).toHaveBeenCalledWith(stagedShared, '8/2026');
+    expect(onConfirm).toHaveBeenCalledWith(stagedShared);
   });
 
   it('does not present activation as cancellable after the remote confirmation starts', async () => {

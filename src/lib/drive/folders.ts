@@ -1,5 +1,4 @@
 import type { DriveApi, SharedDrive } from './api.js';
-import type { DriveRootPointer } from './controlFile.js';
 import { DriveError, type DriveFileRecord } from './types.js';
 
 const FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder';
@@ -16,9 +15,15 @@ export interface DriveFolderPage {
 }
 
 export interface StagedDriveRoot {
-  root: DriveRootPointer;
+  root: DriveRoot;
   rootFile: DriveFileRecord;
   finalFolder: DriveFileRecord;
+}
+
+export interface DriveRoot {
+  folderId: string;
+  driveId: string | null;
+  folderName: string;
 }
 
 export type DriveFolderErrorCode = 'duplicateFinalFolder';
@@ -373,6 +378,53 @@ export class DriveFolderService {
     }
     if (!finalFolder.capabilities.canEdit) {
       throw permission('Final Drive folder cannot update invoices', finalFolder.id);
+    }
+
+    return {
+      root: {
+        folderId: rootFile.id,
+        driveId: rootFile.driveId,
+        folderName: rootFile.name,
+      },
+      rootFile,
+      finalFolder,
+    };
+  }
+
+  async resolveRootFromConfigParent(parentId: string): Promise<StagedDriveRoot> {
+    if (!isNonEmptyString(parentId)) {
+      throw invalidResponse('Drive configuration parent folder ID is blank');
+    }
+    const rootFile = requireFolder(
+      await this.api.getFile({ fileId: parentId, supportsAllDrives: true }),
+      { expectedId: parentId }
+    );
+    if (!rootFile.capabilities.canListChildren || !rootFile.capabilities.canAddChildren) {
+      throw permission('Drive configuration parent is not usable as an invoice root', rootFile.id);
+    }
+
+    const location = locationForDriveId(rootFile.driveId);
+    const finalsById = await this.listFinalFolders(location, rootFile.id);
+    this.requireAtMostOneFinal(finalsById);
+    const listedFinal = finalsById.values().next().value as DriveFileRecord | undefined;
+    if (listedFinal === undefined) {
+      throw conflict('Drive invoice root has no direct Final folder', rootFile.id);
+    }
+    const finalFolder = requireFolder(
+      await this.api.getFile({ fileId: listedFinal.id, supportsAllDrives: true }),
+      {
+        expectedId: listedFinal.id,
+        expectedName: FINAL_FOLDER_NAME,
+        parentId: rootFile.id,
+        driveId: rootFile.driveId,
+      }
+    );
+    if (
+      !finalFolder.capabilities.canListChildren ||
+      !finalFolder.capabilities.canAddChildren ||
+      !finalFolder.capabilities.canEdit
+    ) {
+      throw permission('Final Drive folder is not usable for invoices', finalFolder.id);
     }
 
     return {

@@ -1,48 +1,16 @@
-import React from 'react';
-import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
-import { parse as parseYaml } from 'yaml';
-import type { CalendarPickerController } from '../../src/hooks/useCalendarPicker.js';
-import type { DriveFolderController } from '../../src/hooks/useDriveFolderController.js';
-import type { DriveInvoicesState } from '../../src/hooks/useDriveInvoices.js';
+import { afterAll, describe, expect, it, vi } from 'vitest';
+import { DriveStoreError } from '../../src/lib/drive/invoiceStore.js';
+import type { DriveConfigSnapshot } from '../../src/lib/drive/configFile.js';
 import type { AppConfig } from '../../src/lib/types.js';
+import { validateConfig } from '../../src/lib/config/schema.js';
+import { serializeConfigYaml } from '../../src/lib/config/schema.js';
 import { installReactTestEnvironment } from '../helpers/react-test-env.js';
 
-const fs = {
-  exists: vi.fn().mockResolvedValue(false),
-  readTextFile: vi.fn(),
-  writeTextFile: vi.fn(),
-};
-const invoke = vi.fn().mockResolvedValue('/tmp/config.yaml');
-
-vi.mock('@tauri-apps/plugin-fs', () => ({
-  ...fs,
-  BaseDirectory: { AppData: 'AppData' },
-}));
-vi.mock('@tauri-apps/api/core', () => ({ invoke }));
-vi.mock('../../src/lib/logger.js', () => ({
-  logInfo: vi.fn(),
-  logError: vi.fn(),
-}));
-
 const restoreDom = installReactTestEnvironment();
-const { act, cleanup, fireEvent, render, renderHook, waitFor } =
-  await import('@testing-library/react');
-(globalThis as unknown as { __APP_VERSION__: string }).__APP_VERSION__ = 'test';
-(globalThis as unknown as { __APP_IS_OFFICIAL__: boolean }).__APP_IS_OFFICIAL__ = false;
+const { act, renderHook, waitFor } = await import('@testing-library/react');
 const { useConfig } = await import('../../src/hooks/useConfig.js');
-const { RatesTab } = await import('../../src/components/RatesTab/index.js');
 
-function deferred<T>() {
-  let resolve!: (value: T | PromiseLike<T>) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise;
-    reject = rejectPromise;
-  });
-  return { promise, resolve, reject };
-}
-
-const appConfig: AppConfig = {
+const config: AppConfig = {
   teacher: {
     name: 'Teacher',
     address: 'Street',
@@ -60,250 +28,123 @@ const appConfig: AppConfig = {
   invoiceSequenceByYear: { '2026': 7 },
 };
 
-const calendarPicker: CalendarPickerController = {
-  calendars: null,
-  listOpen: false,
-  loading: false,
-  saving: false,
-  error: null,
-  selectedName: 'Selected calendar',
-  openList: vi.fn(async () => undefined),
-  select: vi.fn(async () => undefined),
-  closeList: vi.fn(),
-};
+function remote(value = config, etag = '"config-v1"'): DriveConfigSnapshot {
+  return {
+    file: {
+      id: 'config-file',
+      name: 'lotus-invoices-config.yaml',
+      mimeType: 'application/yaml',
+      parents: ['invoice-root'],
+      driveId: null,
+      ownedByMe: true,
+      trashed: false,
+      version: '1',
+      size: '1',
+      md5Checksum: null,
+      sha256Checksum: null,
+      properties: { lotusConfigSchema: '1' },
+      capabilities: {
+        canListChildren: false,
+        canAddChildren: false,
+        canEdit: true,
+        canDownload: true,
+      },
+      etag,
+    },
+    config: value,
+  };
+}
 
-const drive: Pick<DriveInvoicesState, 'status' | 'snapshot' | 'error' | 'operationKey'> = {
-  status: 'unconfigured',
-  snapshot: null,
-  error: null,
-  operationKey: null,
-};
-
-const driveFolder: DriveFolderController = {
-  dialogOpen: false,
-  opening: false,
-  cleanupPending: false,
-  error: null,
-  openDialog: vi.fn(async () => undefined),
-  closeDialog: vi.fn(),
-  scanCandidate: vi.fn(async () => ({
-    entries: [],
-    warnings: [],
-    blockingConflicts: [],
-    maxSequenceByYear: {},
-  })),
-  confirmRoot: vi.fn(async () => undefined),
-  retry: vi.fn(async () => undefined),
-};
-
-describe('useConfig error boundaries', () => {
-  afterEach(() => {
-    cleanup();
-    vi.clearAllMocks();
-    fs.exists.mockResolvedValue(false);
-    invoke.mockResolvedValue('/tmp/config.yaml');
-  });
-
+describe('useConfig Drive draft', () => {
   afterAll(restoreDom);
 
-  it('handles an ordinary settings save failure without exposing a fatal load error', async () => {
-    fs.writeTextFile.mockRejectedValueOnce(new Error('disk full'));
-    const { result } = renderHook(() => useConfig());
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
-    act(() => result.current.updateConfig(appConfig));
+  it('adopts a clean remote configuration', () => {
+    const saveRemote = vi.fn();
+    const { result } = renderHook(() =>
+      useConfig({ remote: remote(), unconfigured: false, saveRemote })
+    );
 
-    let rejection: unknown;
-    await act(async () => {
-      try {
-        await result.current.save();
-      } catch (error) {
-        rejection = error;
-      }
-    });
+    expect(result.current.config).toEqual(config);
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.isDirty).toBe(false);
+  });
 
-    expect(rejection).toBeUndefined();
-    expect(result.current.config).toEqual(appConfig);
+  it('keeps unconfigured edits in memory for initial Drive activation', async () => {
+    const saveRemote = vi.fn();
+    const { result } = renderHook(() =>
+      useConfig({ remote: null, unconfigured: true, saveRemote })
+    );
+    const next = { ...config, calendarName: 'Teaching' };
+    const normalized = validateConfig(next);
+
+    act(() => result.current.updateConfig(next));
+    await act(() => result.current.save());
+
+    expect(result.current.config).toEqual(normalized);
     expect(result.current.isDirty).toBe(true);
-    expect(result.current.loadError).toBeNull();
-    expect(result.current.saveError).toContain('disk full');
+    expect(saveRemote).not.toHaveBeenCalled();
   });
 
-  it('offers Drive activation a throwing save boundary without making the failure fatal', async () => {
-    fs.writeTextFile.mockRejectedValueOnce(new Error('disk full'));
-    const { result } = renderHook(() => useConfig());
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
-    act(() => result.current.updateConfig(appConfig));
+  it('uses legacy local YAML as the initial draft when Drive is unconfigured', () => {
+    const saveRemote = vi.fn();
+    const legacyYaml = `${serializeConfigYaml({
+      ...config,
+      invoiceSequenceByYear: {},
+    })}outputDir: ./old-invoices\nlastInvoice: 7/2026\n`;
+    const { result } = renderHook(() =>
+      useConfig({
+        remote: null,
+        unconfigured: true,
+        legacyLocalYaml: legacyYaml,
+        saveRemote,
+      })
+    );
 
-    let rejection: unknown;
-    await act(async () => {
-      try {
-        await result.current.saveOrThrow();
-      } catch (error) {
-        rejection = error;
-      }
-    });
-
-    expect(rejection).toEqual(expect.objectContaining({ message: 'disk full' }));
-    expect(result.current.loadError).toBeNull();
-    expect(result.current.saveError).toContain('disk full');
+    expect(result.current.config).toEqual(validateConfig(config));
+    expect(result.current.isLoading).toBe(false);
   });
 
-  it('reserves loadError for a failed initial configuration load', async () => {
-    fs.exists.mockRejectedValueOnce(new Error('invalid config bytes'));
-    const { result } = renderHook(() => useConfig());
+  it('saves the validated draft through Drive and adopts the returned ETag', async () => {
+    const next = { ...config, calendarName: 'Teaching' };
+    const normalized = validateConfig(next);
+    const saved = remote(normalized, '"config-v2"');
+    const saveRemote = vi.fn(async () => saved);
+    const base = remote();
+    const { result } = renderHook(() =>
+      useConfig({ remote: base, unconfigured: false, saveRemote })
+    );
 
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
-    expect(result.current.loadError).toContain('invalid config bytes');
-    expect(result.current.saveError).toBeNull();
+    act(() => result.current.updateConfig(next));
+    await act(() => result.current.saveOrThrow());
+
+    expect(saveRemote).toHaveBeenCalledWith(normalized);
+    expect(result.current.config).toEqual(normalized);
+    expect(result.current.isDirty).toBe(false);
   });
 
-  it('serializes an older ordinary save before a later conditional Calendar update', async () => {
-    const firstWrite = deferred<void>();
-    const secondWrite = deferred<void>();
-    fs.writeTextFile
-      .mockImplementationOnce(() => firstWrite.promise)
-      .mockImplementationOnce(() => secondWrite.promise);
-    const { result } = renderHook(() => useConfig());
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
-    const ratesConfig: AppConfig = {
-      ...appConfig,
-      teacher: { ...appConfig.teacher, name: 'Edited Teacher' },
-    };
-    act(() => result.current.updateConfig(ratesConfig));
-    let ratesSave!: Promise<void>;
-    let calendarSave!: Promise<void>;
-    act(() => {
-      ratesSave = result.current.save();
-      calendarSave = result.current.saveUpdateOrThrow((current) => ({
-        ...current,
-        calendarId: 'calendar-b',
-        calendarName: 'Teaching',
-        calendarAccessRole: 'writer',
-      }));
-    });
-
-    await waitFor(() => expect(fs.writeTextFile).toHaveBeenCalledTimes(1));
-    firstWrite.resolve();
-    await waitFor(() => expect(fs.writeTextFile).toHaveBeenCalledTimes(2));
-    const durableCalendarConfig = parseYaml(fs.writeTextFile.mock.calls[1][1]);
-    expect(durableCalendarConfig.teacher.name).toBe('Edited Teacher');
-    expect(durableCalendarConfig.calendarId).toBe('calendar-b');
-    secondWrite.resolve();
-    await act(() => Promise.all([ratesSave, calendarSave]));
-
-    expect(result.current.config.teacher.name).toBe('Edited Teacher');
-    expect(result.current.config.calendarId).toBe('calendar-b');
-  });
-
-  it('rejects a stale Calendar save when repairing the latest config fails', async () => {
-    const staleWrite = deferred<void>();
-    fs.writeTextFile
-      .mockImplementationOnce(() => staleWrite.promise)
-      .mockRejectedValueOnce(new Error('repair failed'));
-    const { result } = renderHook(() => useConfig());
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
-    let active = true;
-    let calendarSave!: Promise<void>;
-    act(() => {
-      calendarSave = result.current.saveUpdateOrThrow((current) =>
-        active
-          ? {
-              ...current,
-              calendarId: 'calendar-b',
-              calendarName: 'Teaching',
-            }
-          : null
+  it('drops a rejected draft and exposes the fresh remote after an ETag conflict', async () => {
+    const freshConfig = validateConfig({ ...config, calendarName: 'Other device' });
+    const fresh = remote(freshConfig, '"config-v2"');
+    const saveRemote = vi.fn(async () => {
+      throw new DriveStoreError(
+        'conflict',
+        'Drive configuration changed elsewhere; repeat the edit',
+        false,
+        { config: fresh } as never
       );
     });
-    await waitFor(() => expect(fs.writeTextFile).toHaveBeenCalledTimes(1));
-    const latestConfig: AppConfig = {
-      ...appConfig,
-      teacher: { ...appConfig.teacher, name: 'Latest Teacher' },
-    };
-    active = false;
-    act(() => result.current.updateConfig(latestConfig));
+    const base = remote();
+    const { result } = renderHook(() =>
+      useConfig({ remote: base, unconfigured: false, saveRemote })
+    );
+    act(() => result.current.updateConfig({ ...config, calendarName: 'My edit' }));
 
-    let rejection: unknown;
     await act(async () => {
-      staleWrite.resolve();
-      try {
-        await calendarSave;
-      } catch (error) {
-        rejection = error;
-      }
+      await expect(result.current.saveOrThrow()).rejects.toMatchObject({ code: 'conflict' });
     });
 
-    expect(rejection).toEqual(expect.objectContaining({ message: 'repair failed' }));
-    expect(fs.writeTextFile).toHaveBeenCalledTimes(2);
-    const attemptedRepair = parseYaml(fs.writeTextFile.mock.calls[1][1]);
-    expect(attemptedRepair.teacher.name).toBe('Latest Teacher');
-    expect(result.current.config).toEqual(latestConfig);
-    expect(result.current.saveError).toContain('repair failed');
-  });
-
-  it('keeps a clean-config repair failure unsaved and retryable until disk is current', async () => {
-    const staleWrite = deferred<void>();
-    const retryWrite = deferred<void>();
-    fs.writeTextFile
-      .mockImplementationOnce(() => staleWrite.promise)
-      .mockRejectedValueOnce(new Error('repair failed'))
-      .mockImplementationOnce(() => retryWrite.promise);
-    let latest!: ReturnType<typeof useConfig>;
-    function Harness() {
-      latest = useConfig();
-      return (
-        <RatesTab
-          layout="mobile"
-          config={latest.config}
-          calendarPicker={calendarPicker}
-          drive={drive}
-          driveFolder={driveFolder}
-          isDirty={latest.isDirty}
-          saveError={latest.saveError}
-          onUpdate={latest.updateConfig}
-          onSave={latest.save}
-        />
-      );
-    }
-    const view = render(<Harness />);
-    await waitFor(() => expect(view.getByText('Saved')).toBeTruthy());
-    const saveButton = view.getByRole('button', {
-      name: 'Save settings',
-    }) as HTMLButtonElement;
-    expect(saveButton.disabled).toBe(true);
-
-    let active = true;
-    let calendarSave!: Promise<void>;
-    act(() => {
-      calendarSave = latest.saveUpdateOrThrow((current) =>
-        active
-          ? {
-              ...current,
-              calendarId: 'stale-calendar',
-              calendarName: 'Stale',
-            }
-          : null
-      );
-    });
-    await waitFor(() => expect(fs.writeTextFile).toHaveBeenCalledTimes(1));
-    active = false;
-    await act(async () => {
-      staleWrite.resolve();
-      await expect(calendarSave).rejects.toThrow('repair failed');
-    });
-
-    expect(view.getByText('Save failed')).toBeTruthy();
-    expect(saveButton.disabled).toBe(false);
-
-    fireEvent.click(saveButton);
-    await waitFor(() => expect(fs.writeTextFile).toHaveBeenCalledTimes(3));
-    expect(view.queryByText('Saved')).toBeNull();
-    expect(view.getByText('Unsaved changes')).toBeTruthy();
-
-    retryWrite.resolve();
-    await waitFor(() => expect(view.getByText('Saved')).toBeTruthy());
-    expect(saveButton.disabled).toBe(true);
-    const repaired = parseYaml(fs.writeTextFile.mock.calls[2][1]);
-    expect(repaired.calendarId).toBeUndefined();
+    await waitFor(() => expect(result.current.config).toEqual(freshConfig));
+    expect(result.current.isDirty).toBe(false);
+    expect(result.current.saveError).toContain('changed elsewhere');
   });
 });

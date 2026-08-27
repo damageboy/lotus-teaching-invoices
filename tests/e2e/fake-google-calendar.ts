@@ -1281,6 +1281,10 @@ export async function startFakeGoogleCalendar(fixturePath: string): Promise<Fake
           }
           const properties = parseV2Properties(parsed.metadata.properties);
           if (properties) file.properties = { ...(file.properties ?? {}), ...properties };
+          const addParent = url.searchParams.get('addParents');
+          const removeParent = url.searchParams.get('removeParents');
+          if (addParent) file.parents = [...new Set([...file.parents, addParent])];
+          if (removeParent) file.parents = file.parents.filter((parent) => parent !== removeParent);
           file.bytes = parsed.bytes;
           nextDriveVersion(file);
           json(response, 200, { etag: file.etag });
@@ -1684,57 +1688,30 @@ async function runDriveAndGmailContractTests(server: FakeGoogleCalendar): Promis
     drives: [{ id: 'shared-drive-2', name: 'Archive Shared' }],
   });
 
-  const controlQuery = encodeURIComponent(
-    "name = '.lotus-teaching-invoices.json' and trashed = false and properties has { key='lotusConfigSchema' and value='1' }"
+  const configQuery = encodeURIComponent(
+    "name = 'lotus-invoices-config.yaml' and trashed = false and properties has { key='lotusConfigSchema' and value='1' }"
   );
-  const controls = await fetch(
-    `${server.driveApiBaseUrl}/files?q=${controlQuery}&corpora=user&includeItemsFromAllDrives=true&supportsAllDrives=true&pageSize=1`,
+  const configs = await fetch(
+    `${server.driveApiBaseUrl}/files?q=${configQuery}&corpora=user&includeItemsFromAllDrives=true&supportsAllDrives=true&pageSize=1`,
     { headers: auth }
   );
-  assert.equal(controls.status, 200);
-  const controlsBody = (await controls.json()) as {
+  assert.equal(configs.status, 200);
+  const configsBody = (await configs.json()) as {
     files: Array<Record<string, unknown>>;
     nextPageToken?: string;
   };
-  assert.equal(controlsBody.files[0]?.ownedByMe, true);
-  assert.equal(controlsBody.files[0]?.driveId, null);
-  assert.deepEqual(controlsBody.files[0]?.properties, { lotusConfigSchema: '1' });
-  assert.deepEqual(controlsBody.files[0]?.capabilities, {
+  assert.equal(configsBody.files.length, 1);
+  assert.equal(configsBody.files[0]?.name, 'lotus-invoices-config.yaml');
+  assert.equal(configsBody.files[0]?.mimeType, 'application/yaml');
+  assert.equal(configsBody.files[0]?.ownedByMe, true);
+  assert.equal(configsBody.files[0]?.driveId, null);
+  assert.deepEqual(configsBody.files[0]?.properties, { lotusConfigSchema: '1' });
+  assert.deepEqual(configsBody.files[0]?.capabilities, {
     canListChildren: false,
     canAddChildren: false,
     canEdit: true,
     canDownload: true,
   });
-  const nonOwnedControls = await fetch(
-    `${server.driveApiBaseUrl}/files?q=${controlQuery}&corpora=user&includeItemsFromAllDrives=true&supportsAllDrives=true&pageSize=1&pageToken=${encodeURIComponent(controlsBody.nextPageToken!)}`,
-    { headers: auth }
-  );
-  assert.equal(nonOwnedControls.status, 200);
-  assert.deepEqual(
-    ((await nonOwnedControls.json()) as { files: Array<{ id: string; ownedByMe: boolean }> }).files,
-    [
-      {
-        id: 'control-not-owned',
-        name: '.lotus-teaching-invoices.json',
-        mimeType: 'application/json',
-        parents: ['my-drive-root'],
-        driveId: null,
-        ownedByMe: false,
-        trashed: false,
-        version: '1',
-        size: '86',
-        md5Checksum: 'a92ee3a673beeedb8c18edbfde0157fa',
-        sha256Checksum: '7a8cb8a208cdcd51cf74a889d5894030f79743e802eef39865ccca0705d592d9',
-        properties: { lotusConfigSchema: '1' },
-        capabilities: {
-          canListChildren: false,
-          canAddChildren: false,
-          canEdit: false,
-          canDownload: true,
-        },
-      },
-    ]
-  );
 
   const sharedFiles = await fetch(
     `${server.driveApiBaseUrl}/files?q=${encodeURIComponent("'shared-root-1' in parents and trashed = false")}&corpora=drive&driveId=shared-drive-1&includeItemsFromAllDrives=true&supportsAllDrives=true&pageSize=100`,

@@ -1,194 +1,147 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { readTextFile, writeTextFile, exists, BaseDirectory } from '@tauri-apps/plugin-fs';
-import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
-import { AppConfig } from '../lib/types';
-import { validateConfig } from '../lib/config/schema';
-import { DEFAULT_CONFIG } from '../lib/config/defaults';
-import { logInfo, logError } from '../lib/logger';
-import { invoke } from '@tauri-apps/api/core';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { DriveConfigSnapshot } from '../lib/drive/configFile.js';
+import { DriveStoreError } from '../lib/drive/invoiceStore.js';
+import { DEFAULT_CONFIG } from '../lib/config/defaults.js';
+import { parseLegacyLocalConfigYaml, validateConfig } from '../lib/config/schema.js';
+import type { AppConfig } from '../lib/types.js';
 
-const CONFIG_FILE = 'config.yaml';
-const BASE_DIR = BaseDirectory.AppData;
+export interface UseConfigOptions {
+  remote: DriveConfigSnapshot | null;
+  unconfigured: boolean;
+  legacyLocalYaml?: string;
+  saveRemote(next: AppConfig): Promise<DriveConfigSnapshot>;
+}
 
-export function useConfig() {
-  const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG);
+function legacyDraft(raw: string | undefined): { config: AppConfig; error: string | null } {
+  if (raw === undefined) return { config: DEFAULT_CONFIG, error: null };
+  try {
+    const legacy = parseLegacyLocalConfigYaml(raw);
+    if (legacy.lastInvoice === undefined) return { config: legacy.config, error: null };
+    const [sequence, year] = legacy.lastInvoice.split('/');
+    return {
+      config: {
+        ...legacy.config,
+        invoiceSequenceByYear: { [year]: Number(sequence) },
+      },
+      error: null,
+    };
+  } catch (cause) {
+    return {
+      config: DEFAULT_CONFIG,
+      error: cause instanceof Error ? cause.message : String(cause),
+    };
+  }
+}
+
+export function useConfig(options: UseConfigOptions) {
+  const fallback = legacyDraft(options.legacyLocalYaml);
+  const initial = options.remote?.config ?? fallback.config;
+  const [config, setConfig] = useState<AppConfig>(initial);
   const [isDirty, setIsDirty] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(
+    options.remote === null && options.unconfigured ? fallback.error : null
+  );
   const [saveError, setSaveError] = useState<string | null>(null);
   const configRef = useRef(config);
-  const configRevisionRef = useRef(0);
+  const dirtyRef = useRef(false);
+  const remoteFileRef = useRef(options.remote?.file.id ?? null);
   const writeQueueRef = useRef<Promise<void>>(Promise.resolve());
 
-  const publishConfig = useCallback((next: AppConfig, dirty: boolean): void => {
+  const publish = useCallback((next: AppConfig, dirty: boolean): void => {
     configRef.current = next;
-    configRevisionRef.current += 1;
+    dirtyRef.current = dirty;
     setConfig(next);
     setIsDirty(dirty);
   }, []);
 
-  const load = useCallback(async () => {
-    setIsLoading(true);
-    setLoadError(null);
-    try {
-      const configPath = await invoke<string | null>('get_config_path');
-      const fileExists = configPath
-        ? await exists(configPath)
-        : await exists(CONFIG_FILE, { baseDir: BASE_DIR });
-      if (!fileExists) {
-        logInfo('Config file not found — using defaults');
-        publishConfig(DEFAULT_CONFIG, false);
-      } else {
-        const raw = configPath
-          ? await readTextFile(configPath)
-          : await readTextFile(CONFIG_FILE, { baseDir: BASE_DIR });
-        const parsed = parseYaml(raw);
-        publishConfig(validateConfig(parsed), false);
-        logInfo('Config loaded from disk');
-      }
-    } catch (e) {
-      logError(`Config load failed: ${e}`);
-      setLoadError(String(e));
-    } finally {
-      setIsLoading(false);
-      setIsDirty(false);
-    }
-  }, [publishConfig]);
-
   useEffect(() => {
-    load();
-  }, [load]);
+    const fileId = options.remote?.file.id ?? null;
+    const firstRemote = remoteFileRef.current === null && fileId !== null;
+    remoteFileRef.current = fileId;
+    if (options.remote !== null && (!dirtyRef.current || firstRemote)) {
+      publish(options.remote.config, false);
+      setLoadError(null);
+      setSaveError(null);
+    } else if (options.unconfigured && fileId === null && !dirtyRef.current) {
+      const local = legacyDraft(options.legacyLocalYaml);
+      publish(local.config, false);
+      setLoadError(local.error);
+    }
+  }, [options.legacyLocalYaml, options.remote, options.unconfigured, publish]);
 
   const updateConfig = useCallback(
-    (next: AppConfig) => {
-      publishConfig(next, true);
-    },
-    [publishConfig]
+    (next: AppConfig): void => publish(validateConfig(next), true),
+    [publish]
   );
 
-  const enqueueWrite = useCallback((operation: () => Promise<void>): Promise<void> => {
+  const enqueue = useCallback((operation: () => Promise<void>): Promise<void> => {
     const result = writeQueueRef.current.then(operation, operation);
     writeQueueRef.current = result.catch(() => undefined);
     return result;
   }, []);
 
-  function validatedConfig(raw: AppConfig): AppConfig {
-    // Sanitize: JSON round-trip strips Symbol values/keys that yaml can't serialize.
-    // Also log any symbols found so we can diagnose the root cause.
-    const symbols: string[] = [];
-    function scanSymbols(obj: unknown, path: string) {
-      if (obj === null || typeof obj !== 'object') {
-        if (typeof obj === 'symbol') symbols.push(`${path} = Symbol`);
-        return;
-      }
-      for (const k of Object.getOwnPropertySymbols(obj))
-        symbols.push(`${path}[${String(k)}] (key)`);
-      for (const [k, v] of Object.entries(obj as Record<string, unknown>))
-        scanSymbols(v, `${path}.${k}`);
-    }
-    scanSymbols(raw, 'config');
-    if (symbols.length > 0)
-      logError(`Symbol values found in config before save: ${symbols.join('; ')}`);
-    return validateConfig(raw);
-  }
-
-  async function configPath(): Promise<string | null> {
-    return invoke<string | null>('get_config_path');
-  }
-
-  async function writeConfig(path: string | null, next: AppConfig): Promise<void> {
-    const serialized = stringifyYaml(next);
-    if (path) {
-      await writeTextFile(path, serialized);
-    } else {
-      await writeTextFile(CONFIG_FILE, serialized, { baseDir: BASE_DIR });
-    }
-  }
-
-  async function repairLatestConfig(path: string | null): Promise<void> {
-    while (true) {
-      const revision = configRevisionRef.current;
-      const latest = validatedConfig(configRef.current);
-      await writeConfig(path, latest);
-      if (revision === configRevisionRef.current) return;
-    }
-  }
-
   const persist = useCallback(
-    async (throwOnFailure = false) => {
-      return enqueueWrite(async () => {
+    (throwOnFailure: boolean): Promise<void> =>
+      enqueue(async () => {
         setSaveError(null);
-        logInfo(`Saving config to ${CONFIG_FILE}`);
-        try {
-          const path = await configPath();
-          let revision = configRevisionRef.current;
-          let toSave = validatedConfig(configRef.current);
-          while (true) {
-            await writeConfig(path, toSave);
-            if (revision === configRevisionRef.current) break;
-            revision = configRevisionRef.current;
-            toSave = validatedConfig(configRef.current);
-          }
-          publishConfig(toSave, false);
-          logInfo('Config saved successfully');
-        } catch (e) {
-          logError(`Config save failed: ${e}`);
-          setSaveError(String(e));
-          if (throwOnFailure) throw e;
+        const next = validateConfig(configRef.current);
+        if (options.unconfigured) {
+          publish(next, true);
+          return;
         }
-      });
-    },
-    [enqueueWrite, publishConfig]
+        try {
+          const saved = await options.saveRemote(next);
+          publish(saved.config, false);
+        } catch (cause) {
+          const error = cause instanceof Error ? cause : new Error(String(cause));
+          setSaveError(error.message);
+          if (cause instanceof DriveStoreError && cause.code === 'conflict') {
+            const fresh = cause.snapshot?.config.config ?? options.remote?.config;
+            if (fresh !== undefined) publish(fresh, false);
+          }
+          if (throwOnFailure) throw cause;
+        }
+      }),
+    [enqueue, options, publish]
   );
+
+  const save = useCallback(() => persist(false), [persist]);
+  const saveOrThrow = useCallback(() => persist(true), [persist]);
 
   const saveUpdateOrThrow = useCallback(
-    (update: (current: AppConfig) => AppConfig | null): Promise<void> => {
-      return enqueueWrite(async () => {
+    (update: (current: AppConfig) => AppConfig | null): Promise<void> =>
+      enqueue(async () => {
+        const requested = update(configRef.current);
+        if (requested === null) return;
+        const next = validateConfig(requested);
+        publish(next, true);
+        if (options.unconfigured) return;
         setSaveError(null);
-        logInfo(`Saving config to ${CONFIG_FILE}`);
         try {
-          const path = await configPath();
-          while (true) {
-            const revision = configRevisionRef.current;
-            const requested = update(configRef.current);
-            if (requested === null) return;
-            const toSave = validatedConfig(requested);
-            await writeConfig(path, toSave);
-            const currentRequest = update(configRef.current);
-            if (currentRequest === null) {
-              setIsDirty(true);
-              await repairLatestConfig(path);
-              setIsDirty(false);
-              return;
-            }
-            if (revision !== configRevisionRef.current) continue;
-            publishConfig(toSave, false);
-            logInfo('Config saved successfully');
-            return;
+          const saved = await options.saveRemote(next);
+          publish(saved.config, false);
+        } catch (cause) {
+          const error = cause instanceof Error ? cause : new Error(String(cause));
+          setSaveError(error.message);
+          if (cause instanceof DriveStoreError && cause.code === 'conflict') {
+            const fresh = cause.snapshot?.config.config ?? options.remote?.config;
+            if (fresh !== undefined) publish(fresh, false);
           }
-        } catch (e) {
-          logError(`Config save failed: ${e}`);
-          setSaveError(String(e));
-          throw e;
+          throw cause;
         }
-      });
-    },
-    [enqueueWrite, publishConfig]
+      }),
+    [enqueue, options, publish]
   );
-
-  const save = useCallback(() => persist(), [persist]);
-  const saveOrThrow = useCallback(() => persist(true), [persist]);
 
   return {
     config,
     isDirty,
-    isLoading,
+    isLoading: options.remote === null && !options.unconfigured,
     loadError,
     saveError,
     updateConfig,
     save,
     saveOrThrow,
     saveUpdateOrThrow,
-    reload: load,
   };
 }

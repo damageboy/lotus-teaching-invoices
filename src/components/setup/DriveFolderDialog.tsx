@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { DriveRootPointer } from '../../lib/drive/controlFile.js';
 import type {
   DriveFolderPage,
   DriveFolderService,
   DriveLocation,
+  DriveRoot,
   StagedDriveRoot,
 } from '../../lib/drive/folders.js';
 import type { DriveInvoiceScan } from '../../lib/drive/invoiceCatalog.js';
@@ -19,12 +19,11 @@ export type DriveFolderBrowserService = Pick<
 export interface DriveFolderDialogProps {
   open: boolean;
   layout: DriveFolderDialogLayout;
-  currentRoot: DriveRootPointer | null;
+  currentRoot: DriveRoot | null;
   detectedFolders: readonly DriveFileRecord[];
-  legacyLastInvoice?: string;
   folderService: DriveFolderBrowserService;
   scanCandidate(stagedRoot: StagedDriveRoot): Promise<DriveInvoiceScan>;
-  onConfirm(stagedRoot: StagedDriveRoot, legacyLastInvoice?: string): void | Promise<void>;
+  onConfirm(stagedRoot: StagedDriveRoot): void | Promise<void>;
   onClose(): void;
 }
 
@@ -58,7 +57,7 @@ function countLabel(count: number, singular: string, plural: string): string {
   return `${count} ${count === 1 ? singular : plural}`;
 }
 
-function rootsDiffer(current: DriveRootPointer | null, staged: StagedDriveRoot): boolean {
+function rootsDiffer(current: DriveRoot | null, staged: StagedDriveRoot): boolean {
   return (
     current !== null &&
     (current.folderId !== staged.root.folderId || current.driveId !== staged.root.driveId)
@@ -70,7 +69,6 @@ export function DriveFolderDialog({
   layout,
   currentRoot,
   detectedFolders,
-  legacyLastInvoice,
   folderService,
   scanCandidate,
   onConfirm,
@@ -418,7 +416,7 @@ export function DriveFolderDialog({
     setError(null);
     const request = requestRef.current;
     try {
-      await onConfirm(stagedRoot, legacyLastInvoice);
+      await onConfirm(stagedRoot);
       if (request !== requestRef.current) return;
       close();
     } catch (cause) {

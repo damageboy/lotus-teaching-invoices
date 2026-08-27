@@ -411,7 +411,6 @@ function InvoicesTabContent({
     displayRows,
     driveStatus: drive.status,
     globalMessages,
-    recoveryRequired: drive.error?.code === 'recoveryRequired',
     operationKey: drive.operationKey,
     rowAction,
     rowErrors,
@@ -420,7 +419,6 @@ function InvoicesTabContent({
     onOpen: handleOpen,
     onDraftEmail: handleDraftEmail,
     onRefresh: () => void drive.refresh().catch(() => undefined),
-    onRecoverReservation: () => void drive.recoverReservation().catch(() => undefined),
   };
 
   return (
@@ -449,19 +447,6 @@ function InvoicesTabContent({
               {message}
             </p>
           ))}
-
-          {drive.error?.code === 'recoveryRequired' && (
-            <button
-              type="button"
-              onClick={() => void drive.recoverReservation().catch(() => undefined)}
-              disabled={drive.operationKey !== null}
-              className="self-start rounded bg-red-700 px-3 py-1 text-sm font-medium text-white disabled:opacity-40"
-            >
-              {drive.operationKey === 'recoverReservation'
-                ? 'Recovering invoice reservation…'
-                : 'Recover invoice reservation'}
-            </button>
-          )}
 
           <table className="w-full border-collapse text-sm">
             <thead>

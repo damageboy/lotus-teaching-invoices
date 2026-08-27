@@ -13,21 +13,15 @@ const CALENDAR_ID = 'teaching@example.test';
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive';
 
 async function configureFixtureDriveRoot(): Promise<void> {
-  const configured = {
-    schemaVersion: 1,
-    generation: 1,
-    root: { folderId: 'my-drive-root', driveId: null, folderName: 'Configured E2E Root' },
-    finalFolderId: 'final-my-drive',
-    sequenceByYear: {},
-    reservation: null,
-  };
   const response = await fetch(`${fakeGoogleControlUrl()}/mutate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       type: 'drivePatch',
       fileId: 'control-1',
-      patch: { bytesBase64: Buffer.from(JSON.stringify(configured)).toString('base64') },
+      patch: {
+        bytesBase64: Buffer.from(editingConfigWithSecondStudio()).toString('base64'),
+      },
     }),
   });
   expect(response.status).toBe(204);
@@ -161,9 +155,9 @@ describe('Calendar editing isolated bootstrap', () => {
     expect(config.calendarName).toBe('Teaching Calendar');
     expect(config.calendarAccessRole).toBe('owner');
     expect(readdirSync(seeded.dataRoot).sort()).toEqual([
-      '.gmail-tokens.lock',
+      '.google-tokens.lock',
       'calendar-cache.sqlite',
-      'gmail-tokens.json',
+      'google-tokens.json',
     ]);
 
     await browser.refresh();
@@ -208,8 +202,11 @@ describe('Calendar editing isolated bootstrap', () => {
     const configuredDriveDiscoveryPaths = new Set([
       '/drive/v3/files',
       '/drive/v3/files/control-1',
+      '/drive/v2/files/control-1',
       '/drive/v3/files/my-drive-root',
+      '/drive/v2/files/my-drive-root',
       '/drive/v3/files/final-my-drive',
+      '/drive/v2/files/final-my-drive',
     ]);
     expect(calendarRequests.length).toBeGreaterThan(0);
     expect(

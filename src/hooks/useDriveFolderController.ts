@@ -26,18 +26,12 @@ export interface UseDriveFolderControllerOptions {
     'status' | 'snapshot' | 'error' | 'operationKey' | 'refresh' | 'activateRoot'
   >;
   config: AppConfig;
-  saveConfig(update: (current: AppConfig) => AppConfig | null): Promise<void>;
   sources: readonly CurrentInvoiceSource[];
   sourceContextKey: string;
   scanCandidate(
     stagedRoot: StagedDriveRoot,
     sources: readonly CurrentInvoiceSource[]
   ): Promise<DriveInvoiceScan>;
-}
-
-interface PendingConfigCleanup {
-  rootKey: string;
-  stagedRoot: StagedDriveRoot;
 }
 
 interface CommittedOptions extends UseDriveFolderControllerOptions {
@@ -124,11 +118,8 @@ export function useDriveFolderController(
   const sourceIncarnationRef = useRef(0);
   const sessionRef = useRef(0);
   const retryGenerationRef = useRef(0);
-  const pendingCleanupRef = useRef<PendingConfigCleanup | null>(null);
-  const pendingCleanupIncarnationRef = useRef(0);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [opening, setOpening] = useState(false);
-  const [cleanupPending, setCleanupPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useLayoutEffect(() => {
@@ -140,7 +131,7 @@ export function useDriveFolderController(
       semanticIncarnationRef.current += 1;
       if (sourcesChanged) sourceIncarnationRef.current += 1;
       setOpening(false);
-      if (pendingCleanupRef.current === null) setError(null);
+      setError(null);
     }
     committedIdentityRef.current = {
       authorizationIncarnation: options.authorizationIncarnation,
@@ -244,11 +235,7 @@ export function useDriveFolderController(
   }, []);
 
   const adoptSuccessfulActivation = useCallback(
-    (
-      context: OperationContext,
-      stagedRoot: StagedDriveRoot,
-      pendingCleanupIncarnation: number
-    ): boolean => {
+    (context: OperationContext, stagedRoot: StagedDriveRoot): boolean => {
       const current = committedOptionsRef.current;
       const evidence = activationSnapshotRef.current;
       const snapshot =
@@ -267,15 +254,13 @@ export function useDriveFolderController(
         current.sourceContextKey === SETUP_DISCOVERY_SOURCE_CONTEXT ||
         context.sourceIncarnation + 1 !== sourceIncarnationRef.current ||
         context.semanticIncarnation + 1 !== semanticIncarnationRef.current ||
-        pendingCleanupIncarnation !== pendingCleanupIncarnationRef.current ||
         (current.drive.status !== 'ready' && current.drive.status !== 'loading') ||
         snapshot === null ||
         snapshot.stagedRoot.root.folderId !== stagedRoot.root.folderId ||
         snapshot.stagedRoot.root.driveId !== stagedRoot.root.driveId ||
         snapshot.stagedRoot.finalFolder.id !== stagedRoot.finalFolder.id ||
-        snapshot.control.control.root.folderId !== stagedRoot.root.folderId ||
-        snapshot.control.control.root.driveId !== stagedRoot.root.driveId ||
-        snapshot.control.control.finalFolderId !== stagedRoot.finalFolder.id
+        snapshot.config.file.parents.length !== 1 ||
+        snapshot.config.file.parents[0] !== stagedRoot.root.folderId
       ) {
         return false;
       }
@@ -313,7 +298,7 @@ export function useDriveFolderController(
     sessionRef.current += 1;
     setDialogOpen(false);
     setOpening(false);
-    if (pendingCleanupRef.current === null) setError(null);
+    setError(null);
   }, []);
 
   const scanCandidate = useCallback(
@@ -335,72 +320,29 @@ export function useDriveFolderController(
     [captureContext, contextIsCurrent, obsoleteError, requireCurrent]
   );
 
-  const savePendingCleanup = useCallback(
-    async (
-      pending: PendingConfigCleanup,
-      context: OperationContext,
-      operation: 'confirmation' | 'retry'
-    ): Promise<void> => {
-      const current = committedOptionsRef.current;
-      const pendingCleanupIncarnation = pendingCleanupIncarnationRef.current;
-      const cleanupIsCurrent = (): boolean =>
-        pendingCleanupRef.current === pending &&
-        (contextIsCurrent(context) ||
-          adoptSuccessfulActivation(context, pending.stagedRoot, pendingCleanupIncarnation));
-      await current.saveConfig((latest) => (cleanupIsCurrent() ? latest : null));
-      if (!cleanupIsCurrent()) throw obsoleteError(context, operation);
-      requireCurrent(context, operation);
-      if (pendingCleanupRef.current === pending) {
-        pendingCleanupRef.current = null;
-        pendingCleanupIncarnationRef.current += 1;
-        setCleanupPending(false);
-      }
-    },
-    [adoptSuccessfulActivation, contextIsCurrent, obsoleteError, requireCurrent]
-  );
-
   const confirmRoot = useCallback(
     async (stagedRoot: StagedDriveRoot): Promise<void> => {
       const context = captureContext();
       const current = committedOptionsRef.current;
-      const rootKey = `${stagedRoot.root.driveId ?? 'my-drive'}:${stagedRoot.root.folderId}`;
       setError(null);
       try {
-        let pending = pendingCleanupRef.current;
-        if (pending?.rootKey !== rootKey) {
-          if (pending !== null) await savePendingCleanup(pending, context, 'confirmation');
-          const pendingCleanupIncarnation = pendingCleanupIncarnationRef.current;
-          await current.drive.activateRoot(stagedRoot);
-          context.activationSourceAdoptionAvailable =
-            context.sourceContextOrigin === SETUP_DISCOVERY_SOURCE_CONTEXT;
-          const activationIsCurrent =
-            contextIsCurrent(context) ||
-            adoptSuccessfulActivation(context, stagedRoot, pendingCleanupIncarnation);
-          if (pendingCleanupIncarnation !== pendingCleanupIncarnationRef.current) {
-            throw obsoleteError(context, 'confirmation');
-          }
-          pending = { rootKey, stagedRoot };
-          pendingCleanupRef.current = pending;
-          pendingCleanupIncarnationRef.current += 1;
-          setCleanupPending(true);
-          if (!activationIsCurrent) throw obsoleteError(context, 'confirmation');
-          requireCurrent(context, 'confirmation');
+        await current.drive.activateRoot(
+          stagedRoot,
+          current.drive.status === 'unconfigured' ? current.config : undefined
+        );
+        context.activationSourceAdoptionAvailable =
+          context.sourceContextOrigin === SETUP_DISCOVERY_SOURCE_CONTEXT;
+        if (!contextIsCurrent(context) && !adoptSuccessfulActivation(context, stagedRoot)) {
+          throw obsoleteError(context, 'confirmation');
         }
-        await savePendingCleanup(pending, context, 'confirmation');
+        requireCurrent(context, 'confirmation');
       } catch (cause) {
         if (!contextIsCurrent(context)) throw obsoleteError(context, 'confirmation');
         setError(errorMessage(cause));
         throw cause;
       }
     },
-    [
-      adoptSuccessfulActivation,
-      captureContext,
-      contextIsCurrent,
-      obsoleteError,
-      requireCurrent,
-      savePendingCleanup,
-    ]
+    [adoptSuccessfulActivation, captureContext, contextIsCurrent, obsoleteError, requireCurrent]
   );
 
   const retry = useCallback(async (): Promise<void> => {
@@ -408,25 +350,20 @@ export function useDriveFolderController(
     const context = captureContext();
     setError(null);
     try {
-      const pending = pendingCleanupRef.current;
-      if (pending !== null) {
-        await savePendingCleanup(pending, context, 'retry');
-      } else {
-        await committedOptionsRef.current.drive.refresh();
-        requireCurrent(context, 'retry');
-      }
+      await committedOptionsRef.current.drive.refresh();
+      requireCurrent(context, 'retry');
       if (generation === retryGenerationRef.current) setError(null);
     } catch (cause) {
       if (!contextIsCurrent(context)) throw obsoleteError(context, 'retry');
       if (generation === retryGenerationRef.current) setError(errorMessage(cause));
       throw cause;
     }
-  }, [captureContext, contextIsCurrent, obsoleteError, requireCurrent, savePendingCleanup]);
+  }, [captureContext, contextIsCurrent, obsoleteError, requireCurrent]);
 
   return {
     dialogOpen,
     opening,
-    cleanupPending,
+    cleanupPending: false,
     error,
     openDialog,
     closeDialog,

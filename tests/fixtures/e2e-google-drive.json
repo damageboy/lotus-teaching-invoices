@@ -35,13 +35,13 @@
     },
     {
       "id": "control-1",
-      "name": ".lotus-teaching-invoices.json",
-      "mimeType": "application/json",
+      "name": "lotus-invoices-config.yaml",
+      "mimeType": "application/yaml",
       "parents": ["my-drive-root"],
       "driveId": null,
       "ownedByMe": true,
       "properties": { "lotusConfigSchema": "1" },
-      "bytesUtf8": "{\"schema\":1,\"root\":null,\"sequenceByYear\":{},\"reservation\":null}",
+      "bytesUtf8": "teacher:\n  name: E2E Teacher\n  address: |-\n    Test Street 1\n    Test City 12345\n  taxNumber: 123/456/78901\n  bankDetails:\n    accountOwner: E2E Teacher\n    iban: DE00 1234 5678 9012 3456 78\n    bic: TESTDE88\nstudios:\n  Test Studio:\n    fullName: Test Studio GmbH\n    address: Studio Street 1, Test City\n    rateTiers:\n      - minStudents: 1\n        maxStudents: 5\n        rate: 40\n      - minStudents: 6\n        maxStudents: null\n        rate: 55\n  New Studio:\n    fullName: New Studio GmbH\n    address: Second Street 2, Test City\n    rateTiers:\n      - minStudents: 1\n        maxStudents: null\n        rate: 50\ninvoiceSequenceByYear: {}\n",
       "capabilities": {
         "canListChildren": false,
         "canAddChildren": false,

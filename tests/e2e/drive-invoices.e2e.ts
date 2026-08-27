@@ -1,7 +1,7 @@
 import { browser, expect, $ } from '@wdio/globals';
 import { createHash } from 'node:crypto';
 import { parse, stringify } from 'yaml';
-import { editingConfigYaml, fakeGoogleControlUrl, readTmpConfig } from './helpers.js';
+import { editingConfigYaml, fakeGoogleControlUrl } from './helpers.js';
 
 const CALENDAR_ID = 'teaching@example.test';
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive';
@@ -51,10 +51,8 @@ interface FakeRequest {
   responseStatus?: number;
 }
 
-interface DriveControlDocument {
-  generation: number;
-  root: { folderId: string; driveId: string | null; folderName: string };
-  finalFolderId: string;
+interface DriveConfigDocument {
+  invoiceSequenceByYear: Record<string, number>;
 }
 
 function sha256(bytes: Uint8Array): string {
@@ -112,10 +110,6 @@ async function refreshDrive(): Promise<void> {
   );
   const before = await driveListRequestCount();
   await $('button=Refresh Drive').click();
-  await browser.waitUntil(async () => !(await $('button=Refresh Drive').isEnabled()), {
-    timeout: 5_000,
-    timeoutMsg: 'Drive refresh did not enter loading state',
-  });
   await browser.waitUntil(
     async () =>
       (await driveListRequestCount()) >= before + 3 &&
@@ -135,7 +129,7 @@ async function refreshDriveExpectingError(pattern: RegExp): Promise<void> {
   await refresh.click();
   await browser.waitUntil(
     async () =>
-      (await driveListRequestCount()) >= before + 3 &&
+      (await driveListRequestCount()) >= before + 2 &&
       (await alertsContain(pattern)) &&
       (await $('button=Refresh Drive').isEnabled()),
     {
@@ -309,27 +303,30 @@ async function seedRuntime(options: { calendarConfigured?: boolean } = {}): Prom
 }
 
 async function configureFixtureRoot(): Promise<void> {
-  const configured = {
-    schemaVersion: 1,
-    generation: 1,
-    root: { folderId: 'my-drive-root', driveId: null, folderName: 'Configured E2E Root' },
-    finalFolderId: 'final-my-drive',
-    sequenceByYear: {},
-    reservation: null,
-  };
+  const config = parse(editingConfigYaml()) as Record<string, unknown>;
+  config.invoiceSequenceByYear = { '2026': 8 };
   await mutate({
     type: 'drivePatch',
     fileId: 'control-1',
-    patch: { bytesBase64: Buffer.from(JSON.stringify(configured)).toString('base64') },
+    patch: { bytesBase64: Buffer.from(stringify(config)).toString('base64') },
   });
 }
 
-function activeDriveControl(current: FakeState): DriveControlDocument {
-  const controls = current.files.filter((file) => file.properties.lotusConfigSchema === '1');
-  expect(controls).toHaveLength(1);
-  return JSON.parse(
-    Buffer.from(controls[0]!.bytesBase64, 'base64').toString('utf8')
-  ) as DriveControlDocument;
+function activeDriveConfig(current: FakeState): {
+  file: FakeFile;
+  config: DriveConfigDocument;
+} {
+  const configs = current.files.filter(
+    (file) =>
+      file.name === 'lotus-invoices-config.yaml' && file.properties.lotusConfigSchema === '1'
+  );
+  expect(configs).toHaveLength(1);
+  return {
+    file: configs[0]!,
+    config: parse(
+      Buffer.from(configs[0]!.bytesBase64, 'base64').toString('utf8')
+    ) as DriveConfigDocument,
+  };
 }
 
 function googleDriveConnectionRow() {
@@ -465,8 +462,9 @@ describe('Drive invoices across desktop and Android clients', () => {
     });
   });
 
-  it('starts Welcome at Drive when Calendar is configured but no control file exists', async () => {
+  it('starts Welcome at Drive when Calendar is configured but no config file exists', async () => {
     await mutate({ type: 'driveReset', unconfigured: true });
+    await seedRuntime();
     await browser.refresh();
     await expect($(WELCOME_DIALOG)).toBeDisplayed();
     await expect($('p=Step 2 of 2')).toBeDisplayed();
@@ -480,7 +478,7 @@ describe('Drive invoices across desktop and Android clients', () => {
           method: 'GET',
           path: '/drive/v3/files',
           status: 503,
-          times: 3,
+          times: 6,
           body: { error: { code: 503, message: 'service unavailable' } },
         })
       ).status
@@ -539,46 +537,16 @@ describe('Drive invoices across desktop and Android clients', () => {
     expect(await requestCount('GET', '/calendar/v3/users/me/calendarList')).toBeGreaterThan(
       calendarListsBefore
     );
-    expect(readTmpConfig()).toMatchObject({
-      calendarId: CALENDAR_ID,
-      calendarName: 'Teaching Calendar',
-      calendarAccessRole: 'owner',
-    });
   });
 
   it('activates Drive from Welcome, unlocks Calendar, and survives a configured reload', async () => {
-    await mutate({
-      type: 'driveUpsert',
-      file: {
-        id: 'stale-control-before-first-activation',
-        name: '.lotus-teaching-invoices.json',
-        mimeType: 'application/json',
-        parents: ['root'],
-        driveId: null,
-        ownedByMe: true,
-        properties: { lotusConfigSchema: '1' },
-        bytesBase64: Buffer.from(
-          JSON.stringify({
-            schemaVersion: 1,
-            generation: 1,
-            root: {
-              folderId: 'missing-recorded-root',
-              driveId: null,
-              folderName: 'Removed old root',
-            },
-            finalFolderId: 'missing-recorded-final',
-            sequenceByYear: {},
-            reservation: null,
-          })
-        ).toString('base64'),
-      },
-    });
     await createAndActivateRoot('Lotus E2E Root', { openInvoices: false });
     const current = await state();
-    const stored = activeDriveControl(current);
-    firstRootId = stored.root.folderId;
-    firstFinalId = stored.finalFolderId;
-    expect(stored.root.folderName).toBe('Lotus E2E Root');
+    const stored = activeDriveConfig(current);
+    firstRootId = stored.file.parents[0]!;
+    firstFinalId = current.files.find(
+      (file) => file.name === 'Final' && file.parents.includes(firstRootId)
+    )!.id;
     expect(current.files.find((file) => file.id === firstRootId)?.name).toBe('Lotus E2E Root');
     expect(current.files.find((file) => file.id === firstFinalId)).toMatchObject({
       name: 'Final',
@@ -602,15 +570,7 @@ describe('Drive invoices across desktop and Android clients', () => {
         !(await $(WELCOME_DIALOG).isExisting()),
       { timeout: 45_000, timeoutMsg: 'configured first-run setup did not survive reload' }
     );
-    expect(readTmpConfig()).toMatchObject({
-      calendarId: CALENDAR_ID,
-      calendarName: 'Teaching Calendar',
-      calendarAccessRole: 'owner',
-    });
-    expect(activeDriveControl(await state())).toMatchObject({
-      root: { folderId: firstRootId, folderName: 'Lotus E2E Root' },
-      finalFolderId: firstFinalId,
-    });
+    expect(activeDriveConfig(await state()).file.parents).toEqual([firstRootId]);
     await $('button=Invoices').click();
     await expect($('table')).toBeDisplayed();
   });
@@ -831,14 +791,14 @@ describe('Drive invoices across desktop and Android clients', () => {
 
   it('switches roots without moving or changing old files', async () => {
     const beforeState = await state();
-    const beforeControl = activeDriveControl(beforeState);
+    const beforeConfig = activeDriveConfig(beforeState);
     const before = beforeState.files
       .filter((file) => file.parents.includes(firstFinalId))
       .map((file) => ({ id: file.id, parent: file.parents[0], checksum: file.bodySha256 }))
       .sort((left, right) => left.id.localeCompare(right.id));
     await createAndActivateRoot('Lotus E2E Second Root');
     const afterState = await state();
-    const afterControl = activeDriveControl(afterState);
+    const afterConfig = activeDriveConfig(afterState);
     const secondRoots = afterState.files.filter((file) => file.name === 'Lotus E2E Second Root');
     expect(secondRoots).toHaveLength(1);
     const secondRoot = secondRoots[0]!;
@@ -847,13 +807,10 @@ describe('Drive invoices across desktop and Android clients', () => {
     );
     expect(secondFinals).toHaveLength(1);
     const secondFinal = secondFinals[0]!;
-    expect(afterControl.generation).toBeGreaterThan(beforeControl.generation);
-    expect(afterControl.root).toMatchObject({
-      folderId: secondRoot.id,
-      folderName: 'Lotus E2E Second Root',
-    });
+    expect(afterConfig.file.id).toBe(beforeConfig.file.id);
+    expect(afterConfig.file.parents).toEqual([secondRoot.id]);
+    expect(afterConfig.config).toEqual(beforeConfig.config);
     expect(secondRoot.name).toBe('Lotus E2E Second Root');
-    expect(afterControl.finalFolderId).toBe(secondFinal.id);
     expect(secondFinal).toMatchObject({ name: 'Final', parents: [secondRoot.id] });
     const after = afterState.files
       .filter((file) => before.some(({ id }) => id === file.id))
@@ -865,22 +822,13 @@ describe('Drive invoices across desktop and Android clients', () => {
     await $('button=Invoices').click();
   });
 
-  it('shows duplicate, malformed, corrupt, missing, permission, rate-limit, interruption, and recovery states', async () => {
+  it('shows duplicate, malformed, corrupt, missing, permission, rate-limit, and allocation-gap states', async () => {
     await refreshDrive();
     const current = await state();
-    const controlFile = current.files.find((file) => file.properties.lotusConfigSchema === '1')!;
-    const stored = JSON.parse(Buffer.from(controlFile.bytesBase64, 'base64').toString()) as {
-      generation: number;
-      finalFolderId: string;
-      sequenceByYear: Record<string, number>;
-      reservation: null | {
-        operationId: string;
-        invoiceNumber: string;
-        fileId: string;
-        sourceSha256: string;
-      };
-    };
-    const finalId = stored.finalFolderId;
+    const configRootId = activeDriveConfig(current).file.parents[0]!;
+    const finalId = current.files.find(
+      (file) => file.name === 'Final' && file.parents.includes(configRootId)
+    )!.id;
     const faultBytes = Buffer.from('%PDF-1.7\nfault fixture\n');
     for (const id of ['duplicate-a', 'duplicate-b']) {
       await mutate({
@@ -994,7 +942,7 @@ describe('Drive invoices across desktop and Android clients', () => {
           method: 'GET',
           path: '/drive/v3/files',
           status: 429,
-          times: 3,
+          times: 6,
           body: { error: { code: 429, message: 'rate limited' } },
         })
       ).status
@@ -1007,7 +955,7 @@ describe('Drive invoices across desktop and Android clients', () => {
           method: 'GET',
           path: '/drive/v3/files',
           status: 503,
-          times: 3,
+          times: 6,
           body: { error: { code: 503, message: 'service unavailable' } },
         })
       ).status
@@ -1025,60 +973,60 @@ describe('Drive invoices across desktop and Android clients', () => {
       ).status
     ).toBe(204);
     await refreshDrive();
-    expect((await control('/interrupt-next-upload')).status).toBe(204);
+    await browser.waitUntil(
+      async () => await (await invoiceRow('August 2026')).$('button=Finalize PDF').isEnabled(),
+      { timeout: 15_000, timeoutMsg: 'Drive did not recover before the allocation-gap test' }
+    );
+    const sequenceBefore =
+      activeDriveConfig(await state()).config.invoiceSequenceByYear['2026'] ?? 0;
+    expect(
+      (
+        await control('/next-error', {
+          method: 'POST',
+          path: '/upload/drive/v3/files',
+          status: 503,
+          times: 3,
+          body: { error: { code: 503, message: 'upload interrupted' } },
+        })
+      ).status
+    ).toBe(204);
     const august = await invoiceRow('August 2026');
     await august.$('button=Finalize PDF').click();
-    await browser.waitUntil(async () => (await august.getText()).includes('recover'), {
-      timeout: 30_000,
-      timeoutMsg: 'interrupted upload did not preserve a visible reservation',
-    });
-    const interruptedState = await state();
-    const interruptedControlFile = interruptedState.files.find(
-      (file) => file.properties.lotusConfigSchema === '1'
-    )!;
-    const interrupted = JSON.parse(
-      Buffer.from(interruptedControlFile.bytesBase64, 'base64').toString()
-    ) as typeof stored;
-    expect(interrupted.reservation).not.toBeNull();
-    const reservation = interrupted.reservation!;
-    expect(interruptedState.files.some((file) => file.id === reservation.fileId)).toBe(false);
-    const reservedSequence = Number(reservation.invoiceNumber.split('/')[0]);
-    expect(reservedSequence).toBe((interrupted.sequenceByYear['2026'] ?? 0) + 1);
-    const recover = await $('button=Recover invoice reservation');
-    await expect(recover).toBeDisplayed();
-    await recover.click();
     await browser.waitUntil(
-      async () =>
-        !(await $('button=Recover invoice reservation').isExisting()) &&
-        (await (await invoiceRow('August 2026')).getText()).includes('Finalized'),
+      async () => {
+        const refresh = await $('button=Refresh Drive');
+        return (await refresh.isEnabled()) && (await alertsContain(/temporarily unavailable/i));
+      },
       {
         timeout: 30_000,
-        timeoutMsg: 'app recovery did not commit the durable reservation',
+        timeoutMsg: 'interrupted upload did not settle without recovery state',
       }
     );
-    const recoveredState = await state();
-    const recoveredControlFile = recoveredState.files.find(
-      (file) => file.properties.lotusConfigSchema === '1'
-    )!;
-    const recovered = JSON.parse(
-      Buffer.from(recoveredControlFile.bytesBase64, 'base64').toString()
-    ) as typeof stored;
-    expect(recovered.reservation).toBeNull();
-    expect(recovered.sequenceByYear['2026']).toBe(reservedSequence);
-    expect(recovered.generation).toBeGreaterThan(interrupted.generation);
-    const recoveredPdf = recoveredState.files.find((file) => file.id === reservation.fileId)!;
-    expect(recoveredPdf.id).toBe(reservation.fileId);
-    expect(recoveredPdf.name).toBe(
-      `${reservation.invoiceNumber.replace('/', '-')}-test-studio-2026-08.pdf`
+    const interruptedState = await state();
+    const interruptedSequence =
+      activeDriveConfig(interruptedState).config.invoiceSequenceByYear['2026'] ?? 0;
+    expect(interruptedSequence).toBe(sequenceBefore + 1);
+    expect(await $('button=Recover invoice reservation').isExisting()).toBe(false);
+    await refreshDrive();
+    await (await invoiceRow('August 2026')).$('button=Finalize PDF').click();
+    await browser.waitUntil(
+      async () => (await (await invoiceRow('August 2026')).getText()).includes('Finalized'),
+      {
+        timeout: 30_000,
+        timeoutMsg: 'retry after an allocation gap did not finalize',
+      }
     );
-    expect(recoveredPdf.parents).toEqual([finalId]);
-    expect(recoveredPdf.bytesBase64).not.toBe('');
-    expect(sha256(Buffer.from(recoveredPdf.bytesBase64, 'base64'))).toBe(recoveredPdf.bodySha256);
-    expectManagedProperties(recoveredPdf, {
+    const retriedState = await state();
+    const retriedSequence =
+      activeDriveConfig(retriedState).config.invoiceSequenceByYear['2026'] ?? 0;
+    expect(retriedSequence).toBe(interruptedSequence + 1);
+    const retriedPdf = retriedState.files.find(
+      (file) => file.properties.lotusMonth === '2026-08' && file.parents.includes(finalId)
+    )!;
+    expect(retriedPdf.parents).toEqual([finalId]);
+    expectManagedProperties(retriedPdf, {
       month: '2026-08',
-      invoiceNumber: reservation.invoiceNumber,
+      invoiceNumber: `${retriedSequence}/2026`,
     });
-    expect(recoveredPdf.properties.lotusOperationId).toBe(reservation.operationId);
-    expect(recoveredPdf.properties.lotusSourceSha256).toBe(reservation.sourceSha256);
   });
 });

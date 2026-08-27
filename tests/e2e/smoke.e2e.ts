@@ -1,11 +1,59 @@
 import { expect, browser, $, $$ } from '@wdio/globals';
-import { readTmpConfig } from './helpers.js';
+import { readFileSync } from 'node:fs';
+import { parse } from 'yaml';
+import { e2eConfigPath, fakeGoogleControlUrl } from './helpers.js';
 
 const WELCOME_DIALOG =
   '//*[@role="dialog"][@aria-labelledby][.//*[normalize-space(.)="Welcome to Lotus"]]';
 
+async function readDriveConfig(): Promise<Record<string, unknown>> {
+  const response = await fetch(`${fakeGoogleControlUrl()}/state`);
+  expect(response.status).toBe(200);
+  const state = (await response.json()) as {
+    files: Array<{ name: string; properties: Record<string, string>; bytesBase64: string }>;
+  };
+  const files = state.files.filter(
+    (file) =>
+      file.name === 'lotus-invoices-config.yaml' && file.properties.lotusConfigSchema === '1'
+  );
+  expect(files).toHaveLength(1);
+  return parse(Buffer.from(files[0]!.bytesBase64, 'base64').toString('utf8')) as Record<
+    string,
+    unknown
+  >;
+}
+
 describe('Boot', () => {
   before(async () => {
+    const seeded = (await browser.executeAsync(
+      (value, done) => {
+        window
+          .__LOTUS_E2E__!.seedRuntime(value)
+          .then(done)
+          .catch((error) => done({ error: String(error) }));
+      },
+      {
+        configYaml: readFileSync(e2eConfigPath(), 'utf8'),
+        calendarId: 'teaching@example.test',
+        authorization: {
+          accessToken: 'e2e-access-token',
+          refreshToken: 'e2e-refresh-token',
+          expiresAt: 4_102_444_800_000,
+          authorizationVersion: 1,
+          grantedScopes: [
+            'https://www.googleapis.com/auth/gmail.compose',
+            'https://www.googleapis.com/auth/calendar.readonly',
+            'https://www.googleapis.com/auth/calendar.events',
+            'https://www.googleapis.com/auth/drive',
+          ],
+        },
+        events: [],
+        syncToken: 'smoke-sync-1',
+        syncedAt: '2026-08-15T10:00:00.000Z',
+      }
+    )) as { error?: string };
+    expect(seeded.error).toBeUndefined();
+    await browser.refresh();
     await browser.pause(2000);
   });
 
@@ -62,20 +110,20 @@ describe('Rates & Config tab', () => {
     await expect($('span=Unsaved changes')).toBeDisplayed();
   });
 
-  it('persists the name change to the YAML file after Save', async () => {
+  it('persists the name change to the Drive YAML after Save', async () => {
     await $('button=Save').click();
     await browser.pause(1000);
-    const cfg = readTmpConfig() as { teacher: { name: string } };
+    const cfg = (await readDriveConfig()) as { teacher: { name: string } };
     expect(cfg.teacher.name).toBe('E2E Updated Teacher');
   });
 
-  it('adds a new studio and saves it to the YAML file', async () => {
-    const before = Object.keys((readTmpConfig() as { studios: object }).studios).length;
+  it('adds a new studio and saves it to the Drive YAML', async () => {
+    const before = Object.keys(((await readDriveConfig()) as { studios: object }).studios).length;
     await $('button*=Add studio').click();
     await browser.pause(300);
     await $('button=Save').click();
     await browser.pause(1000);
-    const after = Object.keys((readTmpConfig() as { studios: object }).studios).length;
+    const after = Object.keys(((await readDriveConfig()) as { studios: object }).studios).length;
     expect(after).toBe(before + 1);
   });
 

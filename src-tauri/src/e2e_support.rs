@@ -959,7 +959,7 @@ mod tests {
             paths.calendar_cache,
             root.path().join("calendar-cache.sqlite")
         );
-        assert_eq!(paths.auth_record, root.path().join("gmail-tokens.json"));
+        assert_eq!(paths.auth_record, root.path().join("google-tokens.json"));
         assert_eq!(
             paths.prompt_preference,
             root.path().join("calendar-edit-prompt-preference.json")

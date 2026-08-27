@@ -28,7 +28,6 @@ interface Props {
   displayRows: InvoiceDisplayRow[];
   driveStatus: DriveInvoicesStatus;
   globalMessages: readonly string[];
-  recoveryRequired: boolean;
   operationKey: string | null;
   rowAction: string | null;
   rowErrors: Readonly<Record<string, string>>;
@@ -37,7 +36,6 @@ interface Props {
   onOpen: (row: InvoiceRow) => void;
   onDraftEmail: (row: InvoiceRow) => void;
   onRefresh: () => void;
-  onRecoverReservation: () => void;
 }
 
 function classCountLabel(count: number): string {
@@ -76,7 +74,6 @@ export function MobileInvoices({
   displayRows,
   driveStatus,
   globalMessages,
-  recoveryRequired,
   operationKey,
   rowAction,
   rowErrors,
@@ -85,7 +82,6 @@ export function MobileInvoices({
   onOpen,
   onDraftEmail,
   onRefresh,
-  onRecoverReservation,
 }: Props) {
   const monthGroups = groupByMonth(displayRows);
   return (
@@ -110,19 +106,6 @@ export function MobileInvoices({
           {message}
         </p>
       ))}
-
-      {recoveryRequired && (
-        <button
-          type="button"
-          onClick={onRecoverReservation}
-          disabled={operationKey !== null}
-          className="min-h-12 rounded bg-red-700 px-4 text-sm font-semibold text-white disabled:opacity-40"
-        >
-          {operationKey === 'recoverReservation'
-            ? 'Recovering invoice reservation…'
-            : 'Recover invoice reservation'}
-        </button>
-      )}
 
       {monthGroups.length === 0 ? (
         <p className="py-8 text-center text-gray-400">No invoices</p>
