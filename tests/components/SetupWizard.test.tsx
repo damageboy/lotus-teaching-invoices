@@ -402,6 +402,25 @@ describe('SetupWizard', () => {
     expect(onDismiss).not.toHaveBeenCalled();
   });
 
+  it('dismisses Welcome only after the nested Drive history entry closes', () => {
+    const onDismiss = vi.fn();
+    const baseProps = props({ layout: 'mobile', step: 'drive', onDismiss });
+    const view = render(<SetupWizard {...baseProps} />);
+    const wizardHistoryState = window.history.state;
+
+    window.history.pushState({ lotusDriveFolderDialog: 1 }, '');
+    view.rerender(
+      <SetupWizard {...baseProps} driveFolder={driveController({ dialogOpen: true })} />
+    );
+    fireEvent.popState(window);
+    expect(onDismiss).not.toHaveBeenCalled();
+
+    window.history.replaceState(wizardHistoryState, '');
+    view.rerender(<SetupWizard {...baseProps} />);
+    fireEvent.popState(window);
+    expect(onDismiss).toHaveBeenCalledOnce();
+  });
+
   it('removes its buried history entry after completion waits for Drive to close', () => {
     const historyBack = vi.spyOn(window.history, 'back').mockImplementation(() => undefined);
     const onDismiss = vi.fn();

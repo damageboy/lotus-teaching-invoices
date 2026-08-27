@@ -6,6 +6,8 @@ import { editingConfigYaml, fakeGoogleControlUrl } from './helpers.js';
 const CALENDAR_ID = 'teaching@example.test';
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive';
 const PDF_BYTES = Buffer.from('%PDF-1.7\nLotus E2E manual invoice\n');
+const WELCOME_DIALOG =
+  '//*[@role="dialog"][@aria-labelledby][.//*[normalize-space(.)="Welcome to Lotus"]]';
 const MANAGED_PROPERTY_KEYS = [
   'lotusCalendarHash',
   'lotusInvoiceNumber',
@@ -42,6 +44,7 @@ interface FakeState {
 interface FakeRequest {
   method: string;
   path: string;
+  query?: Record<string, string>;
   ifMatch?: string;
   responseStatus?: number;
 }
@@ -101,9 +104,13 @@ async function refreshDrive(): Promise<void> {
   );
   const before = await driveListRequestCount();
   await $('button=Refresh Drive').click();
+  await browser.waitUntil(async () => !(await $('button=Refresh Drive').isEnabled()), {
+    timeout: 5_000,
+    timeoutMsg: 'Drive refresh did not enter loading state',
+  });
   await browser.waitUntil(
     async () =>
-      (await driveListRequestCount()) > before &&
+      (await driveListRequestCount()) >= before + 3 &&
       (await $('button=Refresh Drive').isExisting()) &&
       (await $('button=Refresh Drive').isEnabled()),
     {
@@ -148,19 +155,38 @@ async function refreshCalendarFromGoogle(): Promise<void> {
     }
   );
   await $('button=Invoices').click();
-  await browser.waitUntil(
-    async () => await browser.execute(() => document.body.innerText.includes('Drive folder:')),
-    { timeout: 15_000, timeoutMsg: 'Drive invoices did not render after Calendar refresh' }
-  );
+  await expect($('table')).toBeDisplayed();
 }
 
 async function alertsContain(pattern: RegExp): Promise<boolean> {
   const text = await browser.execute(() =>
     [...document.querySelectorAll('[role="alert"]')]
-      .map((alert) => alert.textContent ?? '')
+      .map((alert) => (alert as HTMLElement).innerText)
       .join('\n')
   );
   return pattern.test(text);
+}
+
+async function expectAlert(pattern: RegExp, description: string): Promise<void> {
+  try {
+    await browser.waitUntil(() => alertsContain(pattern), {
+      timeout: 15_000,
+      timeoutMsg: `${description} alert was not displayed`,
+    });
+  } catch {
+    const rendered = await browser.execute(() => ({
+      alerts: [...document.querySelectorAll('[role="alert"]')].map(
+        (alert) => (alert as HTMLElement).innerText
+      ),
+      body: document.body.innerText,
+    }));
+    const driveRequests = (await requests())
+      .filter((request) => request.method === 'GET' && request.path === '/drive/v3/files')
+      .slice(-10);
+    throw new Error(
+      `${description} alert was not displayed: ${JSON.stringify({ rendered, driveRequests })}`
+    );
+  }
 }
 
 async function invoiceRow(month: string) {
@@ -192,33 +218,24 @@ async function navigateToDriveInvoicesAfterReload(
   );
   await browser.waitUntil(
     async () => {
-      try {
-        const invoices = await $('button=Invoices');
-        if (await invoices.isExisting()) await invoices.click();
-        const choose = await $('button=Choose Drive folder');
-        const refresh = await $('button=Refresh Drive');
-        const driveActionReady =
-          (await choose.isExisting()) ||
-          ((await refresh.isExisting()) && (await refresh.isEnabled()));
-        const driveScanReady =
-          expectation.driveRequestsBefore === undefined ||
-          (await driveListRequestCount()) > expectation.driveRequestsBefore;
-        return (
-          driveActionReady &&
-          driveScanReady &&
-          (await browser.execute(() => document.body.innerText.includes('Drive folder:')))
-        );
-      } catch {
-        // React may replace the button while the refreshed document settles; reacquire it.
-      }
-      return false;
+      const driveScanReady =
+        expectation.driveRequestsBefore === undefined ||
+        (await driveListRequestCount()) > expectation.driveRequestsBefore;
+      return (
+        driveScanReady &&
+        (await $('button=Invoices').isEnabled()) &&
+        (await browser.execute(() => document.body.innerText.includes('Welcome to Lotus'))) ===
+          false
+      );
     },
     {
       timeout: 45_000,
       interval: 250,
-      timeoutMsg: 'cold page did not navigate to Drive invoices',
+      timeoutMsg: 'required Google setup did not become ready',
     }
   );
+  await $('button=Invoices').click();
+  await expect($('table')).toBeDisplayed();
 }
 
 async function seedRuntime(): Promise<void> {
@@ -278,9 +295,35 @@ async function seedRuntime(): Promise<void> {
   expect(result.error).toBeUndefined();
 }
 
+async function configureFixtureRoot(): Promise<void> {
+  const configured = {
+    schemaVersion: 1,
+    generation: 1,
+    root: { folderId: 'my-drive-root', driveId: null, folderName: 'Configured E2E Root' },
+    finalFolderId: 'final-my-drive',
+    sequenceByYear: {},
+    reservation: null,
+  };
+  await mutate({
+    type: 'drivePatch',
+    fileId: 'control-1',
+    patch: { bytesBase64: Buffer.from(JSON.stringify(configured)).toString('base64') },
+  });
+}
+
 async function createAndActivateRoot(name: string): Promise<void> {
-  await $('button*=Drive folder').click();
-  const dialog = await $('[role="dialog"]');
+  const welcome = await $(WELCOME_DIALOG);
+  const enteredFromWelcome = (await welcome.isExisting()) && (await welcome.isDisplayed());
+  if (enteredFromWelcome) {
+    await welcome.$('button=Pick Drive folder…').click();
+  } else {
+    await $('button=Rates & Config').click();
+    const driveRow = await $(
+      '//section[.//h3[normalize-space(.)="Connections"]]//p[normalize-space(.)="Google Drive"]/ancestor::div[button[normalize-space(.)="Change…"]][1]'
+    );
+    await driveRow.$('button=Change…').click();
+  }
+  const dialog = await $('//*[@role="dialog"][.//button[normalize-space(.)="My Drive"]]');
   await expect(dialog).toBeDisplayed();
   await dialog.$('button=My Drive').click();
   const input = await dialog.$('label*=New folder name').$('input');
@@ -294,8 +337,21 @@ async function createAndActivateRoot(name: string): Promise<void> {
     timeout: 15_000,
     timeoutMsg: `Drive root ${name} did not activate`,
   });
+  if (enteredFromWelcome) {
+    await browser.waitUntil(async () => await $('button=‹').isDisplayed(), {
+      timeout: 45_000,
+      timeoutMsg: 'Calendar did not become active after required Google setup',
+    });
+  }
+  await browser.waitUntil(
+    async () =>
+      (await $('button=Invoices').isEnabled()) &&
+      (await browser.execute(() => document.body.innerText.includes('Welcome to Lotus'))) === false,
+    { timeout: 45_000, timeoutMsg: 'required Google setup did not become ready' }
+  );
+  await $('button=Invoices').click();
+  await expect($('table')).toBeDisplayed();
   await expect($('button=Refresh Drive')).toBeDisplayed();
-  await expect($(`//*[normalize-space()="${name}"]`)).toBeDisplayed();
 }
 
 function managedProperties(
@@ -341,16 +397,79 @@ let augustFilename = '';
 let augustChecksum = '';
 
 describe('Drive invoices across desktop and Android clients', () => {
+  it('starts on Calendar without Welcome when Calendar and Drive are configured', async () => {
+    expect((await control('/reset')).status).toBe(204);
+    await configureFixtureRoot();
+    await seedRuntime();
+    const calendarRequestsBefore = await calendarEventRequestCount();
+    await browser.refresh();
+    await browser.waitUntil(
+      async () =>
+        (await $('button=Invoices').isEnabled()) &&
+        (await browser.execute(() => document.body.innerText.includes('Welcome to Lotus'))) ===
+          false,
+      { timeout: 45_000, timeoutMsg: 'configured Google setup did not become ready' }
+    );
+    await expect($(WELCOME_DIALOG)).not.toBeExisting();
+    await expect($('button=‹')).toBeDisplayed();
+    await navigateToDriveInvoicesAfterReload({
+      calendarRequestsBefore,
+    });
+  });
+
+  it('starts Welcome at Drive when Calendar is configured but no control file exists', async () => {
+    await mutate({ type: 'driveReset', unconfigured: true });
+    await browser.refresh();
+    await expect($(WELCOME_DIALOG)).toBeDisplayed();
+    await expect($('p=Step 2 of 2')).toBeDisplayed();
+    await expect($('button=Pick Drive folder…')).toBeDisplayed();
+  });
+
+  it('retries cold initial Drive unavailability and resolves discovery', async () => {
+    expect(
+      (
+        await control('/next-error', {
+          method: 'GET',
+          path: '/drive/v3/files',
+          status: 503,
+          times: 3,
+          body: { error: { code: 503, message: 'service unavailable' } },
+        })
+      ).status
+    ).toBe(204);
+    await browser.refresh();
+    await expect($(WELCOME_DIALOG)).toBeDisplayed();
+    await expect($('p=Step 2 of 2')).toBeDisplayed();
+    await browser.waitUntil(
+      async () =>
+        (await browser.execute(() =>
+          document.body.innerText.includes('Google Drive is temporarily unavailable')
+        )) && (await $('button=Retry Google Drive').isDisplayed()),
+      { timeout: 30_000, timeoutMsg: 'cold Drive discovery error was not displayed' }
+    );
+
+    expect((await control('/reset')).status).toBe(204);
+    await mutate({ type: 'driveReset', unconfigured: true });
+    await $('button=Retry Google Drive').click();
+    await browser.waitUntil(
+      async () =>
+        (await $('button=Pick Drive folder…').isEnabled()) &&
+        (await browser.execute(() =>
+          document.body.innerText.includes('Google Drive is temporarily unavailable')
+        )) === false,
+      { timeout: 30_000, timeoutMsg: 'Drive discovery did not recover after Retry' }
+    );
+    await expect($('button=Retry Google Drive')).not.toBeExisting();
+  });
+
   it('seeds one Drive-authorized desktop client against an unconfigured account', async () => {
     expect((await control('/reset')).status).toBe(204);
     await mutate({ type: 'driveReset', unconfigured: true });
     await seedRuntime();
-    const calendarRequestsBefore = await calendarEventRequestCount();
     await browser.refresh();
-    await navigateToDriveInvoicesAfterReload({
-      calendarRequestsBefore,
-    });
-    await expect($('button=Choose Drive folder')).toBeDisplayed();
+    await expect($(WELCOME_DIALOG)).toBeDisplayed();
+    await expect($('p=Step 2 of 2')).toBeDisplayed();
+    await expect($('button=Pick Drive folder…')).toBeDisplayed();
   });
 
   it('browses My Drive, creates a root and Final child, scans, and activates it', async () => {
@@ -554,6 +673,7 @@ describe('Drive invoices across desktop and Android clients', () => {
   });
 
   it('opens authoritative bytes through the suppressed viewer cache', async () => {
+    await refreshDrive();
     const row = await invoiceRow('August 2026');
     await row.$('button=Open PDF').click();
     await browser.waitUntil(async () => !(await row.$('button=Opening…').isExisting()), {
@@ -594,6 +714,7 @@ describe('Drive invoices across desktop and Android clients', () => {
   });
 
   it('shows duplicate, malformed, corrupt, missing, permission, rate-limit, interruption, and recovery states', async () => {
+    await refreshDrive();
     const current = await state();
     const controlFile = current.files.find((file) => file.properties.lotusConfigSchema === '1')!;
     const stored = JSON.parse(Buffer.from(controlFile.bytesBase64, 'base64').toString()) as {
@@ -628,8 +749,14 @@ describe('Drive invoices across desktop and Android clients', () => {
         },
       });
     }
+    expect(
+      (await state()).files
+        .filter((file) => file.id === 'duplicate-a' || file.id === 'duplicate-b')
+        .map((file) => file.parents)
+    ).toEqual([[finalId], [finalId]]);
     await refreshDrive();
-    await expect($('[role="alert"]*=Duplicate invoice')).toBeDisplayed();
+    await $('button=Invoices').click();
+    await expectAlert(/Duplicate invoice/, 'Duplicate invoice');
     for (const id of ['duplicate-a', 'duplicate-b']) {
       await mutate({ type: 'drivePatch', fileId: id, patch: { trashed: true } });
     }
@@ -648,7 +775,8 @@ describe('Drive invoices across desktop and Android clients', () => {
       },
     });
     await refreshDrive();
-    await expect($('[role="alert"]*=Malformed finalized invoice filename')).toBeDisplayed();
+    await $('button=Invoices').click();
+    await expectAlert(/Malformed finalized invoice filename/, 'Malformed invoice');
     await mutate({ type: 'drivePatch', fileId: 'malformed', patch: { trashed: true } });
 
     await mutate({
@@ -667,7 +795,8 @@ describe('Drive invoices across desktop and Android clients', () => {
       },
     });
     await refreshDrive();
-    await expect($('[role="alert"]*=checksum')).toBeDisplayed();
+    await $('button=Invoices').click();
+    await expectAlert(/checksum/, 'Checksum');
     await mutate({ type: 'drivePatch', fileId: 'corrupt', patch: { trashed: true } });
 
     await mutate({

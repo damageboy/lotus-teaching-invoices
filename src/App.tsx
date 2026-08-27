@@ -178,14 +178,15 @@ export default function App() {
   }, [activeTab, setupBlocked]);
 
   useEffect(() => {
-    if (setupReadiness.status !== 'checking') setupPresenterResolvedRef.current = true;
-  }, [setupReadiness.status]);
-
-  useEffect(() => {
+    const initialCheckResolved =
+      setupReadiness.status !== 'checking' && !setupPresenterResolvedRef.current;
+    if (initialCheckResolved) setupPresenterResolvedRef.current = true;
     if (onboarding.open) completionOriginRef.current = 'welcome';
     if (setupReadiness.status !== 'ready') return;
     if (completionOriginRef.current === 'welcome') {
       setMobileTabState((state) => selectMobileTab(state, 'calendar'));
+    } else if (initialCheckResolved) {
+      setMobileTabState((state) => ({ ...state, activeTab: 'calendar' }));
     }
     completionOriginRef.current = null;
   }, [onboarding.open, setupReadiness.status]);

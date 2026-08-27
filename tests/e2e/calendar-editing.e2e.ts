@@ -10,6 +10,28 @@ import {
 } from './helpers.js';
 
 const CALENDAR_ID = 'teaching@example.test';
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive';
+
+async function configureFixtureDriveRoot(): Promise<void> {
+  const configured = {
+    schemaVersion: 1,
+    generation: 1,
+    root: { folderId: 'my-drive-root', driveId: null, folderName: 'Configured E2E Root' },
+    finalFolderId: 'final-my-drive',
+    sequenceByYear: {},
+    reservation: null,
+  };
+  const response = await fetch(`${fakeGoogleControlUrl()}/mutate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      type: 'drivePatch',
+      fileId: 'control-1',
+      patch: { bytesBase64: Buffer.from(JSON.stringify(configured)).toString('base64') },
+    }),
+  });
+  expect(response.status).toBe(204);
+}
 
 async function waitForLessonDetailsToClose(action: string): Promise<void> {
   await browser.waitUntil(
@@ -40,6 +62,7 @@ const seed = {
       'https://www.googleapis.com/auth/gmail.compose',
       'https://www.googleapis.com/auth/calendar.readonly',
       'https://www.googleapis.com/auth/calendar.events',
+      DRIVE_SCOPE,
     ],
   },
   events: [
@@ -67,6 +90,7 @@ const declineSeed = {
     grantedScopes: [
       'https://www.googleapis.com/auth/gmail.compose',
       'https://www.googleapis.com/auth/calendar.readonly',
+      DRIVE_SCOPE,
     ],
   },
   events: [
@@ -99,6 +123,7 @@ describe('Calendar editing isolated bootstrap', () => {
   before(async () => {
     const reset = await fetch(`${fakeGoogleControlUrl()}/reset`, { method: 'POST' });
     expect(reset.status).toBe(204);
+    await configureFixtureDriveRoot();
   });
 
   it('exposes the webdriver-only seed bridge', async () => {
@@ -177,9 +202,23 @@ describe('Calendar editing isolated bootstrap', () => {
       Record<string, unknown>
     >;
     expect(requests.some((request) => 'authorization' in request)).toBe(false);
-    expect(requests.every((request) => String(request.path).startsWith('/calendar/v3/'))).toBe(
-      true
+    const calendarRequests = requests.filter((request) =>
+      String(request.path).startsWith('/calendar/v3/')
     );
+    const configuredDriveDiscoveryPaths = new Set([
+      '/drive/v3/files',
+      '/drive/v3/files/control-1',
+      '/drive/v3/files/my-drive-root',
+      '/drive/v3/files/final-my-drive',
+    ]);
+    expect(calendarRequests.length).toBeGreaterThan(0);
+    expect(
+      requests.every(
+        (request) =>
+          calendarRequests.includes(request) ||
+          (request.method === 'GET' && configuredDriveDiscoveryPaths.has(String(request.path)))
+      )
+    ).toBe(true);
   });
 
   it('reassigns one occurrence and refreshes the calendar chip', async () => {
@@ -313,6 +352,7 @@ describe('Calendar editing isolated bootstrap', () => {
   it('keeps cached lessons and read-only refresh after declining the one-time write grant', async () => {
     const reset = await fetch(`${fakeGoogleControlUrl()}/reset`, { method: 'POST' });
     expect(reset.status).toBe(204);
+    await configureFixtureDriveRoot();
     const failSync = await fetch(`${fakeGoogleControlUrl()}/next-error`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

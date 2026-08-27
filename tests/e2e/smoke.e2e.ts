@@ -1,7 +1,8 @@
-import { expect, browser, $ } from '@wdio/globals';
+import { expect, browser, $, $$ } from '@wdio/globals';
 import { readTmpConfig } from './helpers.js';
 
-// ─── Boot ────────────────────────────────────────────────────────────────────
+const WELCOME_DIALOG =
+  '//*[@role="dialog"][@aria-labelledby][.//*[normalize-space(.)="Welcome to Lotus"]]';
 
 describe('Boot', () => {
   before(async () => {
@@ -19,71 +20,35 @@ describe('Boot', () => {
     await expect($('[data-layout="desktop"]')).toBeDisplayed();
     await expect($('[aria-label="Mobile navigation"]')).not.toBeExisting();
   });
-});
 
-// ─── Calendar tab ────────────────────────────────────────────────────────────
-
-describe('Calendar tab', () => {
-  before(async () => {
-    await $('button=Calendar').click();
-    await browser.pause(300);
-  });
-
-  it('shows a month heading', async () => {
-    const heading = await $('h2');
-    const text = await heading.getText();
-    // Matches e.g. "February 2026"
-    expect(text).toMatch(/^[A-Z][a-z]+ \d{4}$/);
-  });
-
-  it('navigates to the previous month on ‹ click', async () => {
-    const heading = await $('h2');
-    const before = await heading.getText();
-    await $('button=‹').click();
-    const after = await heading.getText();
-    expect(after).not.toBe(before);
-  });
-
-  it('navigates to the next month on › click', async () => {
-    const heading = await $('h2');
-    const before = await heading.getText();
-    await $('button=›').click();
-    const after = await heading.getText();
-    expect(after).not.toBe(before);
-  });
-
-  it('shows the Refresh button', async () => {
-    await expect($('button*=Refresh')).toBeDisplayed();
+  it('opens required setup on Calendar without exposing invoice errors', async () => {
+    const welcome = await $(WELCOME_DIALOG);
+    await expect(welcome).toBeDisplayed();
+    await expect(welcome.$('button=Pick calendar…')).toBeDisplayed();
+    await expect($('button=Invoices')).toBeDisabled();
+    expect(
+      await browser.execute(() =>
+        document.body.innerText.includes('invoice input contains unbillable classes')
+      )
+    ).toBe(false);
   });
 });
-
-// ─── Invoices tab ────────────────────────────────────────────────────────────
-
-describe('Invoices tab', () => {
-  before(async () => {
-    await $('button=Invoices').click();
-    await browser.pause(300);
-  });
-
-  it('renders the invoice table for the isolated cached calendar', async () => {
-    await expect($('table')).toBeDisplayed();
-  });
-
-  it('shows Drive storage as not configured', async () => {
-    await expect($('span*=not configured')).toBeDisplayed();
-  });
-
-  it('has a "Choose Drive folder" button', async () => {
-    await expect($('button=Choose Drive folder')).toBeDisplayed();
-  });
-});
-
-// ─── Rates & Config tab ──────────────────────────────────────────────────────
 
 describe('Rates & Config tab', () => {
   before(async () => {
-    await $('button=Rates & Config').click();
+    const welcome = await $(WELCOME_DIALOG);
+    await welcome.$('button=Set up later').click();
     await browser.pause(500);
+  });
+
+  it('dismisses only to Rates & Config and keeps other destinations locked', async () => {
+    await expect($('h2=Rates & Config')).toBeDisplayed();
+    await expect($('button=Calendar')).toBeDisabled();
+    await expect($('button=Invoices')).toBeDisabled();
+    await expect($('button=Income')).toBeDisabled();
+    await expect($('button=Rates & Config')).toBeEnabled();
+    const headings = await $$('h3');
+    expect(await headings[0]!.getText()).toBe('Connections');
   });
 
   it('renders the Name label', async () => {
@@ -118,12 +83,9 @@ describe('Rates & Config tab', () => {
     const badge = await $('[data-testid="version-badge"]');
     await expect(badge).toBeDisplayed();
     const text = await badge.getText();
-    // Should start with 'v' followed by non-whitespace (semver, commit hash, or 'unknown')
     expect(text).toMatch(/^v\S/);
   });
 });
-
-// ─── Log panel ───────────────────────────────────────────────────────────────
 
 describe('Log panel', () => {
   it('opens the log drawer on click', async () => {
@@ -134,5 +96,14 @@ describe('Log panel', () => {
   it('closes the log drawer on a second click', async () => {
     await $('button*=▼').click();
     await expect($('.bg-gray-950')).not.toBeDisplayed();
+  });
+});
+
+describe('Incomplete restart', () => {
+  it('opens required setup again after a dismissed incomplete restart', async () => {
+    await browser.refresh();
+    const welcome = await $(WELCOME_DIALOG);
+    await expect(welcome).toBeDisplayed();
+    await expect(welcome.$('button=Pick calendar…')).toBeDisplayed();
   });
 });

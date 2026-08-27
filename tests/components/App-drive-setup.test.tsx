@@ -335,6 +335,7 @@ describe('App Drive setup without an existing grant', () => {
     const { container, rerender } = renderApp();
 
     await waitFor(() => expect(storeRefresh).toHaveBeenCalledOnce());
+    await click(button('Rates & Config'));
     act(() => {
       fullSourceRefresh.reject(
         new DriveStoreError('offline', 'Google Drive is temporarily unavailable', true)

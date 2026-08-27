@@ -306,6 +306,19 @@ describe('App required Google setup', () => {
     expect(screen.queryByRole('dialog', { name: 'Welcome to Lotus' })).toBeNull();
   });
 
+  it('selects Calendar after a configured cold start finishes checking Drive', () => {
+    configState = { ...configState, calendarId: 'calendar-a', calendarName: 'Teaching' };
+    authorizationState = { ...authorizationState, hasDrive: true };
+    driveState = { ...driveState, status: 'loading', snapshot: null };
+    const view = renderApp();
+    expect(document.body.textContent).toBe('Loading…');
+
+    driveState = readyDriveState;
+    view.rerender();
+
+    expect(document.body.textContent).toContain('Calendar content');
+  });
+
   it('opens Welcome over Rates and gates every other desktop destination', () => {
     renderIncompleteApp();
     expect(screen.getByRole('dialog', { name: 'Welcome to Lotus' })).toBeTruthy();
