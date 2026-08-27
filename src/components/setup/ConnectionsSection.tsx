@@ -59,7 +59,9 @@ export function ConnectionsSection({
                 key={calendar.id}
                 onClick={() => void calendarPicker.select(calendar)}
                 disabled={calendarPicker.saving}
-                className="rounded px-3 py-2 text-left text-sm text-gray-700 hover:bg-indigo-50 disabled:opacity-40"
+                className={`rounded px-3 text-left text-gray-700 hover:bg-indigo-50 disabled:opacity-40 ${
+                  layout === 'mobile' ? 'min-h-12 text-base' : 'py-2 text-sm'
+                }`}
               >
                 {calendar.summary}
               </button>

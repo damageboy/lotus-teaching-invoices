@@ -88,7 +88,7 @@ export default function App() {
     sources: invoiceSources,
     sourceContextKey: invoiceSourceInputKey,
     authorizationIncarnation: googleAuthorization.authorizationIncarnation,
-    discoveryEnabled: !googleAuthorization.isLoading && googleAuthorization.hasDrive,
+    discoveryEnabled: !googleAuthorization.isLoading,
     foregroundRefreshEnabled: activeTab === 'invoices' && invoiceSourcesReady,
   });
   const scanDriveFolderCandidate = useCallback(

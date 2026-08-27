@@ -111,4 +111,22 @@ describe('ConnectionsSection', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry Google Drive' }));
     expect(onRetry).toHaveBeenCalledOnce();
   });
+
+  it('keeps mobile Calendar choices touch safe when the list is open', () => {
+    render(
+      <ConnectionsSection
+        {...props({
+          layout: 'mobile',
+          calendarPicker: calendarController({
+            listOpen: true,
+            calendars: [{ id: 'teaching', summary: 'Teaching', accessRole: 'owner' }],
+          }),
+        })}
+      />
+    );
+
+    const choice = screen.getByRole('button', { name: 'Teaching' });
+    expect(choice.classList.contains('min-h-12')).toBe(true);
+    expect(choice.classList.contains('text-base')).toBe(true);
+  });
 });
