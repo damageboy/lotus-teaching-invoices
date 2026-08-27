@@ -97,11 +97,21 @@ export function DriveFolderDialog({
 
   const touchClass = layout === 'mobile' ? 'min-h-12 min-w-12 text-base' : '';
 
+  const ownMobileHistory = useCallback((): void => {
+    const id = ++mobileHistorySequenceRef.current;
+    window.history.pushState({ lotusDriveFolderDialog: id }, '');
+    mobileHistoryRef.current = { id, closing: false, popping: false };
+  }, []);
+
   const finishClose = useCallback(
     (fromHistory: boolean) => {
       const historyEntry = mobileHistoryRef.current;
       if (fromHistory && historyEntry !== null) {
         mobileHistoryRef.current = null;
+        if (historyEntry.popping && !historyEntry.closing && open && layout === 'mobile') {
+          ownMobileHistory();
+          return;
+        }
         if (historyEntry.closing || !historyEntry.popping) {
           if (!historyEntry.closing) requestRef.current += 1;
           onClose();
@@ -126,7 +136,7 @@ export function DriveFolderDialog({
       mobileHistoryRef.current = null;
       onClose();
     },
-    [onClose]
+    [layout, onClose, open, ownMobileHistory]
   );
 
   const close = useCallback(() => finishClose(false), [finishClose]);
@@ -261,14 +271,9 @@ export function DriveFolderDialog({
 
   useEffect(() => {
     if (!open) return;
-    let historyEntry = mobileHistoryRef.current;
+    const historyEntry = mobileHistoryRef.current;
     if (layout === 'mobile') {
-      if (historyEntry === null) {
-        const id = ++mobileHistorySequenceRef.current;
-        window.history.pushState({ lotusDriveFolderDialog: id }, '');
-        historyEntry = { id, closing: false, popping: false };
-        mobileHistoryRef.current = historyEntry;
-      }
+      if (historyEntry === null) ownMobileHistory();
       return;
     }
     if (
@@ -279,7 +284,7 @@ export function DriveFolderDialog({
       historyEntry.popping = true;
       window.history.back();
     }
-  }, [layout, open]);
+  }, [layout, open, ownMobileHistory]);
 
   if (!open) return null;
 

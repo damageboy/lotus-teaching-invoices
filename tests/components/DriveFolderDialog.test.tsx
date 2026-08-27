@@ -852,6 +852,47 @@ describe('DriveFolderDialog', () => {
     }
   });
 
+  it('re-owns Drive Back when mobile returns before the desktop transfer pop', () => {
+    const pushState = vi.spyOn(window.history, 'pushState');
+    const historyBack = vi.spyOn(window.history, 'back').mockImplementation(() => undefined);
+    const onClose = vi.fn();
+    const parentPopstate = vi.fn();
+    const props = dialogProps({ layout: 'mobile', onClose });
+
+    try {
+      const view = render(<DriveFolderDialog {...props} />);
+      expect(pushState).toHaveBeenCalledOnce();
+
+      view.rerender(<DriveFolderDialog {...props} layout="desktop" />);
+      expect(historyBack).toHaveBeenCalledOnce();
+      view.rerender(<DriveFolderDialog {...props} />);
+      expect(pushState).toHaveBeenCalledOnce();
+
+      window.addEventListener('popstate', parentPopstate);
+      window.history.replaceState({ lotusSetupWizard: 1 }, '');
+      fireEvent.popState(window);
+
+      expect(parentPopstate).not.toHaveBeenCalled();
+      expect(onClose).not.toHaveBeenCalled();
+      expect(pushState).toHaveBeenCalledTimes(2);
+      expect(window.history.state?.lotusDriveFolderDialog).toBeTypeOf('number');
+      expect(historyBack).toHaveBeenCalledOnce();
+
+      fireEvent.popState(window);
+      expect(onClose).toHaveBeenCalledOnce();
+      expect(parentPopstate).not.toHaveBeenCalled();
+
+      fireEvent.popState(window);
+      expect(onClose).toHaveBeenCalledOnce();
+      expect(parentPopstate).toHaveBeenCalledOnce();
+    } finally {
+      pushState.mockRestore();
+      historyBack.mockRestore();
+      window.removeEventListener('popstate', parentPopstate);
+      window.history.replaceState(null, '');
+    }
+  });
+
   it('owns one mobile history entry under React Strict Mode', () => {
     const pushState = vi.spyOn(window.history, 'pushState');
     const onClose = vi.fn();
