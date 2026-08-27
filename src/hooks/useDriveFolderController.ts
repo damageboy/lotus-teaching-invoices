@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { withoutLegacyInvoiceStorage } from '../lib/config/schema.js';
 import type { StagedDriveRoot } from '../lib/drive/folders.js';
 import type { CurrentInvoiceSource, DriveInvoiceScan } from '../lib/drive/invoiceCatalog.js';
+import type { DriveStoreSnapshot } from '../lib/drive/invoiceStore.js';
 import type { AppConfig } from '../lib/types.js';
 import type { DriveInvoicesState } from './useDriveInvoices.js';
 
@@ -37,6 +38,7 @@ export interface UseDriveFolderControllerOptions {
 
 interface PendingConfigCleanup {
   rootKey: string;
+  stagedRoot: StagedDriveRoot;
 }
 
 interface CommittedOptions extends UseDriveFolderControllerOptions {
@@ -48,6 +50,12 @@ interface OperationContext {
   sourceIncarnation: number;
   authorizationIncarnation: number;
   session: number;
+}
+
+interface ActivationSnapshotEvidence {
+  authorizationIncarnation: number;
+  activateRoot: UseDriveFolderControllerOptions['drive']['activateRoot'];
+  snapshot: DriveStoreSnapshot | null;
 }
 
 type OperationName = 'opening' | 'scan' | 'confirmation' | 'retry';
@@ -104,11 +112,17 @@ export function useDriveFolderController(
     authorizationIncarnation: options.authorizationIncarnation,
     sourceSignature: signature,
   });
+  const activationSnapshotRef = useRef<ActivationSnapshotEvidence>({
+    authorizationIncarnation: options.authorizationIncarnation,
+    activateRoot: options.drive.activateRoot,
+    snapshot: options.drive.status === 'ready' ? options.drive.snapshot : null,
+  });
   const semanticIncarnationRef = useRef(0);
   const sourceIncarnationRef = useRef(0);
   const sessionRef = useRef(0);
   const retryGenerationRef = useRef(0);
   const pendingCleanupRef = useRef<PendingConfigCleanup | null>(null);
+  const pendingCleanupIncarnationRef = useRef(0);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [opening, setOpening] = useState(false);
   const [cleanupPending, setCleanupPending] = useState(false);
@@ -129,6 +143,21 @@ export function useDriveFolderController(
       authorizationIncarnation: options.authorizationIncarnation,
       sourceSignature: signature,
     };
+    const evidence = activationSnapshotRef.current;
+    if (
+      evidence.authorizationIncarnation !== options.authorizationIncarnation ||
+      evidence.activateRoot !== options.drive.activateRoot ||
+      options.drive.status === 'unconfigured' ||
+      options.drive.status === 'authorizationRequired'
+    ) {
+      activationSnapshotRef.current = {
+        authorizationIncarnation: options.authorizationIncarnation,
+        activateRoot: options.drive.activateRoot,
+        snapshot: null,
+      };
+    } else if (options.drive.status === 'ready' && options.drive.snapshot !== null) {
+      activationSnapshotRef.current = { ...evidence, snapshot: options.drive.snapshot };
+    }
     committedOptionsRef.current = { ...options, sourceSignature: signature };
   }, [options, signature]);
 
@@ -209,6 +238,46 @@ export function useDriveFolderController(
     return true;
   }, []);
 
+  const adoptSuccessfulActivation = useCallback(
+    (
+      context: OperationContext,
+      stagedRoot: StagedDriveRoot,
+      pendingCleanupIncarnation: number
+    ): boolean => {
+      const current = committedOptionsRef.current;
+      const evidence = activationSnapshotRef.current;
+      const snapshot =
+        current.drive.snapshot ??
+        (current.drive.status === 'loading' &&
+        evidence.authorizationIncarnation === current.authorizationIncarnation &&
+        evidence.activateRoot === current.drive.activateRoot
+          ? evidence.snapshot
+          : null);
+      if (
+        !mountedRef.current ||
+        context.session !== sessionRef.current ||
+        context.authorizationIncarnation !== current.authorizationIncarnation ||
+        context.sourceIncarnation + 1 !== sourceIncarnationRef.current ||
+        context.semanticIncarnation + 1 !== semanticIncarnationRef.current ||
+        pendingCleanupIncarnation !== pendingCleanupIncarnationRef.current ||
+        (current.drive.status !== 'ready' && current.drive.status !== 'loading') ||
+        snapshot === null ||
+        snapshot.stagedRoot.root.folderId !== stagedRoot.root.folderId ||
+        snapshot.stagedRoot.root.driveId !== stagedRoot.root.driveId ||
+        snapshot.stagedRoot.finalFolder.id !== stagedRoot.finalFolder.id ||
+        snapshot.control.control.root.folderId !== stagedRoot.root.folderId ||
+        snapshot.control.control.root.driveId !== stagedRoot.root.driveId ||
+        snapshot.control.control.finalFolderId !== stagedRoot.finalFolder.id
+      ) {
+        return false;
+      }
+      context.sourceIncarnation = sourceIncarnationRef.current;
+      context.semanticIncarnation = semanticIncarnationRef.current;
+      return true;
+    },
+    []
+  );
+
   const openDialog = useCallback(async (): Promise<void> => {
     const session = ++sessionRef.current;
     const context = { ...captureContext(), session };
@@ -264,18 +333,23 @@ export function useDriveFolderController(
       operation: 'confirmation' | 'retry'
     ): Promise<void> => {
       const current = committedOptionsRef.current;
+      const pendingCleanupIncarnation = pendingCleanupIncarnationRef.current;
+      const cleanupIsCurrent = (): boolean =>
+        pendingCleanupRef.current === pending &&
+        (contextIsCurrent(context) ||
+          adoptSuccessfulActivation(context, pending.stagedRoot, pendingCleanupIncarnation));
       await current.saveConfig((latest) =>
-        contextIsCurrent(context) && pendingCleanupRef.current === pending
-          ? withoutLegacyInvoiceStorage(latest)
-          : null
+        cleanupIsCurrent() ? withoutLegacyInvoiceStorage(latest) : null
       );
+      if (!cleanupIsCurrent()) throw obsoleteError(context, operation);
       requireCurrent(context, operation);
       if (pendingCleanupRef.current === pending) {
         pendingCleanupRef.current = null;
+        pendingCleanupIncarnationRef.current += 1;
         setCleanupPending(false);
       }
     },
-    [contextIsCurrent, requireCurrent]
+    [adoptSuccessfulActivation, contextIsCurrent, obsoleteError, requireCurrent]
   );
 
   const confirmRoot = useCallback(
@@ -288,10 +362,19 @@ export function useDriveFolderController(
         let pending = pendingCleanupRef.current;
         if (pending?.rootKey !== rootKey) {
           if (pending !== null) await savePendingCleanup(pending, context, 'confirmation');
+          const pendingCleanupIncarnation = pendingCleanupIncarnationRef.current;
           await current.drive.activateRoot(stagedRoot, current.config.lastInvoice);
-          pending = { rootKey };
+          const activationIsCurrent =
+            contextIsCurrent(context) ||
+            adoptSuccessfulActivation(context, stagedRoot, pendingCleanupIncarnation);
+          if (pendingCleanupIncarnation !== pendingCleanupIncarnationRef.current) {
+            throw obsoleteError(context, 'confirmation');
+          }
+          pending = { rootKey, stagedRoot };
           pendingCleanupRef.current = pending;
+          pendingCleanupIncarnationRef.current += 1;
           setCleanupPending(true);
+          if (!activationIsCurrent) throw obsoleteError(context, 'confirmation');
           requireCurrent(context, 'confirmation');
         }
         await savePendingCleanup(pending, context, 'confirmation');
@@ -301,7 +384,14 @@ export function useDriveFolderController(
         throw cause;
       }
     },
-    [captureContext, contextIsCurrent, obsoleteError, requireCurrent, savePendingCleanup]
+    [
+      adoptSuccessfulActivation,
+      captureContext,
+      contextIsCurrent,
+      obsoleteError,
+      requireCurrent,
+      savePendingCleanup,
+    ]
   );
 
   const retry = useCallback(async (): Promise<void> => {

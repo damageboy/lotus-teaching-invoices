@@ -338,6 +338,20 @@ function googleDriveConnectionRow() {
   );
 }
 
+async function clickWelcomeAction(label: string): Promise<void> {
+  const welcome = await $(WELCOME_DIALOG);
+  await expect(welcome).toBeDisplayed();
+  const buttons = await welcome.$$('button');
+  const actions = [];
+  for (const button of buttons) {
+    if ((await button.isDisplayed()) && (await button.getText()).trim() === label) {
+      actions.push(button);
+    }
+  }
+  expect(actions).toHaveLength(1);
+  await actions[0]!.click();
+}
+
 async function createAndActivateRoot(
   name: string,
   options: { openInvoices?: boolean } = {}
@@ -345,7 +359,7 @@ async function createAndActivateRoot(
   const welcome = await $(WELCOME_DIALOG);
   const enteredFromWelcome = (await welcome.isExisting()) && (await welcome.isDisplayed());
   if (enteredFromWelcome) {
-    await $('button=Pick Drive folder…').click();
+    await clickWelcomeAction('Pick Drive folder…');
   } else {
     await $('button=Rates & Config').click();
     const driveRow = await googleDriveConnectionRow();
@@ -500,9 +514,8 @@ describe('Drive invoices across desktop and Android clients', () => {
     await expect($('p=Step 1 of 2')).toBeDisplayed();
 
     const calendarListsBefore = await requestCount('GET', '/calendar/v3/users/me/calendarList');
-    await $('button=Pick calendar…').click();
-    await expect($('button=Teaching Calendar')).toBeDisplayed();
-    await $('button=Teaching Calendar').click();
+    await clickWelcomeAction('Pick calendar…');
+    await clickWelcomeAction('Teaching Calendar');
 
     await browser.waitUntil(
       async () =>

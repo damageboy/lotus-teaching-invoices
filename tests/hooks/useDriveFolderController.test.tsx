@@ -2,6 +2,8 @@ import React from 'react';
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import type { StagedDriveRoot } from '../../src/lib/drive/folders.js';
 import type { CurrentInvoiceSource, DriveInvoiceScan } from '../../src/lib/drive/invoiceCatalog.js';
+import type { DriveStoreSnapshot } from '../../src/lib/drive/invoiceStore.js';
+import type { DriveFileRecord } from '../../src/lib/drive/types.js';
 import type { AppConfig, Invoice } from '../../src/lib/types.js';
 import type { UseDriveFolderControllerOptions } from '../../src/hooks/useDriveFolderController.js';
 import { installReactTestEnvironment } from '../helpers/react-test-env.js';
@@ -32,11 +34,70 @@ const config: AppConfig = {
   studios: {},
 };
 
-const stagedRoot = {
-  root: { folderId: 'root-a', driveId: null, folderName: 'Lotus invoices' },
-  rootFile: { id: 'root-a', name: 'Lotus invoices' },
-  finalFolder: { id: 'final-a', name: 'Final' },
-} as StagedDriveRoot;
+function driveFile(id: string, name: string, parents: string[]): DriveFileRecord {
+  return {
+    id,
+    name,
+    mimeType: 'application/vnd.google-apps.folder',
+    parents,
+    driveId: null,
+    ownedByMe: true,
+    trashed: false,
+    version: '1',
+    size: null,
+    md5Checksum: null,
+    sha256Checksum: null,
+    properties: {},
+    capabilities: {
+      canListChildren: true,
+      canAddChildren: true,
+      canEdit: true,
+      canDownload: false,
+    },
+    etag: `"${id}-v1"`,
+  };
+}
+
+function stagedRootFor(
+  folderId: string,
+  folderName: string,
+  finalFolderId: string
+): StagedDriveRoot {
+  return {
+    root: { folderId, driveId: null, folderName },
+    rootFile: driveFile(folderId, folderName, []),
+    finalFolder: driveFile(finalFolderId, 'Final', [folderId]),
+  };
+}
+
+const stagedRoot = stagedRootFor('root-a', 'Lotus invoices', 'final-a');
+
+function configuredSnapshot(root: StagedDriveRoot = stagedRoot): DriveStoreSnapshot {
+  return {
+    control: {
+      file: {
+        ...driveFile('control-a', '.lotus-teaching-invoices.json', []),
+        mimeType: 'application/json',
+        capabilities: {
+          canListChildren: false,
+          canAddChildren: false,
+          canEdit: true,
+          canDownload: true,
+        },
+      },
+      control: {
+        schemaVersion: 1,
+        generation: 1,
+        root: { ...root.root },
+        finalFolderId: root.finalFolder.id,
+        sequenceByYear: {},
+        reservation: null,
+      },
+    },
+    stagedRoot: root,
+    scan: emptyScan(),
+  };
+}
 
 function emptyScan(): DriveInvoiceScan {
   return { entries: [], warnings: [], blockingConflicts: [], maxSequenceByYear: {} };
@@ -233,6 +294,295 @@ describe('useDriveFolderController', () => {
     );
     expect(attemptedConfigs.at(-1)).not.toHaveProperty('outputDir');
     expect(attemptedConfigs.at(-1)).not.toHaveProperty('lastInvoice');
+    expect(view.result.current.cleanupPending).toBe(false);
+  });
+
+  it('adopts its own activated root when setup completion builds the first source context', async () => {
+    const activation = deferred<void>();
+    const activateRoot = vi.fn(() => activation.promise);
+    const saveConfig = vi.fn<UseDriveFolderControllerOptions['saveConfig']>(async (update) => {
+      const next = update(config);
+      expect(next).not.toBeNull();
+      expect(next).not.toHaveProperty('lastInvoice');
+    });
+    const base = options({ saveConfig });
+    const view = renderHook(
+      ({ sourceContextKey, drive }) =>
+        useDriveFolderController({ ...base, sourceContextKey, drive }),
+      {
+        initialProps: {
+          sourceContextKey: 'setup-discovery',
+          drive: driveState({ activateRoot }),
+        },
+      }
+    );
+    let confirmation!: Promise<void>;
+    act(() => {
+      confirmation = view.result.current.confirmRoot(stagedRoot);
+    });
+
+    view.rerender({
+      sourceContextKey: 'setup-discovery',
+      drive: driveState({ status: 'ready', snapshot: configuredSnapshot(), activateRoot }),
+    });
+    view.rerender({
+      sourceContextKey: 'built-sources',
+      drive: driveState({ status: 'loading', snapshot: null, activateRoot }),
+    });
+    await act(async () => {
+      activation.resolve();
+      await expect(confirmation).resolves.toBeUndefined();
+    });
+
+    expect(activateRoot).toHaveBeenCalledOnce();
+    expect(saveConfig).toHaveBeenCalledOnce();
+    expect(view.result.current.cleanupPending).toBe(false);
+    expect(view.result.current.error).toBeNull();
+  });
+
+  it('adopts its own source transition while activated-root config cleanup begins', async () => {
+    const activation = deferred<void>();
+    const cleanupStarted = deferred<void>();
+    const continueCleanup = deferred<void>();
+    const activateRoot = vi.fn(() => activation.promise);
+    const saveConfig = vi.fn<UseDriveFolderControllerOptions['saveConfig']>(async (update) => {
+      cleanupStarted.resolve();
+      await continueCleanup.promise;
+      const next = update(config);
+      expect(next).not.toBeNull();
+      expect(next).not.toHaveProperty('lastInvoice');
+    });
+    const base = options({ saveConfig });
+    const view = renderHook(
+      ({ sourceContextKey, drive }) =>
+        useDriveFolderController({ ...base, sourceContextKey, drive }),
+      {
+        initialProps: {
+          sourceContextKey: 'setup-discovery',
+          drive: driveState({ activateRoot }),
+        },
+      }
+    );
+    let confirmation!: Promise<void>;
+    act(() => {
+      confirmation = view.result.current.confirmRoot(stagedRoot);
+    });
+
+    view.rerender({
+      sourceContextKey: 'setup-discovery',
+      drive: driveState({ status: 'ready', snapshot: configuredSnapshot(), activateRoot }),
+    });
+    await act(async () => {
+      activation.resolve();
+      await cleanupStarted.promise;
+    });
+    view.rerender({
+      sourceContextKey: 'built-sources',
+      drive: driveState({ status: 'loading', snapshot: null, activateRoot }),
+    });
+    await act(async () => {
+      continueCleanup.resolve();
+      await expect(confirmation).resolves.toBeUndefined();
+    });
+
+    expect(activateRoot).toHaveBeenCalledOnce();
+    expect(saveConfig).toHaveBeenCalledOnce();
+    expect(view.result.current.cleanupPending).toBe(false);
+    expect(view.result.current.error).toBeNull();
+  });
+
+  it('rejects A to B to A source changes even when the activated root matches', async () => {
+    const activation = deferred<void>();
+    const activateRoot = vi.fn(() => activation.promise);
+    const saveConfig = vi.fn<UseDriveFolderControllerOptions['saveConfig']>();
+    const base = options({ saveConfig });
+    const view = renderHook(
+      ({ sourceContextKey, drive }) =>
+        useDriveFolderController({ ...base, sourceContextKey, drive }),
+      {
+        initialProps: {
+          sourceContextKey: 'source-a',
+          drive: driveState({ activateRoot }),
+        },
+      }
+    );
+    let confirmation!: Promise<void>;
+    act(() => {
+      confirmation = view.result.current.confirmRoot(stagedRoot);
+    });
+
+    view.rerender({
+      sourceContextKey: 'source-a',
+      drive: driveState({ status: 'ready', snapshot: configuredSnapshot(), activateRoot }),
+    });
+    view.rerender({
+      sourceContextKey: 'source-b',
+      drive: driveState({ status: 'loading', snapshot: null, activateRoot }),
+    });
+    view.rerender({
+      sourceContextKey: 'source-a',
+      drive: driveState({ status: 'loading', snapshot: null, activateRoot }),
+    });
+    await act(async () => {
+      activation.resolve();
+      await expect(confirmation).rejects.toThrow(
+        'Current invoice sources changed before the Drive folder confirmation completed'
+      );
+    });
+
+    expect(saveConfig).not.toHaveBeenCalled();
+    expect(view.result.current.cleanupPending).toBe(true);
+  });
+
+  it('does not adopt an unrelated authoritative root after a source change', async () => {
+    const activation = deferred<void>();
+    const activateRoot = vi.fn(() => activation.promise);
+    const saveConfig = vi.fn<UseDriveFolderControllerOptions['saveConfig']>();
+    const base = options({ saveConfig });
+    const otherRoot = stagedRootFor('root-b', 'Other invoices', 'final-b');
+    const view = renderHook(
+      ({ sourceContextKey, drive }) =>
+        useDriveFolderController({ ...base, sourceContextKey, drive }),
+      {
+        initialProps: {
+          sourceContextKey: 'setup-discovery',
+          drive: driveState({ activateRoot }),
+        },
+      }
+    );
+    let confirmation!: Promise<void>;
+    act(() => {
+      confirmation = view.result.current.confirmRoot(stagedRoot);
+    });
+
+    view.rerender({
+      sourceContextKey: 'setup-discovery',
+      drive: driveState({ status: 'ready', snapshot: configuredSnapshot(otherRoot), activateRoot }),
+    });
+    view.rerender({
+      sourceContextKey: 'built-sources',
+      drive: driveState({ status: 'loading', snapshot: null, activateRoot }),
+    });
+    await act(async () => {
+      activation.resolve();
+      await expect(confirmation).rejects.toThrow(
+        'Current invoice sources changed before the Drive folder confirmation completed'
+      );
+    });
+
+    expect(saveConfig).not.toHaveBeenCalled();
+    expect(view.result.current.cleanupPending).toBe(true);
+  });
+
+  it('does not adopt an activated root after Drive authorization changes', async () => {
+    const activation = deferred<void>();
+    const activateRoot = vi.fn(() => activation.promise);
+    const saveConfig = vi.fn<UseDriveFolderControllerOptions['saveConfig']>();
+    const base = options({ saveConfig });
+    const view = renderHook(
+      ({ authorizationIncarnation, drive }) =>
+        useDriveFolderController({ ...base, authorizationIncarnation, drive }),
+      {
+        initialProps: {
+          authorizationIncarnation: 1,
+          drive: driveState({ activateRoot }),
+        },
+      }
+    );
+    let confirmation!: Promise<void>;
+    act(() => {
+      confirmation = view.result.current.confirmRoot(stagedRoot);
+    });
+
+    view.rerender({
+      authorizationIncarnation: 2,
+      drive: driveState({ status: 'ready', snapshot: configuredSnapshot(), activateRoot }),
+    });
+    await act(async () => {
+      activation.resolve();
+      await expect(confirmation).rejects.toThrow(
+        'Drive authorization changed before the Drive folder confirmation completed'
+      );
+    });
+
+    expect(saveConfig).not.toHaveBeenCalled();
+    expect(view.result.current.cleanupPending).toBe(true);
+  });
+
+  it('does not let an overlapping confirmation replace newer cleanup state', async () => {
+    const older = deferred<void>();
+    const newer = deferred<void>();
+    const activateRoot = vi
+      .fn<() => Promise<void>>()
+      .mockReturnValueOnce(older.promise)
+      .mockReturnValueOnce(newer.promise);
+    const saveConfig = vi.fn<UseDriveFolderControllerOptions['saveConfig']>(async (update) => {
+      update(config);
+    });
+    const view = renderHook(() =>
+      useDriveFolderController({ ...options(), drive: driveState({ activateRoot }), saveConfig })
+    );
+    let olderConfirmation!: Promise<void>;
+    let newerConfirmation!: Promise<void>;
+    act(() => {
+      olderConfirmation = view.result.current.confirmRoot(stagedRoot);
+      newerConfirmation = view.result.current.confirmRoot(stagedRoot);
+    });
+
+    await act(async () => {
+      newer.resolve();
+      await expect(newerConfirmation).resolves.toBeUndefined();
+    });
+    await act(async () => {
+      older.resolve();
+      await expect(olderConfirmation).rejects.toThrow(
+        'Drive folder setup changed before the Drive folder confirmation completed'
+      );
+    });
+
+    expect(activateRoot).toHaveBeenCalledTimes(2);
+    expect(saveConfig).toHaveBeenCalledOnce();
+    expect(view.result.current.cleanupPending).toBe(false);
+  });
+
+  it('rejects an older cleanup after an overlapping confirmation clears it', async () => {
+    const firstCleanupStarted = deferred<void>();
+    const continueFirstCleanup = deferred<void>();
+    const activateRoot = vi.fn(async () => undefined);
+    let saveCall = 0;
+    const saveConfig = vi.fn<UseDriveFolderControllerOptions['saveConfig']>(async (update) => {
+      expect(update(config)).not.toBeNull();
+      saveCall += 1;
+      if (saveCall === 1) {
+        firstCleanupStarted.resolve();
+        await continueFirstCleanup.promise;
+      }
+    });
+    const view = renderHook(() =>
+      useDriveFolderController({ ...options(), drive: driveState({ activateRoot }), saveConfig })
+    );
+    let olderConfirmation!: Promise<void>;
+    act(() => {
+      olderConfirmation = view.result.current.confirmRoot(stagedRoot);
+    });
+    await act(() => firstCleanupStarted.promise);
+
+    let newerConfirmation!: Promise<void>;
+    act(() => {
+      newerConfirmation = view.result.current.confirmRoot(stagedRoot);
+    });
+    await act(async () => {
+      await expect(newerConfirmation).resolves.toBeUndefined();
+    });
+    await act(async () => {
+      continueFirstCleanup.resolve();
+      await expect(olderConfirmation).rejects.toThrow(
+        'Drive folder setup changed before the Drive folder confirmation completed'
+      );
+    });
+
+    expect(activateRoot).toHaveBeenCalledOnce();
+    expect(saveConfig).toHaveBeenCalledTimes(2);
     expect(view.result.current.cleanupPending).toBe(false);
   });
 
