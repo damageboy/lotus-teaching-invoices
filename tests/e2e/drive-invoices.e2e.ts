@@ -1,13 +1,15 @@
 import { browser, expect, $ } from '@wdio/globals';
 import { createHash } from 'node:crypto';
 import { parse, stringify } from 'yaml';
-import { editingConfigYaml, fakeGoogleControlUrl } from './helpers.js';
+import { editingConfigYaml, fakeGoogleControlUrl, readTmpConfig } from './helpers.js';
 
 const CALENDAR_ID = 'teaching@example.test';
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive';
 const PDF_BYTES = Buffer.from('%PDF-1.7\nLotus E2E manual invoice\n');
 const WELCOME_DIALOG =
   '//*[@role="dialog"][@aria-labelledby][.//*[normalize-space(.)="Welcome to Lotus"]]';
+const DRIVE_FOLDER_DIALOG =
+  '//*[@role="dialog"][@aria-labelledby][.//*[normalize-space(.)="Choose Drive invoice folder"]]';
 const MANAGED_PROPERTY_KEYS = [
   'lotusCalendarHash',
   'lotusInvoiceNumber',
@@ -47,6 +49,12 @@ interface FakeRequest {
   query?: Record<string, string>;
   ifMatch?: string;
   responseStatus?: number;
+}
+
+interface DriveControlDocument {
+  generation: number;
+  root: { folderId: string; driveId: string | null; folderName: string };
+  finalFolderId: string;
 }
 
 function sha256(bytes: Uint8Array): string {
@@ -238,8 +246,13 @@ async function navigateToDriveInvoicesAfterReload(
   await expect($('table')).toBeDisplayed();
 }
 
-async function seedRuntime(): Promise<void> {
+async function seedRuntime(options: { calendarConfigured?: boolean } = {}): Promise<void> {
   const config = parse(editingConfigYaml()) as Record<string, any>;
+  if (options.calendarConfigured === false) {
+    delete config.calendarId;
+    delete config.calendarName;
+    delete config.calendarAccessRole;
+  }
   config.lastInvoice = '8/2026';
   config.studios['Test Studio'].invoiceEmail = 'invoices@example.test';
   const seed = {
@@ -311,19 +324,34 @@ async function configureFixtureRoot(): Promise<void> {
   });
 }
 
-async function createAndActivateRoot(name: string): Promise<void> {
+function activeDriveControl(current: FakeState): DriveControlDocument {
+  const controls = current.files.filter((file) => file.properties.lotusConfigSchema === '1');
+  expect(controls).toHaveLength(1);
+  return JSON.parse(
+    Buffer.from(controls[0]!.bytesBase64, 'base64').toString('utf8')
+  ) as DriveControlDocument;
+}
+
+function googleDriveConnectionRow() {
+  return $(
+    '//section[.//h3[normalize-space(.)="Connections"]]//p[normalize-space(.)="Google Drive"]/ancestor::div[button[normalize-space(.)="Change…"]][1]'
+  );
+}
+
+async function createAndActivateRoot(
+  name: string,
+  options: { openInvoices?: boolean } = {}
+): Promise<void> {
   const welcome = await $(WELCOME_DIALOG);
   const enteredFromWelcome = (await welcome.isExisting()) && (await welcome.isDisplayed());
   if (enteredFromWelcome) {
-    await welcome.$('button=Pick Drive folder…').click();
+    await $('button=Pick Drive folder…').click();
   } else {
     await $('button=Rates & Config').click();
-    const driveRow = await $(
-      '//section[.//h3[normalize-space(.)="Connections"]]//p[normalize-space(.)="Google Drive"]/ancestor::div[button[normalize-space(.)="Change…"]][1]'
-    );
+    const driveRow = await googleDriveConnectionRow();
     await driveRow.$('button=Change…').click();
   }
-  const dialog = await $('//*[@role="dialog"][.//button[normalize-space(.)="My Drive"]]');
+  const dialog = await $(DRIVE_FOLDER_DIALOG);
   await expect(dialog).toBeDisplayed();
   await dialog.$('button=My Drive').click();
   const input = await dialog.$('label*=New folder name').$('input');
@@ -333,7 +361,7 @@ async function createAndActivateRoot(name: string): Promise<void> {
   await dialog.$('button=Use this folder').click();
   await expect(dialog.$(`h3=Review ${name}`)).toBeDisplayed();
   await dialog.$('button=Activate for all devices').click();
-  await browser.waitUntil(async () => !(await dialog.isExisting()), {
+  await browser.waitUntil(async () => !(await $(DRIVE_FOLDER_DIALOG).isExisting()), {
     timeout: 15_000,
     timeoutMsg: `Drive root ${name} did not activate`,
   });
@@ -349,6 +377,7 @@ async function createAndActivateRoot(name: string): Promise<void> {
       (await browser.execute(() => document.body.innerText.includes('Welcome to Lotus'))) === false,
     { timeout: 45_000, timeoutMsg: 'required Google setup did not become ready' }
   );
+  if (options.openInvoices === false) return;
   await $('button=Invoices').click();
   await expect($('table')).toBeDisplayed();
   await expect($('button=Refresh Drive')).toBeDisplayed();
@@ -462,28 +491,84 @@ describe('Drive invoices across desktop and Android clients', () => {
     await expect($('button=Retry Google Drive')).not.toBeExisting();
   });
 
-  it('seeds one Drive-authorized desktop client against an unconfigured account', async () => {
+  it('selects and durably configures Calendar from a truly unconfigured first launch', async () => {
     expect((await control('/reset')).status).toBe(204);
     await mutate({ type: 'driveReset', unconfigured: true });
-    await seedRuntime();
+    await seedRuntime({ calendarConfigured: false });
     await browser.refresh();
     await expect($(WELCOME_DIALOG)).toBeDisplayed();
-    await expect($('p=Step 2 of 2')).toBeDisplayed();
-    await expect($('button=Pick Drive folder…')).toBeDisplayed();
+    await expect($('p=Step 1 of 2')).toBeDisplayed();
+
+    const calendarListsBefore = await requestCount('GET', '/calendar/v3/users/me/calendarList');
+    await $('button=Pick calendar…').click();
+    await expect($('button=Teaching Calendar')).toBeDisplayed();
+    await $('button=Teaching Calendar').click();
+
+    await browser.waitUntil(
+      async () =>
+        await browser.execute(() =>
+          [...document.querySelectorAll('[role="dialog"][aria-labelledby]')].some(
+            (dialog) =>
+              dialog.textContent?.includes('Welcome to Lotus') &&
+              dialog.textContent.includes('Step 2 of 2') &&
+              [...dialog.querySelectorAll('button')].some(
+                (button) => button.textContent?.trim() === 'Pick Drive folder…'
+              )
+          )
+        ),
+      { timeout: 15_000, timeoutMsg: 'Calendar selection did not advance Welcome to Drive' }
+    );
+    expect(await requestCount('GET', '/calendar/v3/users/me/calendarList')).toBeGreaterThan(
+      calendarListsBefore
+    );
+    expect(readTmpConfig()).toMatchObject({
+      calendarId: CALENDAR_ID,
+      calendarName: 'Teaching Calendar',
+      calendarAccessRole: 'owner',
+    });
   });
 
-  it('browses My Drive, creates a root and Final child, scans, and activates it', async () => {
-    await createAndActivateRoot('Lotus E2E Root');
+  it('activates Drive from Welcome, unlocks Calendar, and survives a configured reload', async () => {
+    await createAndActivateRoot('Lotus E2E Root', { openInvoices: false });
     const current = await state();
-    const controlFile = current.files.find((file) => file.properties.lotusConfigSchema === '1')!;
-    const stored = JSON.parse(Buffer.from(controlFile.bytesBase64, 'base64').toString('utf8')) as {
-      root: { folderId: string };
-      finalFolderId: string;
-    };
+    const stored = activeDriveControl(current);
     firstRootId = stored.root.folderId;
     firstFinalId = stored.finalFolderId;
-    expect(firstRootId).not.toBe('');
-    expect(firstFinalId).not.toBe('');
+    expect(stored.root.folderName).toBe('Lotus E2E Root');
+    expect(current.files.find((file) => file.id === firstRootId)?.name).toBe('Lotus E2E Root');
+    expect(current.files.find((file) => file.id === firstFinalId)).toMatchObject({
+      name: 'Final',
+      parents: [firstRootId],
+    });
+    await expect($(WELCOME_DIALOG)).not.toBeExisting();
+    for (const destination of ['Calendar', 'Invoices', 'Income', 'Rates & Config']) {
+      await expect($(`button=${destination}`)).toBeEnabled();
+    }
+    await expect($('button=‹')).toBeDisplayed();
+
+    const calendarRequestsBefore = await calendarEventRequestCount();
+    const driveRequestsBefore = await driveListRequestCount();
+    await browser.refresh();
+    await browser.waitUntil(
+      async () =>
+        (await calendarEventRequestCount()) > calendarRequestsBefore &&
+        (await driveListRequestCount()) > driveRequestsBefore &&
+        (await $('button=Invoices').isEnabled()) &&
+        (await $('button=‹').isDisplayed()) &&
+        !(await $(WELCOME_DIALOG).isExisting()),
+      { timeout: 45_000, timeoutMsg: 'configured first-run setup did not survive reload' }
+    );
+    expect(readTmpConfig()).toMatchObject({
+      calendarId: CALENDAR_ID,
+      calendarName: 'Teaching Calendar',
+      calendarAccessRole: 'owner',
+    });
+    expect(activeDriveControl(await state())).toMatchObject({
+      root: { folderId: firstRootId, folderName: 'Lotus E2E Root' },
+      finalFolderId: firstFinalId,
+    });
+    await $('button=Invoices').click();
+    await expect($('table')).toBeDisplayed();
   });
 
   it('adopts a manually copied valid PDF after refresh', async () => {
@@ -701,16 +786,39 @@ describe('Drive invoices across desktop and Android clients', () => {
   });
 
   it('switches roots without moving or changing old files', async () => {
-    const before = (await state()).files
+    const beforeState = await state();
+    const beforeControl = activeDriveControl(beforeState);
+    const before = beforeState.files
       .filter((file) => file.parents.includes(firstFinalId))
       .map((file) => ({ id: file.id, parent: file.parents[0], checksum: file.bodySha256 }))
       .sort((left, right) => left.id.localeCompare(right.id));
     await createAndActivateRoot('Lotus E2E Second Root');
-    const after = (await state()).files
+    const afterState = await state();
+    const afterControl = activeDriveControl(afterState);
+    const secondRoots = afterState.files.filter((file) => file.name === 'Lotus E2E Second Root');
+    expect(secondRoots).toHaveLength(1);
+    const secondRoot = secondRoots[0]!;
+    const secondFinals = afterState.files.filter(
+      (file) => file.name === 'Final' && file.parents.includes(secondRoot.id)
+    );
+    expect(secondFinals).toHaveLength(1);
+    const secondFinal = secondFinals[0]!;
+    expect(afterControl.generation).toBeGreaterThan(beforeControl.generation);
+    expect(afterControl.root).toMatchObject({
+      folderId: secondRoot.id,
+      folderName: 'Lotus E2E Second Root',
+    });
+    expect(secondRoot.name).toBe('Lotus E2E Second Root');
+    expect(afterControl.finalFolderId).toBe(secondFinal.id);
+    expect(secondFinal).toMatchObject({ name: 'Final', parents: [secondRoot.id] });
+    const after = afterState.files
       .filter((file) => before.some(({ id }) => id === file.id))
       .map((file) => ({ id: file.id, parent: file.parents[0], checksum: file.bodySha256 }))
       .sort((left, right) => left.id.localeCompare(right.id));
     expect(after).toEqual(before);
+    await $('button=Rates & Config').click();
+    await expect(await googleDriveConnectionRow()).toHaveText(/Lotus E2E Second Root/);
+    await $('button=Invoices').click();
   });
 
   it('shows duplicate, malformed, corrupt, missing, permission, rate-limit, interruption, and recovery states', async () => {
