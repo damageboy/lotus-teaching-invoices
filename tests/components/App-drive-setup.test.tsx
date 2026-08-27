@@ -81,24 +81,6 @@ vi.mock('../../src/hooks/useCalendarPicker.js', () => ({
     closeList: vi.fn(),
   }),
 }));
-vi.mock('../../src/hooks/useDriveInvoices.js', () => ({
-  useDriveInvoices: (options: { discoveryEnabled: boolean }) => ({
-    status: options.discoveryEnabled ? 'authorizationRequired' : 'loading',
-    snapshot: null,
-    error: null,
-    operationKey: null,
-    refresh: vi.fn(async () => undefined),
-    activateRoot: vi.fn(async () => undefined),
-    finalize: vi.fn(async () => {
-      throw new Error('not used');
-    }),
-    refinalize: vi.fn(async () => {
-      throw new Error('not used');
-    }),
-    recoverReservation: vi.fn(async () => undefined),
-    downloadVerified: vi.fn(async () => new Uint8Array()),
-  }),
-}));
 vi.mock('../../src/hooks/useCompactLayout.js', () => ({
   useCompactLayout: () => false,
 }));
@@ -122,14 +104,21 @@ vi.mock('../../src/lib/logger.js', () => ({
   logError: vi.fn(),
   logWarn: vi.fn(),
 }));
-vi.mock('../../src/lib/drive/transport.js', () => ({ createTauriDriveApi: () => ({}) }));
+vi.mock('../../src/lib/gmail/auth.js', async () => {
+  const { AuthorizationRequiredError } =
+    await import('../../src/lib/google/mobile-authorization.js');
+  return {
+    getAccessToken: vi.fn(async () => {
+      throw new AuthorizationRequiredError('Drive access needs user action');
+    }),
+    clearEphemeralAccessToken: vi.fn(async () => undefined),
+  };
+});
 vi.mock('../../src/lib/drive/folders.js', () => ({
   DriveFolderService: class DriveFolderService {},
+  DriveFolderError: class DriveFolderError extends Error {},
 }));
 vi.mock('../../src/lib/drive/invoiceCatalog.js', () => ({ scanFinalFolder: vi.fn() }));
-vi.mock('../../src/lib/drive/invoiceStore.js', () => {
-  return { DriveInvoiceStore: class DriveInvoiceStore {} };
-});
 vi.mock('../../src/lib/pdf/generatePdf.js', () => ({
   renderFinalPdf: vi.fn(),
   generateAndOpenPdf: vi.fn(),
@@ -140,10 +129,12 @@ vi.mock('../../src/lib/invoice/rows.js', () => ({
   buildCurrentInvoiceSources: async () => [],
   currentInvoiceSourceInputKey: () => 'fixture',
   visibleCurrentInvoiceSourceBuild: () => ({ sources: [], ready: true, error: null }),
+  buildInvoiceRows: () => [],
 }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ message: vi.fn(), confirm: vi.fn() }));
 vi.mock('@tauri-apps/plugin-process', () => ({ exit: vi.fn() }));
 
+const { waitFor } = await import('@testing-library/react');
 const { default: App } = await import('../../src/App.js');
 
 function button(name: string): HTMLButtonElement {
@@ -184,8 +175,8 @@ describe('App Drive setup without an existing grant', () => {
     const container = renderApp();
 
     await click(button('Rates & Config'));
+    await waitFor(() => expect(button('Pick Drive folder…').disabled).toBe(false));
     const pickDrive = button('Pick Drive folder…');
-    expect(pickDrive.disabled).toBe(false);
     await click(pickDrive);
     expect(allowDrive).toHaveBeenCalledOnce();
 

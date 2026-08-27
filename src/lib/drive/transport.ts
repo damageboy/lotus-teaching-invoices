@@ -4,6 +4,7 @@ import {
   getAccessToken,
   type GetAccessTokenOptions,
 } from '../gmail/auth.js';
+import { AuthorizationRequiredError } from '../google/mobile-authorization.js';
 import type {
   CreateDriveFileRequest,
   CreateFolderRequest,
@@ -70,6 +71,9 @@ function invalidResponse(message = 'Drive returned an invalid response'): DriveE
 
 function normalizeError(value: unknown): DriveError {
   if (value instanceof DriveError) return value;
+  if (value instanceof AuthorizationRequiredError) {
+    return new DriveError('authorization', value.message, true);
+  }
   if (!isRecord(value)) return invalidResponse();
 
   const { code, message, retryable, status, fileId } = value;

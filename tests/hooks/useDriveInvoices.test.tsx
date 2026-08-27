@@ -6,10 +6,13 @@ import type {
   DriveInvoiceEntry,
 } from '../../src/lib/drive/invoiceCatalog.js';
 import {
+  DriveInvoiceStore,
   DriveStoreError,
   type DriveStoreSnapshot,
   type FinalizationInput,
 } from '../../src/lib/drive/invoiceStore.js';
+import { createTauriDriveApi } from '../../src/lib/drive/transport.js';
+import { AuthorizationRequiredError } from '../../src/lib/google/mobile-authorization.js';
 import type { DriveFileRecord } from '../../src/lib/drive/types.js';
 import type { AppConfig, Invoice } from '../../src/lib/types.js';
 import { installReactTestEnvironment } from '../helpers/react-test-env.js';
@@ -301,6 +304,34 @@ describe('useDriveInvoices', () => {
     await waitFor(() => expect(result.current.status).toBe('unconfigured'));
     expect(result.current.snapshot).toBeNull();
     expect(result.current.error).toBeNull();
+  });
+
+  it('preserves a passive authorization requirement through transport, store, and hook', async () => {
+    const getAccessToken = vi.fn(async () => {
+      throw new AuthorizationRequiredError('Drive access needs user action');
+    });
+    const api = createTauriDriveApi({
+      invoke: vi.fn(),
+      getAccessToken,
+      clearEphemeralAccessToken: vi.fn(async () => undefined),
+    });
+    const store = new DriveInvoiceStore(api, {
+      renderFinalPdf: vi.fn(async () => new Uint8Array()),
+    });
+    const { result } = renderHook(() =>
+      useDriveInvoices(
+        options({
+          store,
+          sources: [],
+          foregroundRefreshEnabled: false,
+        })
+      )
+    );
+
+    await waitFor(() => expect(result.current.status).toBe('authorizationRequired'));
+    expect(result.current.snapshot).toBeNull();
+    expect(result.current.error).toMatchObject({ code: 'authorizationRequired' });
+    expect(getAccessToken).toHaveBeenCalledWith({ requireDrive: true, interactive: false });
   });
 
   it('publishes a durable reservation as recovery-required immediately after cold bootstrap', async () => {
