@@ -376,6 +376,7 @@ describe('App required Google setup', () => {
 
     await click(namedButton('Pick Drive folder…'));
     expect(await screen.findByRole('dialog', { name: 'Choose Drive invoice folder' })).toBeTruthy();
+    await click(namedButton('Create / Select folder…'));
     await click(await screen.findByRole('button', { name: 'My Drive' }));
     await click(await screen.findByRole('button', { name: 'Invoice Root' }));
     await click(namedButton('Use this folder'));

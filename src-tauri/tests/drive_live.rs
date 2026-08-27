@@ -18,9 +18,9 @@ async fn real_drive_honors_etag_preconditions_across_oauth_clients() {
     let android_token = required_env("LOTUS_DRIVE_LIVE_ANDROID_TOKEN");
     let parent_id = required_env("LOTUS_DRIVE_LIVE_PARENT_ID");
     let client = DriveClient::new();
-    let reservation = reserve_disposable_file(&client, &desktop_token, &parent_id, false, PDF_V1)
+    let reservation = reserve_disposable_file(&client, &desktop_token, "root", false, PDF_V1)
         .await
-        .unwrap_or_else(|error| panic!("could not reserve disposable My Drive file: {error}"));
+        .unwrap_or_else(|error| panic!("could not reserve disposable root-level file: {error}"));
     let create_result = client
         .create_file(&desktop_token, reservation.request)
         .await;
@@ -68,6 +68,50 @@ async fn real_drive_honors_etag_preconditions_across_oauth_clients() {
             return Err(
                 "Android conditional property patch was not visible in its response".into(),
             );
+        }
+
+        let replaced = client
+            .update_file(
+                &android_token,
+                UpdateFileRequest {
+                    file_id: updated.id.clone(),
+                    name: Some(updated.name.clone()),
+                    parents: vec![parent_id.clone()],
+                    mime_type: "application/pdf".to_string(),
+                    properties: updated.properties.clone(),
+                    bytes: PDF_V2.to_vec(),
+                    if_match: required_etag(&updated)?,
+                    supports_all_drives: false,
+                },
+            )
+            .await
+            .map_err(error_text)?;
+        if replaced.parents != [parent_id.clone()] {
+            return Err(format!(
+                "v2 multipart replacement left the file in parents {:?} instead of the selected folder",
+                replaced.parents
+            ));
+        }
+        if replaced
+            .properties
+            .get("lotusLiveWriter")
+            .map(String::as_str)
+            != Some("android")
+        {
+            return Err("v2 multipart replacement lost the public Drive properties".into());
+        }
+        let downloaded = client
+            .download_file(
+                &desktop_token,
+                DownloadFileRequest {
+                    file_id: replaced.id.clone(),
+                    supports_all_drives: false,
+                },
+            )
+            .await
+            .map_err(error_text)?;
+        if downloaded.bytes != PDF_V2 {
+            return Err("v2 multipart replacement did not preserve the new bytes".into());
         }
 
         let desktop_etag = required_etag(&desktop)?;

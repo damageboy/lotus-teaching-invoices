@@ -1013,8 +1013,12 @@ export class DriveInvoiceStore {
     adoptManual = true
   ): Promise<DriveStoreSnapshot> {
     const stagedRoot = await this.loadStagedRoot(control.control);
+    const exactControl =
+      control.file.parents.length === 1 && control.file.parents[0] === stagedRoot.root.folderId
+        ? control
+        : await this.repository.replace(control, control.control);
     const scan = await scanFinalFolder(this.api, stagedRoot, sources, { adoptManual });
-    const snapshot = { control, stagedRoot, scan };
+    const snapshot = { control: exactControl, stagedRoot, scan };
     this.currentSources = snapshotSources(sources);
     return snapshot;
   }

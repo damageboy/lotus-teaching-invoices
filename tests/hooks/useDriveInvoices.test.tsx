@@ -1005,6 +1005,36 @@ describe('useDriveInvoices', () => {
     expect(result.current.operationKey).toBeNull();
   });
 
+  it('activates a replacement root when the recorded root cannot be refreshed', async () => {
+    const store = storeDouble();
+    let activated = false;
+    const invalidRecordedRoot = new DriveStoreError(
+      'corrupt',
+      'Recorded Drive folder is invalid',
+      false
+    );
+    store.bootstrap.mockRejectedValueOnce(invalidRecordedRoot);
+    store.refresh.mockImplementation(async () => {
+      if (!activated) throw invalidRecordedRoot;
+      return snapshotFor('activated');
+    });
+    store.activateRoot.mockImplementation(async () => {
+      activated = true;
+      return snapshotFor('activated');
+    });
+    const { result } = renderHook(() => useDriveInvoices(options({ store })));
+    await waitFor(() => expect(result.current.status).toBe('blocked'));
+
+    await act(async () => {
+      await result.current.activateRoot(stagedRoot());
+    });
+
+    expect(store.activateRoot).toHaveBeenCalledOnce();
+    expect(store.refresh).toHaveBeenCalledOnce();
+    expect(result.current.status).toBe('ready');
+    expect(result.current.snapshot?.stagedRoot.root.folderId).toBe('activated-root');
+  });
+
   it('uses deterministic operation keys for activation, finalization, and re-finalization rows', async () => {
     const store = storeDouble();
     const activation = deferred<DriveStoreSnapshot>();
@@ -1344,12 +1374,13 @@ describe('useDriveInvoices', () => {
       .mockReturnValueOnce(newBootstrap.promise);
     store.refresh
       .mockResolvedValueOnce(snapshotFor('account-a'))
-      .mockResolvedValueOnce(snapshotFor('account-a'))
       .mockResolvedValueOnce(snapshotFor('account-b'));
     store.activateRoot.mockReturnValueOnce(oldActivation.promise);
     const { result, rerender } = renderHook(
       ({ authorizationIncarnation }) =>
-        useDriveInvoices(options({ authorizationIncarnation, store })),
+        useDriveInvoices(
+          options({ authorizationIncarnation, foregroundRefreshEnabled: false, store })
+        ),
       { initialProps: { authorizationIncarnation: 1 } }
     );
     await waitFor(() =>

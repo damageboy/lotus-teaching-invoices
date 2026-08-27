@@ -333,6 +333,7 @@ function dialogProps(
     open: true,
     layout: 'desktop',
     currentRoot: null,
+    detectedFolders: [],
     folderService: serviceDouble(),
     scanCandidate: vi.fn(async () => scan()),
     onConfirm: vi.fn(async () => {}),
@@ -341,12 +342,56 @@ function dialogProps(
   };
 }
 
+async function openFolderBrowser(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+  await user.click(await screen.findByRole('button', { name: 'Create / Select folder…' }));
+}
+
 async function enterSharedCandidate(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+  await openFolderBrowser(user);
   await user.click(await screen.findByRole('button', { name: 'Shared Drive A' }));
   await user.click(await screen.findByRole('button', { name: '2026 Invoices' }));
 }
 
 describe('DriveFolderDialog', () => {
+  it('starts with detected Lotus folders and opens the existing browser on request', async () => {
+    const user = userEvent.setup({ document });
+    const listLocations = vi.fn(async () => [myDrive, sharedDriveA, sharedDriveB]);
+    render(
+      <DriveFolderDialog
+        {...dialogProps({ folderService: serviceDouble({ listLocations }) })}
+        detectedFolders={[sharedInvoices]}
+      />
+    );
+
+    expect(screen.getByText('Detected Lotus folders')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '2026 Invoices' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'My Drive' })).toBeNull();
+    expect(listLocations).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'Create / Select folder…' }));
+
+    expect(await screen.findByRole('button', { name: 'My Drive' })).toBeTruthy();
+  });
+
+  it('reviews a detected Lotus folder without opening the general browser', async () => {
+    const user = userEvent.setup({ document });
+    const listLocations = vi.fn(async () => [myDrive]);
+    const stageRoot = vi.fn(async () => stagedShared);
+    render(
+      <DriveFolderDialog
+        {...dialogProps({
+          folderService: serviceDouble({ listLocations, stageRoot }),
+        })}
+        detectedFolders={[sharedInvoices]}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: '2026 Invoices' }));
+
+    expect(await screen.findByText('3 recognized invoices')).toBeTruthy();
+    expect(listLocations).not.toHaveBeenCalled();
+  });
+
   it('stages a Shared Drive root and passes the legacy seed only after explicit activation', async () => {
     const user = userEvent.setup({ document });
     const onConfirm = vi.fn(async () => {});
@@ -422,7 +467,6 @@ describe('DriveFolderDialog', () => {
 
     view.rerender(<DriveFolderDialog {...props} open={false} />);
     view.rerender(<DriveFolderDialog {...props} open />);
-    await screen.findByRole('button', { name: 'Shared Drive A' });
     await enterSharedCandidate(user);
     await user.click(screen.getByRole('button', { name: 'Use this folder' }));
     await screen.findByText('3 recognized invoices');
@@ -466,7 +510,6 @@ describe('DriveFolderDialog', () => {
 
     view.rerender(<DriveFolderDialog {...props} open={false} />);
     view.rerender(<DriveFolderDialog {...props} open />);
-    await screen.findByRole('button', { name: 'Shared Drive A' });
     await enterSharedCandidate(user);
     await user.click(screen.getByRole('button', { name: 'Use this folder' }));
     await screen.findByText('3 recognized invoices');
@@ -505,6 +548,7 @@ describe('DriveFolderDialog', () => {
       <DriveFolderDialog {...dialogProps({ folderService: serviceDouble({ listChildren }) })} />
     );
 
+    await openFolderBrowser(user);
     expect(await screen.findByRole('button', { name: 'My Drive' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Shared Drive A' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Shared Drive B' })).toBeTruthy();
@@ -532,6 +576,7 @@ describe('DriveFolderDialog', () => {
       <DriveFolderDialog {...dialogProps({ folderService: serviceDouble({ listChildren }) })} />
     );
 
+    await openFolderBrowser(user);
     await user.click(await screen.findByRole('button', { name: 'My Drive' }));
     await user.click(await screen.findByRole('button', { name: 'Parent' }));
     await user.click(await screen.findByRole('button', { name: 'Child' }));
@@ -555,6 +600,7 @@ describe('DriveFolderDialog', () => {
       <DriveFolderDialog {...dialogProps({ folderService: serviceDouble({ createChild }) })} />
     );
 
+    await openFolderBrowser(user);
     await user.click(await screen.findByRole('button', { name: 'My Drive' }));
     const input = screen.getByRole('textbox', { name: 'New folder name' });
     await changeInput(input, '   ');
@@ -724,6 +770,7 @@ describe('DriveFolderDialog', () => {
     const props = dialogProps({ folderService });
     const view = render(<DriveFolderDialog {...props} />);
 
+    await openFolderBrowser(user);
     await user.click(await screen.findByRole('button', { name: 'My Drive' }));
     await changeInput(
       screen.getByRole('textbox', { name: 'New folder name' }) as HTMLInputElement,
@@ -734,6 +781,7 @@ describe('DriveFolderDialog', () => {
 
     view.rerender(<DriveFolderDialog {...props} open={false} />);
     view.rerender(<DriveFolderDialog {...props} open />);
+    await openFolderBrowser(user);
     await user.click(await screen.findByRole('button', { name: 'My Drive' }));
 
     expect(
@@ -777,6 +825,7 @@ describe('DriveFolderDialog', () => {
     try {
       const dialog = screen.getByRole('dialog', { name: 'Choose Drive invoice folder' });
       expect(dialog.getAttribute('aria-modal')).toBe('true');
+      await openFolderBrowser(user);
       await user.click(await screen.findByRole('button', { name: 'My Drive' }));
       const controls = [...dialog.querySelectorAll<HTMLElement>('button, input')];
       expect(controls.length).toBeGreaterThan(0);

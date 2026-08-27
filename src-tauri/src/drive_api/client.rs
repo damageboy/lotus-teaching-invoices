@@ -5,10 +5,10 @@ use super::models::{
     PatchMetadataRequest, SharedDriveDto, SharedDrivesListResponse, TrashFileRequest,
     UpdateFileRequest,
 };
-use reqwest::header::{CONTENT_TYPE, ETAG, IF_MATCH, RETRY_AFTER};
+use reqwest::header::{CONTENT_TYPE, IF_MATCH, RETRY_AFTER};
 use reqwest::{RequestBuilder, Response, StatusCode};
 use serde::de::DeserializeOwned;
-use serde::Serialize;
+use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -19,9 +19,9 @@ const DRIVE_UPLOAD_BASE: &str = "https://www.googleapis.com/upload/drive/v3";
 const FILE_FIELDS: &str = "id,name,mimeType,parents,driveId,ownedByMe,trashed,version,size,md5Checksum,sha256Checksum,properties,capabilities(canListChildren,canAddChildren,canEdit,canDownload)";
 static MULTIPART_BOUNDARY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-#[derive(Serialize)]
-struct TrashMetadataDto {
-    trashed: bool,
+#[derive(Deserialize)]
+struct V2FileEtagDto {
+    etag: String,
 }
 
 #[derive(Clone)]
@@ -29,6 +29,8 @@ pub struct DriveClient {
     client: reqwest::Client,
     api_base: Url,
     upload_base: Url,
+    v2_api_base: Url,
+    v2_upload_base: Url,
 }
 
 impl Default for DriveClient {
@@ -39,10 +41,14 @@ impl Default for DriveClient {
 
 impl DriveClient {
     pub fn new() -> Self {
+        let api_base = Url::parse(DRIVE_API_BASE).expect("fixed Drive API URL is valid");
+        let upload_base = Url::parse(DRIVE_UPLOAD_BASE).expect("fixed Drive upload URL is valid");
         Self {
             client: reqwest::Client::new(),
-            api_base: Url::parse(DRIVE_API_BASE).expect("fixed Drive API URL is valid"),
-            upload_base: Url::parse(DRIVE_UPLOAD_BASE).expect("fixed Drive upload URL is valid"),
+            v2_api_base: v2_base_from_v3(&api_base),
+            v2_upload_base: v2_base_from_v3(&upload_base),
+            api_base,
+            upload_base,
         }
     }
 
@@ -50,6 +56,8 @@ impl DriveClient {
     pub(crate) fn new_for_webdriver(api_base: Url, upload_base: Url) -> Self {
         Self {
             client: reqwest::Client::new(),
+            v2_api_base: v2_base_from_v3(&api_base),
+            v2_upload_base: v2_base_from_v3(&upload_base),
             api_base,
             upload_base,
         }
@@ -57,10 +65,14 @@ impl DriveClient {
 
     #[cfg(test)]
     fn new_for_test(api_base: String, upload_base: String) -> Self {
+        let api_base = Url::parse(&api_base).expect("test Drive API URL is valid");
+        let upload_base = Url::parse(&upload_base).expect("test Drive upload URL is valid");
         Self {
             client: reqwest::Client::new(),
-            api_base: Url::parse(&api_base).expect("test Drive API URL is valid"),
-            upload_base: Url::parse(&upload_base).expect("test Drive upload URL is valid"),
+            v2_api_base: v2_base_from_v3(&api_base),
+            v2_upload_base: v2_base_from_v3(&upload_base),
+            api_base,
+            upload_base,
         }
     }
 
@@ -140,14 +152,106 @@ impl DriveClient {
         response: Response,
         file_id: Option<&str>,
     ) -> Result<DriveFileDto, DriveApiError> {
-        let etag = response
-            .headers()
-            .get(ETAG)
-            .and_then(|value| value.to_str().ok())
-            .map(str::to_string);
         let mut file = Self::json_response::<DriveFileDto>(response, file_id).await?;
-        file.etag = etag;
+        file.etag = None;
         Ok(file)
+    }
+
+    async fn v2_etag_response(response: Response, file_id: &str) -> Result<String, DriveApiError> {
+        let etag = Self::json_response::<V2FileEtagDto>(response, Some(file_id))
+            .await?
+            .etag;
+        if etag.is_empty() {
+            return Err(invalid_response(Some(file_id)));
+        }
+        Ok(etag)
+    }
+
+    async fn v2_etag(
+        &self,
+        access_token: &str,
+        file_id: &str,
+        supports_all_drives: bool,
+    ) -> Result<String, DriveApiError> {
+        let mut url = Self::endpoint(&self.v2_api_base, &["files", file_id])?;
+        url.query_pairs_mut()
+            .append_pair("supportsAllDrives", &supports_all_drives.to_string())
+            .append_pair("fields", "etag");
+        let response = self
+            .request_with_retry(Some(file_id), || {
+                self.client.get(url.clone()).bearer_auth(access_token)
+            })
+            .await?;
+        Self::v2_etag_response(response, file_id).await
+    }
+
+    async fn consistent_file(
+        &self,
+        access_token: &str,
+        file_id: &str,
+        supports_all_drives: bool,
+    ) -> Result<DriveFileDto, DriveApiError> {
+        for _ in 0..3 {
+            let before = self
+                .v2_etag(access_token, file_id, supports_all_drives)
+                .await?;
+            let mut file = self
+                .v3_file(access_token, file_id, supports_all_drives)
+                .await?;
+            let after = self
+                .v2_etag(access_token, file_id, supports_all_drives)
+                .await?;
+            if before == after {
+                file.etag = Some(after);
+                return Ok(file);
+            }
+        }
+        Err(DriveApiError {
+            code: DriveApiErrorCode::Conflict,
+            message: "Drive file changed remotely".to_string(),
+            status: None,
+            retryable: false,
+            file_id: Some(file_id.to_string()),
+        })
+    }
+
+    async fn v3_file(
+        &self,
+        access_token: &str,
+        file_id: &str,
+        supports_all_drives: bool,
+    ) -> Result<DriveFileDto, DriveApiError> {
+        let mut url = Self::endpoint(&self.api_base, &["files", file_id])?;
+        url.query_pairs_mut()
+            .append_pair("supportsAllDrives", &supports_all_drives.to_string())
+            .append_pair("fields", FILE_FIELDS);
+        let response = self
+            .request_with_retry(Some(file_id), || {
+                self.client.get(url.clone()).bearer_auth(access_token)
+            })
+            .await?;
+        Self::file_response(response, Some(file_id)).await
+    }
+
+    async fn refreshed_after_v2_mutation(
+        &self,
+        access_token: &str,
+        file_id: &str,
+        supports_all_drives: bool,
+        mutation_etag: String,
+    ) -> Result<DriveFileDto, DriveApiError> {
+        let mut file = self
+            .v3_file(access_token, file_id, supports_all_drives)
+            .await?;
+        let current_etag = self
+            .v2_etag(access_token, file_id, supports_all_drives)
+            .await?;
+        if current_etag == mutation_etag {
+            file.etag = Some(current_etag);
+            return Ok(file);
+        }
+        self.consistent_file(access_token, file_id, supports_all_drives)
+            .await
     }
 
     pub async fn list_shared_drives(
@@ -229,19 +333,8 @@ impl DriveClient {
         access_token: &str,
         request: GetFileRequest,
     ) -> Result<DriveFileDto, DriveApiError> {
-        let mut url = Self::endpoint(&self.api_base, &["files", &request.file_id])?;
-        url.query_pairs_mut()
-            .append_pair(
-                "supportsAllDrives",
-                &request.supports_all_drives.to_string(),
-            )
-            .append_pair("fields", FILE_FIELDS);
-        let response = self
-            .request_with_retry(Some(&request.file_id), || {
-                self.client.get(url.clone()).bearer_auth(access_token)
-            })
-            .await?;
-        Self::file_response(response, Some(&request.file_id)).await
+        self.consistent_file(access_token, &request.file_id, request.supports_all_drives)
+            .await
     }
 
     pub async fn download_file(
@@ -249,7 +342,7 @@ impl DriveClient {
         access_token: &str,
         request: DownloadFileRequest,
     ) -> Result<DriveDownload, DriveApiError> {
-        let mut file = self
+        let file = self
             .get_file(
                 access_token,
                 GetFileRequest {
@@ -270,11 +363,6 @@ impl DriveClient {
                 self.client.get(url.clone()).bearer_auth(access_token)
             })
             .await?;
-        file.etag = response
-            .headers()
-            .get(ETAG)
-            .and_then(|value| value.to_str().ok())
-            .map(str::to_string);
         let bytes = response
             .bytes()
             .await
@@ -329,7 +417,9 @@ impl DriveClient {
                     .json(&metadata),
             )
             .await?;
-        Self::file_response(response, None).await
+        let file = Self::file_response(response, None).await?;
+        self.consistent_file(access_token, &file.id, request.supports_all_drives)
+            .await
     }
 
     pub async fn create_file(
@@ -367,7 +457,9 @@ impl DriveClient {
                     .body(body.clone())
             })
             .await?;
-        Self::file_response(response, None).await
+        let file = Self::file_response(response, None).await?;
+        self.consistent_file(access_token, &file.id, request.supports_all_drives)
+            .await
     }
 
     pub async fn update_file(
@@ -376,21 +468,40 @@ impl DriveClient {
         request: UpdateFileRequest,
     ) -> Result<DriveFileDto, DriveApiError> {
         validate_mime_type(&request.mime_type)?;
-        exactly_one_parent(&request.parents, Some(&request.file_id))?;
-        let mut url = Self::endpoint(&self.upload_base, &["files", &request.file_id])?;
-        url.query_pairs_mut()
-            .append_pair("uploadType", "multipart")
-            .append_pair(
-                "supportsAllDrives",
-                &request.supports_all_drives.to_string(),
-            )
-            .append_pair("fields", FILE_FIELDS);
-        let metadata = json!({
-            "name": request.name,
-            "mimeType": request.mime_type,
-            "properties": request.properties,
-        })
-        .to_string();
+        let requested_parent = exactly_one_parent(&request.parents, Some(&request.file_id))?;
+        let current = self
+            .v3_file(access_token, &request.file_id, request.supports_all_drives)
+            .await?;
+        let current_parent = exactly_one_parent(&current.parents, Some(&request.file_id))?;
+        let mut url = Self::endpoint(&self.v2_upload_base, &["files", &request.file_id])?;
+        {
+            let mut query = url.query_pairs_mut();
+            query
+                .append_pair("uploadType", "multipart")
+                .append_pair(
+                    "supportsAllDrives",
+                    &request.supports_all_drives.to_string(),
+                )
+                .append_pair("fields", "etag");
+            if requested_parent != current_parent {
+                query
+                    .append_pair("addParents", requested_parent)
+                    .append_pair("removeParents", current_parent);
+            }
+        }
+        let mut metadata = Map::new();
+        if let Some(name) = request.name {
+            metadata.insert("title".to_string(), Value::String(name));
+        }
+        metadata.insert(
+            "mimeType".to_string(),
+            Value::String(request.mime_type.clone()),
+        );
+        metadata.insert(
+            "properties".to_string(),
+            Value::Array(v2_properties(request.properties)),
+        );
+        let metadata = Value::Object(metadata).to_string();
         let file_id = request.file_id;
         let if_match = request.if_match;
         let mime_type = request.mime_type;
@@ -399,14 +510,16 @@ impl DriveClient {
         let response = self
             .request_with_retry(Some(&file_id), || {
                 self.client
-                    .patch(url.clone())
+                    .put(url.clone())
                     .bearer_auth(access_token)
                     .header(IF_MATCH, &if_match)
                     .header(CONTENT_TYPE, &content_type)
                     .body(body.clone())
             })
             .await?;
-        Self::file_response(response, Some(&file_id)).await
+        let etag = Self::v2_etag_response(response, &file_id).await?;
+        self.refreshed_after_v2_mutation(access_token, &file_id, request.supports_all_drives, etag)
+            .await
     }
 
     pub async fn patch_metadata(
@@ -414,14 +527,14 @@ impl DriveClient {
         access_token: &str,
         request: PatchMetadataRequest,
     ) -> Result<DriveFileDto, DriveApiError> {
-        let mut url = Self::endpoint(&self.api_base, &["files", &request.file_id])?;
+        let mut url = Self::endpoint(&self.v2_api_base, &["files", &request.file_id])?;
         {
             let mut query = url.query_pairs_mut();
             query.append_pair(
                 "supportsAllDrives",
                 &request.supports_all_drives.to_string(),
             );
-            query.append_pair("fields", FILE_FIELDS);
+            query.append_pair("fields", "etag");
             if let Some(add_parents) = request.add_parents.as_deref() {
                 query.append_pair("addParents", add_parents);
             }
@@ -431,10 +544,13 @@ impl DriveClient {
         }
         let mut metadata = Map::new();
         if let Some(name) = request.name {
-            metadata.insert("name".to_string(), Value::String(name));
+            metadata.insert("title".to_string(), Value::String(name));
         }
         if let Some(properties) = request.properties {
-            metadata.insert("properties".to_string(), json!(properties));
+            metadata.insert(
+                "properties".to_string(),
+                Value::Array(v2_properties(properties)),
+            );
         }
         let file_id = request.file_id;
         let if_match = request.if_match;
@@ -447,7 +563,9 @@ impl DriveClient {
                     .json(&metadata)
             })
             .await?;
-        Self::file_response(response, Some(&file_id)).await
+        let etag = Self::v2_etag_response(response, &file_id).await?;
+        self.refreshed_after_v2_mutation(access_token, &file_id, request.supports_all_drives, etag)
+            .await
     }
 
     pub async fn trash_file(
@@ -455,26 +573,53 @@ impl DriveClient {
         access_token: &str,
         request: TrashFileRequest,
     ) -> Result<DriveFileDto, DriveApiError> {
-        let mut url = Self::endpoint(&self.api_base, &["files", &request.file_id])?;
+        let mut url = Self::endpoint(&self.v2_api_base, &["files", &request.file_id, "trash"])?;
         url.query_pairs_mut()
             .append_pair(
                 "supportsAllDrives",
                 &request.supports_all_drives.to_string(),
             )
-            .append_pair("fields", FILE_FIELDS);
+            .append_pair("fields", "etag");
         let file_id = request.file_id;
         let if_match = request.if_match;
         let response = self
             .request_with_retry(Some(&file_id), || {
                 self.client
-                    .patch(url.clone())
+                    .post(url.clone())
                     .bearer_auth(access_token)
                     .header(IF_MATCH, &if_match)
-                    .json(&TrashMetadataDto { trashed: true })
             })
             .await?;
-        Self::file_response(response, Some(&file_id)).await
+        let etag = Self::v2_etag_response(response, &file_id).await?;
+        self.refreshed_after_v2_mutation(access_token, &file_id, request.supports_all_drives, etag)
+            .await
     }
+}
+
+fn v2_base_from_v3(v3_base: &Url) -> Url {
+    let mut v2_base = v3_base.clone();
+    let path = v3_base.path().trim_end_matches('/');
+    if let Some(prefix) = path.strip_suffix("/v3") {
+        v2_base.set_path(&format!("{prefix}/v2"));
+    } else {
+        v2_base.set_path(&format!("{path}/v2"));
+    }
+    v2_base
+}
+
+fn v2_properties(properties: std::collections::HashMap<String, String>) -> Vec<Value> {
+    let mut properties = properties.into_iter().collect::<Vec<_>>();
+    properties.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+    properties
+        .into_iter()
+        .map(|(key, value)| {
+            json!({
+                "key": key,
+                "value": value,
+                "visibility": "PUBLIC",
+            })
+        })
+        .collect()
 }
 
 fn multipart_related_body(metadata: &str, mime_type: &str, bytes: &[u8]) -> (String, Vec<u8>) {
@@ -723,9 +868,13 @@ mod tests {
         matches_multipart_related(
             request,
             &json!({
-                "name": "invoice-updated.pdf",
+                "title": "invoice-updated.pdf",
                 "mimeType": "application/pdf",
-                "properties": {"lotusSchema": "1"}
+                "properties": [{
+                    "key": "lotusSchema",
+                    "value": "1",
+                    "visibility": "PUBLIC"
+                }]
             }),
             "application/pdf",
             &[0, 254, 13, 10, 129, 43],
@@ -803,7 +952,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn get_and_download_send_shared_drive_flags_and_capture_http_etags() {
+    async fn get_and_download_read_v2_resource_etags_and_preserve_them_across_media_downloads() {
         let server = MockServer::start();
         let get = server.mock(|when, then| {
             when.method(GET)
@@ -814,9 +963,15 @@ mod tests {
                     "id,name,mimeType,parents,driveId,ownedByMe,trashed,version,size,md5Checksum,sha256Checksum,properties,capabilities(canListChildren,canAddChildren,canEdit,canDownload)",
                 )
                 .header("authorization", "Bearer token");
-            then.status(200)
-                .header("etag", "\"file-1-v3\"")
-                .json_body(file_json("file-1", "3"));
+            then.status(200).json_body(file_json("file-1", "3"));
+        });
+        let get_etag = server.mock(|when, then| {
+            when.method(GET)
+                .path("/drive/v2/files/file-1")
+                .query_param("supportsAllDrives", "true")
+                .query_param("fields", "etag")
+                .header("authorization", "Bearer token");
+            then.status(200).json_body(json!({"etag": "\"file-1-v3\""}));
         });
         let download = server.mock(|when, then| {
             when.method(GET)
@@ -824,9 +979,7 @@ mod tests {
                 .query_param("alt", "media")
                 .query_param("supportsAllDrives", "true")
                 .header("authorization", "Bearer token");
-            then.status(200)
-                .header("etag", "\"file-1-v3\"")
-                .body("pdf bytes");
+            then.status(200).body("pdf bytes");
         });
         let client = test_client(&server);
 
@@ -852,6 +1005,7 @@ mod tests {
             .unwrap();
 
         get.assert_hits(2);
+        get_etag.assert_hits(4);
         download.assert();
         assert_eq!(fetched.etag.as_deref(), Some("\"file-1-v3\""));
         assert_eq!(downloaded.file.etag.as_deref(), Some("\"file-1-v3\""));
@@ -886,7 +1040,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn create_folder_sends_metadata_shared_drive_flag_and_captures_etag() {
+    async fn create_folder_sends_v3_metadata_and_reads_its_v2_etag() {
         let server = MockServer::start();
         let create = server.mock(|when, then| {
             when.method(POST)
@@ -903,9 +1057,23 @@ mod tests {
                     "parents": ["root-folder"],
                     "properties": {"lotusSchema": "1"}
                 }));
-            then.status(200)
-                .header("etag", "\"folder-v1\"")
-                .json_body(file_json("folder-1", "1"));
+            then.status(200).json_body(file_json("folder-1", "1"));
+        });
+        let get_etag = server.mock(|when, then| {
+            when.method(GET)
+                .path("/drive/v2/files/folder-1")
+                .query_param("supportsAllDrives", "true")
+                .query_param("fields", "etag")
+                .header("authorization", "Bearer token");
+            then.status(200).json_body(json!({"etag": "\"folder-v1\""}));
+        });
+        let refresh = server.mock(|when, then| {
+            when.method(GET)
+                .path("/drive/v3/files/folder-1")
+                .query_param("supportsAllDrives", "true")
+                .query_param("fields", FILE_FIELDS)
+                .header("authorization", "Bearer token");
+            then.status(200).json_body(file_json("folder-1", "1"));
         });
 
         let result = test_client(&server)
@@ -922,6 +1090,8 @@ mod tests {
             .unwrap();
 
         create.assert();
+        get_etag.assert_hits(2);
+        refresh.assert();
         assert_eq!(result.etag.as_deref(), Some("\"folder-v1\""));
     }
 
@@ -972,7 +1142,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn create_file_sends_multipart_metadata_content_and_shared_drive_flag() {
+    async fn create_file_sends_v3_multipart_content_and_reads_its_v2_etag() {
         let server = MockServer::start();
         let binary_payload = vec![0, 255, 13, 10, 128, 42];
         let create = server.mock(|when, then| {
@@ -986,9 +1156,23 @@ mod tests {
                 )
                 .header("authorization", "Bearer token")
                 .matches(matches_invoice_multipart_related);
-            then.status(200)
-                .header("etag", "\"file-v1\"")
-                .json_body(file_json("file-1", "1"));
+            then.status(200).json_body(file_json("file-1", "1"));
+        });
+        let get_etag = server.mock(|when, then| {
+            when.method(GET)
+                .path("/drive/v2/files/file-1")
+                .query_param("supportsAllDrives", "true")
+                .query_param("fields", "etag")
+                .header("authorization", "Bearer token");
+            then.status(200).json_body(json!({"etag": "\"file-v1\""}));
+        });
+        let refresh = server.mock(|when, then| {
+            when.method(GET)
+                .path("/drive/v3/files/file-1")
+                .query_param("supportsAllDrives", "true")
+                .query_param("fields", FILE_FIELDS)
+                .header("authorization", "Bearer token");
+            then.status(200).json_body(file_json("file-1", "1"));
         });
 
         let result = test_client(&server)
@@ -1008,6 +1192,8 @@ mod tests {
             .unwrap();
 
         create.assert();
+        get_etag.assert_hits(2);
+        refresh.assert();
         assert_eq!(result.etag.as_deref(), Some("\"file-v1\""));
     }
 
@@ -1045,23 +1231,34 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn conditional_update_sends_if_match_and_returns_response_etag() {
+    async fn conditional_update_uses_v2_etag_and_returns_refreshed_v3_metadata() {
         let server = MockServer::start();
         let update = server.mock(|when, then| {
-            when.method(PATCH)
-                .path("/upload/drive/v3/files/file-1")
+            when.method(httpmock::Method::PUT)
+                .path("/upload/drive/v2/files/file-1")
                 .query_param("uploadType", "multipart")
                 .query_param("supportsAllDrives", "true")
-                .query_param(
-                    "fields",
-                    "id,name,mimeType,parents,driveId,ownedByMe,trashed,version,size,md5Checksum,sha256Checksum,properties,capabilities(canListChildren,canAddChildren,canEdit,canDownload)",
-                )
+                .query_param("fields", "etag")
                 .header("authorization", "Bearer token")
                 .header("if-match", "\"file-1-v3\"")
                 .matches(matches_update_multipart_related);
-            then.status(200)
-                .header("etag", "\"file-1-v4\"")
-                .json_body(file_json("file-1", "4"));
+            then.status(200).json_body(json!({"etag": "\"file-1-v4\""}));
+        });
+        let refresh = server.mock(|when, then| {
+            when.method(GET)
+                .path("/drive/v3/files/file-1")
+                .query_param("supportsAllDrives", "true")
+                .query_param("fields", FILE_FIELDS)
+                .header("authorization", "Bearer token");
+            then.status(200).json_body(file_json("file-1", "4"));
+        });
+        let current_etag = server.mock(|when, then| {
+            when.method(GET)
+                .path("/drive/v2/files/file-1")
+                .query_param("supportsAllDrives", "true")
+                .query_param("fields", "etag")
+                .header("authorization", "Bearer token");
+            then.status(200).json_body(json!({"etag": "\"file-1-v4\""}));
         });
         let result = test_client(&server)
             .update_file("token", update_request("file-1", "\"file-1-v3\""))
@@ -1069,14 +1266,62 @@ mod tests {
             .unwrap();
 
         update.assert();
+        refresh.assert_hits(2);
+        current_etag.assert();
         assert_eq!(result.etag.as_deref(), Some("\"file-1-v4\""));
+    }
+
+    #[tokio::test]
+    async fn conditional_update_moves_the_file_to_the_requested_parent_atomically() {
+        let server = MockServer::start();
+        let update = server.mock(|when, then| {
+            when.method(httpmock::Method::PUT)
+                .path("/upload/drive/v2/files/file-1")
+                .query_param("uploadType", "multipart")
+                .query_param("supportsAllDrives", "true")
+                .query_param("fields", "etag")
+                .query_param("addParents", "folder-2")
+                .query_param("removeParents", "folder-1")
+                .header("authorization", "Bearer token")
+                .header("if-match", "\"file-1-v3\"")
+                .matches(matches_update_multipart_related);
+            then.status(200).json_body(json!({"etag": "\"file-1-v4\""}));
+        });
+        let metadata = server.mock(|when, then| {
+            when.method(GET)
+                .path("/drive/v3/files/file-1")
+                .query_param("supportsAllDrives", "true")
+                .query_param("fields", FILE_FIELDS)
+                .header("authorization", "Bearer token");
+            then.status(200).json_body(file_json("file-1", "4"));
+        });
+        let current_etag = server.mock(|when, then| {
+            when.method(GET)
+                .path("/drive/v2/files/file-1")
+                .query_param("supportsAllDrives", "true")
+                .query_param("fields", "etag")
+                .header("authorization", "Bearer token");
+            then.status(200).json_body(json!({"etag": "\"file-1-v4\""}));
+        });
+        let mut request = update_request("file-1", "\"file-1-v3\"");
+        request.parents = vec!["folder-2".to_string()];
+
+        test_client(&server)
+            .update_file("token", request)
+            .await
+            .unwrap();
+
+        update.assert();
+        metadata.assert_hits(2);
+        current_etag.assert_hits(1);
     }
 
     #[tokio::test]
     async fn update_file_rejects_zero_or_multiple_parents_before_sending() {
         let server = MockServer::start();
         let unexpected = server.mock(|when, then| {
-            when.method(PATCH).path("/upload/drive/v3/files/file-1");
+            when.method(httpmock::Method::PUT)
+                .path("/upload/drive/v2/files/file-1");
             then.status(200)
                 .header("etag", "\"unexpected\"")
                 .json_body(file_json("file-1", "4"));
@@ -1094,27 +1339,42 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn patch_metadata_sends_if_match_parent_changes_and_shared_drive_flag() {
+    async fn patch_metadata_uses_v2_etag_parent_changes_and_refreshes_v3_metadata() {
         let server = MockServer::start();
         let patch = server.mock(|when, then| {
             when.method(PATCH)
-                .path("/drive/v3/files/file-1")
+                .path("/drive/v2/files/file-1")
                 .query_param("addParents", "folder-2")
                 .query_param("removeParents", "folder-1")
                 .query_param("supportsAllDrives", "true")
-                .query_param(
-                    "fields",
-                    "id,name,mimeType,parents,driveId,ownedByMe,trashed,version,size,md5Checksum,sha256Checksum,properties,capabilities(canListChildren,canAddChildren,canEdit,canDownload)",
-                )
+                .query_param("fields", "etag")
                 .header("authorization", "Bearer token")
                 .header("if-match", "\"file-1-v3\"")
                 .json_body(json!({
-                    "name": "renamed.pdf",
-                    "properties": {"lotusSchema": "1"}
+                    "title": "renamed.pdf",
+                    "properties": [{
+                        "key": "lotusSchema",
+                        "value": "1",
+                        "visibility": "PUBLIC"
+                    }]
                 }));
-            then.status(200)
-                .header("etag", "\"file-1-v4\"")
-                .json_body(file_json("file-1", "4"));
+            then.status(200).json_body(json!({"etag": "\"file-1-v4\""}));
+        });
+        let refresh = server.mock(|when, then| {
+            when.method(GET)
+                .path("/drive/v3/files/file-1")
+                .query_param("supportsAllDrives", "true")
+                .query_param("fields", FILE_FIELDS)
+                .header("authorization", "Bearer token");
+            then.status(200).json_body(file_json("file-1", "4"));
+        });
+        let current_etag = server.mock(|when, then| {
+            when.method(GET)
+                .path("/drive/v2/files/file-1")
+                .query_param("supportsAllDrives", "true")
+                .query_param("fields", "etag")
+                .header("authorization", "Bearer token");
+            then.status(200).json_body(json!({"etag": "\"file-1-v4\""}));
         });
 
         let result = test_client(&server)
@@ -1137,26 +1397,40 @@ mod tests {
             .unwrap();
 
         patch.assert();
+        refresh.assert();
+        current_etag.assert();
         assert_eq!(result.etag.as_deref(), Some("\"file-1-v4\""));
     }
 
     #[tokio::test]
-    async fn trash_file_sends_only_trashed_with_if_match_and_shared_drive_flag() {
+    async fn trash_file_uses_v2_etag_and_refreshes_v3_metadata() {
         let server = MockServer::start();
-        let patch = server.mock(|when, then| {
-            when.method(PATCH)
+        let trash = server.mock(|when, then| {
+            when.method(httpmock::Method::POST)
+                .path("/drive/v2/files/file-1/trash")
+                .query_param("supportsAllDrives", "true")
+                .query_param("fields", "etag")
+                .header("authorization", "Bearer token")
+                .header("if-match", "\"file-1-v3\"");
+            then.status(200).json_body(json!({"etag": "\"file-1-v4\""}));
+        });
+        let refresh = server.mock(|when, then| {
+            when.method(GET)
                 .path("/drive/v3/files/file-1")
                 .query_param("supportsAllDrives", "true")
-                .query_param(
-                    "fields",
-                    "id,name,mimeType,parents,driveId,ownedByMe,trashed,version,size,md5Checksum,sha256Checksum,properties,capabilities(canListChildren,canAddChildren,canEdit,canDownload)",
-                )
-                .header("authorization", "Bearer token")
-                .header("if-match", "\"file-1-v3\"")
-                .json_body(json!({"trashed": true}));
-            then.status(200)
-                .header("etag", "\"file-1-v4\"")
-                .json_body(file_json("file-1", "4"));
+                .query_param("fields", FILE_FIELDS)
+                .header("authorization", "Bearer token");
+            let mut trashed = file_json("file-1", "4");
+            trashed["trashed"] = json!(true);
+            then.status(200).json_body(trashed);
+        });
+        let current_etag = server.mock(|when, then| {
+            when.method(GET)
+                .path("/drive/v2/files/file-1")
+                .query_param("supportsAllDrives", "true")
+                .query_param("fields", "etag")
+                .header("authorization", "Bearer token");
+            then.status(200).json_body(json!({"etag": "\"file-1-v4\""}));
         });
 
         let result = test_client(&server)
@@ -1171,7 +1445,10 @@ mod tests {
             .await
             .unwrap();
 
-        patch.assert();
+        trash.assert();
+        refresh.assert();
+        current_etag.assert();
+        assert!(result.trashed);
         assert_eq!(result.etag.as_deref(), Some("\"file-1-v4\""));
     }
 
@@ -1185,7 +1462,7 @@ mod tests {
         ] {
             let server = MockServer::start();
             let failure = server.mock(|when, then| {
-                when.method(GET).path("/drive/v3/files/file-1");
+                when.method(GET).path("/drive/v2/files/file-1");
                 then.status(status);
             });
 
@@ -1219,7 +1496,7 @@ mod tests {
         ] {
             let server = MockServer::start();
             let failure = server.mock(|when, then| {
-                when.method(GET).path("/drive/v3/files/file-1");
+                when.method(GET).path("/drive/v2/files/file-1");
                 then.status(status).header("retry-after", "0");
             });
 

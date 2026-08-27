@@ -2,7 +2,7 @@
 
 Allows native Google authorization and cached PDF opening on Android.
 
-#### This default permission set includes the following
+#### This default permission set includes the following:
 
 - `allow-authorize`
 - `allow-clearAccessToken`

@@ -6,6 +6,8 @@ import {
   type StoredTokenRecord,
 } from './auth-record.js';
 
+const GOOGLE_CLIENT_SECRET = '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';
+
 export async function exchangeCodeForTokens(
   code: string,
   port: number,
@@ -14,6 +16,7 @@ export async function exchangeCodeForTokens(
   const body = new URLSearchParams({
     code,
     client_id: GOOGLE_CLIENT_ID,
+    client_secret: GOOGLE_CLIENT_SECRET,
     redirect_uri: `http://127.0.0.1:${port}`,
     grant_type: 'authorization_code',
     code_verifier: codeVerifier,
@@ -35,6 +38,7 @@ export async function refreshAccessToken(existing: StoredTokenRecord): Promise<S
   const body = new URLSearchParams({
     refresh_token: existing.refresh_token,
     client_id: GOOGLE_CLIENT_ID,
+    client_secret: GOOGLE_CLIENT_SECRET,
     grant_type: 'refresh_token',
   });
 

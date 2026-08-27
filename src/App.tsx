@@ -424,6 +424,9 @@ export default function App() {
         open={driveFolder.dialogOpen}
         layout={layout}
         currentRoot={driveInvoices.snapshot?.stagedRoot.root ?? null}
+        detectedFolders={
+          driveInvoices.snapshot === null ? [] : [driveInvoices.snapshot.stagedRoot.rootFile]
+        }
         legacyLastInvoice={config.lastInvoice}
         folderService={driveFolderService}
         scanCandidate={driveFolder.scanCandidate}

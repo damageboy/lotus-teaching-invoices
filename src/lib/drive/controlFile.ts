@@ -268,9 +268,9 @@ function isControlCandidate(file: DriveFileRecord): boolean {
     file.name === CONTROL_FILE_NAME &&
     file.mimeType === CONTROL_MIME_TYPE &&
     file.properties[CONTROL_PROPERTY_KEY] === CONTROL_PROPERTY_VALUE &&
-    file.ownedByMe === true &&
-    file.driveId === null &&
-    file.trashed === false
+    file.trashed === false &&
+    file.capabilities.canEdit &&
+    file.capabilities.canDownload
   );
 }
 
@@ -400,7 +400,7 @@ export class DriveControlRepository {
       fileId,
       name: CONTROL_FILE_NAME,
       mimeType: CONTROL_MIME_TYPE,
-      parents: ['root'],
+      parents: [validated.root.folderId],
       properties: { [CONTROL_PROPERTY_KEY]: CONTROL_PROPERTY_VALUE },
       bytes: Array.from(new TextEncoder().encode(JSON.stringify(validated))),
       supportsAllDrives: true,
@@ -426,7 +426,7 @@ export class DriveControlRepository {
       fileId: snapshot.file.id,
       name: CONTROL_FILE_NAME,
       mimeType: CONTROL_MIME_TYPE,
-      parents: [...snapshot.file.parents],
+      parents: [validatedNext.root.folderId],
       properties: {
         ...snapshot.file.properties,
         [CONTROL_PROPERTY_KEY]: CONTROL_PROPERTY_VALUE,

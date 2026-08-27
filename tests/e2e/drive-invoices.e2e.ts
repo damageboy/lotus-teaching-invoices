@@ -371,6 +371,7 @@ async function createAndActivateRoot(
   }
   const dialog = await $(DRIVE_FOLDER_DIALOG);
   await expect(dialog).toBeDisplayed();
+  await dialog.$('button=Create / Select folder…').click();
   await dialog.$('button=My Drive').click();
   const input = await dialog.$('label*=New folder name').$('input');
   await input.setValue(name);
@@ -546,6 +547,32 @@ describe('Drive invoices across desktop and Android clients', () => {
   });
 
   it('activates Drive from Welcome, unlocks Calendar, and survives a configured reload', async () => {
+    await mutate({
+      type: 'driveUpsert',
+      file: {
+        id: 'stale-control-before-first-activation',
+        name: '.lotus-teaching-invoices.json',
+        mimeType: 'application/json',
+        parents: ['root'],
+        driveId: null,
+        ownedByMe: true,
+        properties: { lotusConfigSchema: '1' },
+        bytesBase64: Buffer.from(
+          JSON.stringify({
+            schemaVersion: 1,
+            generation: 1,
+            root: {
+              folderId: 'missing-recorded-root',
+              driveId: null,
+              folderName: 'Removed old root',
+            },
+            finalFolderId: 'missing-recorded-final',
+            sequenceByYear: {},
+            reservation: null,
+          })
+        ).toString('base64'),
+      },
+    });
     await createAndActivateRoot('Lotus E2E Root', { openInvoices: false });
     const current = await state();
     const stored = activeDriveControl(current);
@@ -715,9 +742,9 @@ describe('Drive invoices across desktop and Android clients', () => {
     const before = (await state()).files.find((file) => file.id === augustPdfId)!;
     const externalBytes = Buffer.from('%PDF-1.7\nAndroid concurrent mutation\n');
     const externalChecksum = sha256(externalBytes);
-    const uploadPath = `/upload/drive/v3/files/${augustPdfId}`;
+    const uploadPath = `/upload/drive/v2/files/${augustPdfId}`;
     const beforeRequests = (await requests()).filter(
-      (request) => request.method === 'PATCH' && request.path === uploadPath
+      (request) => request.method === 'PUT' && request.path === uploadPath
     ).length;
     expect(
       (
@@ -747,7 +774,7 @@ describe('Drive invoices across desktop and Android clients', () => {
       lotusPdfSha256: externalChecksum,
     });
     const uploadRequests = (await requests()).filter(
-      (request) => request.method === 'PATCH' && request.path === uploadPath
+      (request) => request.method === 'PUT' && request.path === uploadPath
     );
     expect(uploadRequests).toHaveLength(beforeRequests + 1);
     expect(uploadRequests.at(-1)).toMatchObject({

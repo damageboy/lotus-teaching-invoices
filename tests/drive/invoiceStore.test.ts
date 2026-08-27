@@ -164,9 +164,9 @@ function controlFile(control: DriveControl): MemoryDriveFile {
     id: CONTROL_ID,
     name: '.lotus-teaching-invoices.json',
     mimeType: 'application/json',
-    parents: ['root'],
-    driveId: null,
-    ownedByMe: true,
+    parents: [control.root.folderId],
+    driveId: control.root.driveId,
+    ownedByMe: control.root.driveId === null,
     trashed: false,
     version: '1',
     size: String(bytes.byteLength),
@@ -358,6 +358,21 @@ describe('DriveInvoiceStore activation and bootstrap', () => {
     await expect(store.bootstrap([])).rejects.toMatchObject({ code: 'duplicate' });
     expect(createFolder).not.toHaveBeenCalled();
     expect(api.mutations()).toEqual([]);
+  });
+
+  it('moves a legacy root-level control file into its recorded Lotus folder during bootstrap', async () => {
+    const api = new MemoryDriveApi(
+      configuredDrive().map((file) =>
+        file.id === CONTROL_ID
+          ? { ...file, parents: ['root'], driveId: null, ownedByMe: true }
+          : file
+      )
+    );
+
+    const snapshot = await makeStore(api).bootstrap([]);
+
+    expect(snapshot?.control.file.parents).toEqual([ROOT_ID]);
+    expect(api.file(CONTROL_ID).parents).toEqual([ROOT_ID]);
   });
 
   it('blocks when the recorded Final is no longer its root direct child', async () => {

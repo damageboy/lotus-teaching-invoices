@@ -214,7 +214,7 @@ describe('getAccessToken', () => {
     expect(opened.searchParams.get('code_challenge')).toBe(
       createHash('sha256').update(codeVerifier!).digest('base64url')
     );
-    expect(tokenRequest.has('client_secret')).toBe(false);
+    expect(tokenRequest.get('client_secret')).toMatch(/^GOCSPX-/);
     const expectedState = coreMocks.invoke.mock.calls.find(
       ([command]) => command === 'start_oauth_server'
     )?.[1]?.expectedState;
@@ -317,7 +317,7 @@ describe('getAccessToken', () => {
       String(httpMocks.fetch.mock.calls[0]?.[1]?.body ?? '')
     );
     expect(tokenRequest.get('grant_type')).toBe('refresh_token');
-    expect(tokenRequest.has('client_secret')).toBe(false);
+    expect(tokenRequest.get('client_secret')).toMatch(/^GOCSPX-/);
     expect(openerMocks.openUrl).not.toHaveBeenCalled();
     expect(JSON.parse(storedRaw!)).toMatchObject({
       access_token: 'refreshed-access',

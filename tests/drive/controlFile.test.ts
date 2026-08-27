@@ -108,9 +108,13 @@ function configuredApi(
 
 describe('DriveControlRepository discovery', () => {
   it('discovers one owned normal-Drive control file across all pages', async () => {
-    const shared = file('shared', { driveId: 'shared-drive', ownedByMe: false });
+    const unreadableShared = file('shared', {
+      driveId: 'shared-drive',
+      ownedByMe: false,
+      capabilities: { ...file('shared').capabilities, canDownload: false },
+    });
     const owned = file('control-1');
-    const driveApi = configuredApi([[shared], [owned]]);
+    const driveApi = configuredApi([[unreadableShared], [owned]]);
     const listFiles = driveApi.listFiles as ReturnType<typeof vi.fn>;
 
     const result = await new DriveControlRepository(driveApi).discover();
@@ -150,15 +154,39 @@ describe('DriveControlRepository discovery', () => {
     });
   });
 
-  it('filters wrong-name, wrong-MIME, unmarked, trashed, shared, and not-owned results', async () => {
+  it('discovers an editable marked control inside a Shared Drive folder', async () => {
+    const sharedControl = file('control-1', {
+      parents: ['shared-invoice-root'],
+      driveId: 'shared-drive',
+      ownedByMe: false,
+    });
+    const exact = file('control-1', {
+      parents: ['shared-invoice-root'],
+      driveId: 'shared-drive',
+      ownedByMe: false,
+      etag: '"exact-etag"',
+    });
+    const driveApi = configuredApi([[sharedControl]], exact, download(exact));
+
+    await expect(new DriveControlRepository(driveApi).discover()).resolves.toMatchObject({
+      kind: 'configured',
+      snapshot: { file: { parents: ['shared-invoice-root'], driveId: 'shared-drive' } },
+    });
+  });
+
+  it('filters wrong-name, wrong-MIME, unmarked, trashed, and unusable results', async () => {
     const driveApi = configuredApi([
       [
         file('wrong-name', { name: 'lotus.json' }),
         file('wrong-mime', { mimeType: 'text/plain' }),
         file('unmarked', { properties: {} }),
         file('trashed', { trashed: true }),
-        file('shared', { driveId: 'shared-drive' }),
-        file('not-owned', { ownedByMe: false }),
+        file('not-editable', {
+          capabilities: { ...file('not-editable').capabilities, canEdit: false },
+        }),
+        file('not-downloadable', {
+          capabilities: { ...file('not-downloadable').capabilities, canDownload: false },
+        }),
       ],
     ]);
 
@@ -405,7 +433,7 @@ describe('DriveControlRepository discovery', () => {
 });
 
 describe('DriveControlRepository create', () => {
-  it('pre-generates an ID, re-lists before and after, and creates the marked root file', async () => {
+  it('pre-generates an ID, re-lists before and after, and creates the marked file inside the selected root', async () => {
     const events: string[] = [];
     const created = file('generated-1', { etag: '"create-response"' });
     const downloaded = file('generated-1', { etag: '"exact-created"' });
@@ -445,7 +473,7 @@ describe('DriveControlRepository create', () => {
       fileId: 'generated-1',
       name: CONTROL_NAME,
       mimeType: 'application/json',
-      parents: ['root'],
+      parents: ['invoice-root'],
       properties: CONTROL_MARKER,
       supportsAllDrives: true,
     });
@@ -542,7 +570,7 @@ describe('DriveControlRepository replace', () => {
       ifMatch: '"download-etag"',
       name: CONTROL_NAME,
       mimeType: 'application/json',
-      parents: ['root'],
+      parents: ['new-root'],
       properties: CONTROL_MARKER,
       supportsAllDrives: true,
     });

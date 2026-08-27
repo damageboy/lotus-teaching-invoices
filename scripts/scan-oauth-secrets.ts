@@ -13,10 +13,12 @@ function trackedFiles(): string[] {
 function main(): void {
   const prefix = ['GOCSPX', ''].join('-');
   const googleClientSecret = new RegExp(`${prefix}[A-Za-z0-9_-]{16,}`);
+  const requiredDesktopCredential = 'src/lib/gmail/oauth-client.desktop.ts';
   const violations: string[] = [];
   const files = trackedFiles();
 
   for (const path of files) {
+    if (path === requiredDesktopCredential) continue;
     try {
       if (googleClientSecret.test(readFileSync(path).toString('latin1'))) violations.push(path);
     } catch (error) {

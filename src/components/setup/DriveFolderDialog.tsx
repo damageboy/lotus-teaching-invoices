@@ -20,6 +20,7 @@ export interface DriveFolderDialogProps {
   open: boolean;
   layout: DriveFolderDialogLayout;
   currentRoot: DriveRootPointer | null;
+  detectedFolders: readonly DriveFileRecord[];
   legacyLastInvoice?: string;
   folderService: DriveFolderBrowserService;
   scanCandidate(stagedRoot: StagedDriveRoot): Promise<DriveInvoiceScan>;
@@ -27,7 +28,7 @@ export interface DriveFolderDialogProps {
   onClose(): void;
 }
 
-type DialogPhase = 'browse' | 'scanning' | 'confirm';
+type DialogPhase = 'landing' | 'browse' | 'scanning' | 'confirm';
 
 interface MobileHistoryEntry {
   id: number;
@@ -68,6 +69,7 @@ export function DriveFolderDialog({
   open,
   layout,
   currentRoot,
+  detectedFolders,
   legacyLastInvoice,
   folderService,
   scanCandidate,
@@ -80,7 +82,7 @@ export function DriveFolderDialog({
   const confirmingRef = useRef(false);
   const mobileHistoryRef = useRef<MobileHistoryEntry | null>(null);
   const mobileHistorySequenceRef = useRef(0);
-  const [phase, setPhase] = useState<DialogPhase>('browse');
+  const [phase, setPhase] = useState<DialogPhase>('landing');
   const [locations, setLocations] = useState<DriveLocation[]>([]);
   const [location, setLocation] = useState<DriveLocation | null>(null);
   const [path, setPath] = useState<DriveFileRecord[]>([]);
@@ -196,7 +198,7 @@ export function DriveFolderDialog({
       requestRef.current += 1;
       return;
     }
-    setPhase('browse');
+    setPhase('landing');
     setLocations([]);
     setLocation(null);
     setPath([]);
@@ -210,11 +212,10 @@ export function DriveFolderDialog({
     setScanFailed(false);
     setConfirming(false);
     confirmingRef.current = false;
-    void loadLocations();
     return () => {
       requestRef.current += 1;
     };
-  }, [loadLocations, open]);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -347,15 +348,22 @@ export function DriveFolderDialog({
     }
   }
 
-  async function stageCandidate(): Promise<void> {
-    if (currentFolder === null) return;
+  async function openBrowser(): Promise<void> {
+    setPhase('browse');
+    await loadLocations();
+  }
+
+  async function stageFolder(
+    folder: DriveFileRecord,
+    failurePhase: 'landing' | 'browse'
+  ): Promise<void> {
     const request = ++requestRef.current;
     setPhase('scanning');
     setError(null);
     setCandidateScan(null);
     setScanFailed(false);
     try {
-      const staged = await folderService.stageRoot(currentFolder);
+      const staged = await folderService.stageRoot(folder);
       if (request !== requestRef.current) return;
       const scan = await scanCandidate(staged);
       if (request !== requestRef.current) return;
@@ -366,8 +374,13 @@ export function DriveFolderDialog({
     } catch (cause) {
       if (request !== requestRef.current) return;
       setError(errorMessage(cause));
-      setPhase('browse');
+      setPhase(failurePhase);
     }
+  }
+
+  async function stageCandidate(): Promise<void> {
+    if (currentFolder === null) return;
+    await stageFolder(currentFolder, 'browse');
   }
 
   async function refreshScan(): Promise<void> {
@@ -469,6 +482,40 @@ export function DriveFolderDialog({
             ×
           </button>
         </div>
+
+        {phase === 'landing' && (
+          <div className="mt-5 flex flex-col gap-4">
+            <h3 className="text-sm font-semibold text-gray-700">Detected Lotus folders</h3>
+            {detectedFolders.length === 0 ? (
+              <p className="text-sm text-gray-500">No Lotus folders detected</p>
+            ) : (
+              <div className="grid gap-2">
+                {detectedFolders.map((folder) => (
+                  <button
+                    key={folder.id}
+                    type="button"
+                    onClick={() => void stageFolder(folder, 'landing')}
+                    className={`${touchClass} rounded border border-gray-200 px-3 py-2 text-left text-sm font-medium text-gray-800 hover:bg-indigo-50`}
+                  >
+                    {folder.name}
+                  </button>
+                ))}
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => void openBrowser()}
+              className={`${touchClass} rounded bg-indigo-600 px-4 py-2 text-sm font-semibold text-white`}
+            >
+              Create / Select folder…
+            </button>
+            {error !== null && (
+              <p role="alert" className="text-sm text-red-700">
+                {error}
+              </p>
+            )}
+          </div>
+        )}
 
         {phase === 'browse' && (
           <div className="mt-5 flex flex-col gap-4">

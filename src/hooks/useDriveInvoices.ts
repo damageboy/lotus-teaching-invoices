@@ -472,19 +472,25 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
   );
 
   const enqueueMutation = useCallback(
-    <T>(key: string, mutate: (store: DriveInvoiceStoreController) => Promise<T>): Promise<T> => {
+    <T>(
+      key: string,
+      mutate: (store: DriveInvoiceStoreController) => Promise<T>,
+      refreshBefore = true
+    ): Promise<T> => {
       const context = currentContext();
       const execute = async (): Promise<T> => {
         requireCurrentContext(context);
         const token = beginOperation(key, context);
         try {
-          try {
-            await runRefresh();
-          } catch (cause) {
+          if (refreshBefore) {
+            try {
+              await runRefresh();
+            } catch (cause) {
+              requireCurrentContext(context);
+              throw cause;
+            }
             requireCurrentContext(context);
-            throw cause;
           }
-          requireCurrentContext(context);
 
           let result: T;
           try {
@@ -531,10 +537,13 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
     (staged: StagedDriveRoot, legacyLastInvoice?: string): Promise<void> => {
       const driveKey = staged.root.driveId ?? 'my-drive';
       const key = `activateRoot:${driveKey}:${staged.root.folderId}`;
-      return enqueueMutation(key, (store) =>
-        store
-          .activateRoot(staged, committedOptionsRef.current.sources, legacyLastInvoice)
-          .then(() => undefined)
+      return enqueueMutation(
+        key,
+        (store) =>
+          store
+            .activateRoot(staged, committedOptionsRef.current.sources, legacyLastInvoice)
+            .then(() => undefined),
+        false
       );
     },
     [enqueueMutation]

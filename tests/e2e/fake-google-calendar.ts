@@ -259,6 +259,27 @@ function parseMultipart(
   };
 }
 
+function parseV2Properties(value: unknown): Record<string, string> | null {
+  if (value === undefined) return null;
+  if (!Array.isArray(value)) throw new Error('Drive v2 properties must be an array');
+  const properties: Record<string, string> = {};
+  for (const property of value) {
+    if (
+      typeof property !== 'object' ||
+      property === null ||
+      Array.isArray(property) ||
+      typeof (property as Record<string, unknown>).key !== 'string' ||
+      typeof (property as Record<string, unknown>).value !== 'string' ||
+      (property as Record<string, unknown>).visibility !== 'PUBLIC'
+    ) {
+      throw new Error('invalid Drive v2 public property');
+    }
+    const entry = property as { key: string; value: string };
+    properties[entry.key] = entry.value;
+  }
+  return properties;
+}
+
 function extractAttachmentSha256(raw: string): string | null {
   try {
     const mime = Buffer.from(raw, 'base64url').toString('utf8');
@@ -433,10 +454,11 @@ export async function startFakeGoogleCalendar(fixturePath: string): Promise<Fake
   const requireDriveFile = (
     fileId: string,
     supportsAllDrives: boolean,
-    response: ServerResponse
+    response: ServerResponse,
+    allowTrashed = false
   ): FakeDriveFile | null => {
     const file = driveFiles.get(fileId === 'root' ? 'my-drive-root' : fileId);
-    if (!file || file.trashed) {
+    if (!file || (!allowTrashed && file.trashed)) {
       googleError(response, 404, 'Drive file not found');
       return null;
     }
@@ -746,6 +768,8 @@ export async function startFakeGoogleCalendar(fixturePath: string): Promise<Fake
       if (
         url.pathname.startsWith('/drive/v3/') ||
         url.pathname.startsWith('/upload/drive/v3/') ||
+        url.pathname.startsWith('/drive/v2/') ||
+        url.pathname.startsWith('/upload/drive/v2/') ||
         url.pathname.startsWith('/gmail/v1/')
       ) {
         if (!hasValidAuthorization(request)) {
@@ -926,7 +950,8 @@ export async function startFakeGoogleCalendar(fixturePath: string): Promise<Fake
           const file = requireDriveFile(
             fileId,
             url.searchParams.get('supportsAllDrives') === 'true',
-            response
+            response,
+            true
           );
           if (!file) return;
           if (url.searchParams.get('alt') === 'media') {
@@ -943,6 +968,26 @@ export async function startFakeGoogleCalendar(fixturePath: string): Promise<Fake
           } else {
             writeDriveFile(response, file);
           }
+          return;
+        }
+
+        const exactV2FileMatch = /^\/drive\/v2\/files\/([^/]+)$/.exec(url.pathname);
+        if (exactV2FileMatch && method === 'GET') {
+          recordRequest(request, method, url);
+          const fileId = decodeURIComponent(exactV2FileMatch[1]!);
+          if (sendConfiguredError(method, url.pathname, response)) return;
+          const file = requireDriveFile(
+            fileId,
+            url.searchParams.get('supportsAllDrives') === 'true',
+            response,
+            true
+          );
+          if (!file) return;
+          if (url.searchParams.get('fields') !== 'etag') {
+            googleError(response, 400, 'Drive v2 ETag lookup requires fields=etag');
+            return;
+          }
+          json(response, 200, { etag: file.etag });
           return;
         }
 
@@ -990,6 +1035,74 @@ export async function startFakeGoogleCalendar(fixturePath: string): Promise<Fake
           if (removeParent) file.parents = file.parents.filter((parent) => parent !== removeParent);
           nextDriveVersion(file);
           writeDriveFile(response, file);
+          return;
+        }
+
+        if (exactV2FileMatch && method === 'PATCH') {
+          const bodyBytes = await readBytes(request);
+          const body = JSON.parse(bodyBytes.toString('utf8')) as Record<string, unknown>;
+          recordRequest(request, method, url, {
+            metadata: clone(body),
+            bodySha256: hash('sha256', bodyBytes),
+          });
+          const fileId = decodeURIComponent(exactV2FileMatch[1]!);
+          const file = requireDriveFile(
+            fileId,
+            url.searchParams.get('supportsAllDrives') === 'true',
+            response
+          );
+          if (!file) return;
+          if (!file.capabilities.canEdit) {
+            googleError(response, 403, 'Drive file cannot be edited');
+            return;
+          }
+          if (request.headers['if-match'] !== file.etag) {
+            const logged = requestLog.at(-1);
+            if (logged?.method === method && logged.path === url.pathname) {
+              logged.responseStatus = 412;
+            }
+            googleError(response, 412, 'Drive ETag conflict');
+            return;
+          }
+          if (sendConfiguredError(method, url.pathname, response)) return;
+          if (typeof body.title === 'string') file.name = body.title;
+          const properties = parseV2Properties(body.properties);
+          if (properties) file.properties = { ...(file.properties ?? {}), ...properties };
+          const addParent = url.searchParams.get('addParents');
+          const removeParent = url.searchParams.get('removeParents');
+          if (addParent) file.parents = [...new Set([...file.parents, addParent])];
+          if (removeParent) file.parents = file.parents.filter((parent) => parent !== removeParent);
+          nextDriveVersion(file);
+          json(response, 200, { etag: file.etag });
+          return;
+        }
+
+        const v2TrashMatch = /^\/drive\/v2\/files\/([^/]+)\/trash$/.exec(url.pathname);
+        if (v2TrashMatch && method === 'POST') {
+          recordRequest(request, method, url);
+          const fileId = decodeURIComponent(v2TrashMatch[1]!);
+          const file = requireDriveFile(
+            fileId,
+            url.searchParams.get('supportsAllDrives') === 'true',
+            response
+          );
+          if (!file) return;
+          if (!file.capabilities.canEdit) {
+            googleError(response, 403, 'Drive file cannot be edited');
+            return;
+          }
+          if (request.headers['if-match'] !== file.etag) {
+            const logged = requestLog.at(-1);
+            if (logged?.method === method && logged.path === url.pathname) {
+              logged.responseStatus = 412;
+            }
+            googleError(response, 412, 'Drive ETag conflict');
+            return;
+          }
+          if (sendConfiguredError(method, url.pathname, response)) return;
+          file.trashed = true;
+          nextDriveVersion(file);
+          json(response, 200, { etag: file.etag });
           return;
         }
 
@@ -1110,6 +1223,67 @@ export async function startFakeGoogleCalendar(fixturePath: string): Promise<Fake
           file.bytes = parsed.bytes;
           nextDriveVersion(file);
           writeDriveFile(response, file);
+          return;
+        }
+
+        const v2UploadMatch = /^\/upload\/drive\/v2\/files\/([^/]+)$/.exec(url.pathname);
+        if (v2UploadMatch && method === 'PUT') {
+          const bodyBytes = await readBytes(request, MAX_PDF_OR_GMAIL_BODY_BYTES);
+          const parsed = parseMultipart(
+            typeof request.headers['content-type'] === 'string'
+              ? request.headers['content-type']
+              : undefined,
+            bodyBytes
+          );
+          const isPdfUpload = parsed.metadata.mimeType === 'application/pdf';
+          if (!isPdfUpload && bodyBytes.length > MAX_BODY_BYTES) {
+            googleError(response, 413, 'non-PDF multipart body exceeds fake service limit');
+            return;
+          }
+          recordRequest(request, method, url, {
+            metadata: clone(parsed.metadata),
+            bodySha256: hash('sha256', parsed.bytes),
+          });
+          if (
+            url.searchParams.get('uploadType') !== 'multipart' ||
+            url.searchParams.get('supportsAllDrives') !== 'true' ||
+            url.searchParams.get('fields') !== 'etag'
+          ) {
+            googleError(response, 400, 'invalid Drive v2 multipart flags');
+            return;
+          }
+          const fileId = decodeURIComponent(v2UploadMatch[1]!);
+          const file = requireDriveFile(fileId, true, response);
+          if (!file) return;
+          if (mutateBeforeUploadPatch?.fileId === fileId) {
+            const external = mutateBeforeUploadPatch;
+            mutateBeforeUploadPatch = null;
+            file.properties = { ...(file.properties ?? {}), ...external.properties };
+            if (external.bytes !== null) file.bytes = external.bytes;
+            nextDriveVersion(file);
+          }
+          if (!file.capabilities.canEdit) {
+            googleError(response, 403, 'Drive file cannot be edited');
+            return;
+          }
+          if (request.headers['if-match'] !== file.etag) {
+            const logged = requestLog.at(-1);
+            if (logged?.method === method && logged.path === url.pathname) {
+              logged.responseStatus = 412;
+            }
+            googleError(response, 412, 'Drive ETag conflict');
+            return;
+          }
+          if (sendConfiguredError(method, url.pathname, response)) return;
+          if (typeof parsed.metadata.title === 'string') file.name = parsed.metadata.title;
+          if (typeof parsed.metadata.mimeType === 'string') {
+            file.mimeType = parsed.metadata.mimeType;
+          }
+          const properties = parseV2Properties(parsed.metadata.properties);
+          if (properties) file.properties = { ...(file.properties ?? {}), ...properties };
+          file.bytes = parsed.bytes;
+          nextDriveVersion(file);
+          json(response, 200, { etag: file.etag });
           return;
         }
 
@@ -1428,7 +1602,7 @@ function multipartBody(
 async function multipartRequest(
   url: string,
   options: {
-    method?: 'POST' | 'PATCH';
+    method?: 'POST' | 'PATCH' | 'PUT';
     token: string;
     metadata: Record<string, unknown>;
     bytes: Uint8Array;
@@ -1466,6 +1640,20 @@ function managedPdfMetadata(): Record<string, unknown> {
   };
 }
 
+function managedPdfV2Metadata(
+  properties = managedPdfMetadata().properties as Record<string, string>
+): Record<string, unknown> {
+  return {
+    title: managedPdfMetadata().name,
+    mimeType: 'application/pdf',
+    properties: Object.entries(properties).map(([key, value]) => ({
+      key,
+      value,
+      visibility: 'PUBLIC',
+    })),
+  };
+}
+
 async function runDriveAndGmailContractTests(server: FakeGoogleCalendar): Promise<void> {
   assert.match(server.calendarBaseUrl, /^http:\/\/127\.0\.0\.1:\d+\/calendar\/v3$/);
   assert.match(server.driveApiBaseUrl, /^http:\/\/127\.0\.0\.1:\d+\/drive\/v3$/);
@@ -1473,6 +1661,8 @@ async function runDriveAndGmailContractTests(server: FakeGoogleCalendar): Promis
   assert.match(server.gmailApiBaseUrl, /^http:\/\/127\.0\.0\.1:\d+\/gmail\/v1$/);
 
   const auth = { Authorization: `Bearer ${DESKTOP_TOKEN}` };
+  const driveV2ApiBaseUrl = server.driveApiBaseUrl.replace(/\/v3$/, '/v2');
+  const driveV2UploadBaseUrl = server.driveUploadBaseUrl.replace(/\/v3$/, '/v2');
   const invalidToken = await fetch(`${server.driveApiBaseUrl}/drives?pageSize=1`, {
     headers: { Authorization: 'Bearer not-a-fake-account-token' },
   });
@@ -1584,6 +1774,46 @@ async function runDriveAndGmailContractTests(server: FakeGoogleCalendar): Promis
   assert.equal(folderBody.id, 'generated-3');
   assert.deepEqual(folderBody.properties, { purpose: 'invoice-root' });
 
+  const folderEtag = await fetch(
+    `${driveV2ApiBaseUrl}/files/generated-3?supportsAllDrives=true&fields=etag`,
+    { headers: auth }
+  );
+  assert.equal(folderEtag.status, 200);
+  assert.deepEqual((await folderEtag.json()) as object, { etag: '"generated-3-v1"' });
+  const patchedFolder = await fetch(
+    `${driveV2ApiBaseUrl}/files/generated-3?supportsAllDrives=true&fields=etag`,
+    {
+      method: 'PATCH',
+      headers: { ...auth, 'Content-Type': 'application/json', 'If-Match': '"generated-3-v1"' },
+      body: JSON.stringify({
+        title: 'Renamed Root',
+        properties: [{ key: 'client', value: 'desktop', visibility: 'PUBLIC' }],
+      }),
+    }
+  );
+  assert.equal(patchedFolder.status, 200);
+  assert.deepEqual((await patchedFolder.json()) as object, { etag: '"generated-3-v2"' });
+  const trashedFolder = await fetch(
+    `${driveV2ApiBaseUrl}/files/generated-3/trash?supportsAllDrives=true&fields=etag`,
+    { method: 'POST', headers: { ...auth, 'If-Match': '"generated-3-v2"' } }
+  );
+  assert.equal(trashedFolder.status, 200);
+  assert.deepEqual((await trashedFolder.json()) as object, { etag: '"generated-3-v3"' });
+  const refreshedTrashedFolder = await fetch(
+    `${server.driveApiBaseUrl}/files/generated-3?supportsAllDrives=true`,
+    { headers: auth }
+  );
+  assert.equal(refreshedTrashedFolder.status, 200);
+  assert.equal(((await refreshedTrashedFolder.json()) as { trashed: boolean }).trashed, true);
+  const refreshedTrashedFolderEtag = await fetch(
+    `${driveV2ApiBaseUrl}/files/generated-3?supportsAllDrives=true&fields=etag`,
+    { headers: auth }
+  );
+  assert.equal(refreshedTrashedFolderEtag.status, 200);
+  assert.deepEqual((await refreshedTrashedFolderEtag.json()) as object, {
+    etag: '"generated-3-v3"',
+  });
+
   const created = await multipartRequest(
     `${server.driveUploadBaseUrl}/files?uploadType=multipart&supportsAllDrives=true`,
     { token: DESKTOP_TOKEN, metadata: managedPdfMetadata(), bytes: PDF_BYTES }
@@ -1635,11 +1865,11 @@ async function runDriveAndGmailContractTests(server: FakeGoogleCalendar): Promis
   });
   assert.equal(armExternalMutation.status, 204);
   const conflict = await multipartRequest(
-    `${server.driveUploadBaseUrl}/files/pdf-1?uploadType=multipart&supportsAllDrives=true`,
+    `${driveV2UploadBaseUrl}/files/pdf-1?uploadType=multipart&supportsAllDrives=true&fields=etag`,
     {
-      method: 'PATCH',
+      method: 'PUT',
       token: DESKTOP_TOKEN,
-      metadata: managedPdfMetadata(),
+      metadata: managedPdfV2Metadata(),
       bytes: PDF_BYTES,
       ifMatch: '"pdf-1-v1"',
     }
@@ -1669,24 +1899,24 @@ async function runDriveAndGmailContractTests(server: FakeGoogleCalendar): Promis
     await fetch(`${server.controlUrl}/requests`)
   ).json()) as FakeGoogleRequest[];
   const conflictingPatch = conflictLog.findLast(
-    (entry) => entry.method === 'PATCH' && entry.path === '/upload/drive/v3/files/pdf-1'
+    (entry) => entry.method === 'PUT' && entry.path === '/upload/drive/v2/files/pdf-1'
   );
   assert.equal(conflictingPatch?.ifMatch, '"pdf-1-v1"');
   assert.equal(conflictingPatch?.responseStatus, 412);
 
   const updatedBytes = Uint8Array.from([...PDF_BYTES, 0x25]);
   const updated = await multipartRequest(
-    `${server.driveUploadBaseUrl}/files/pdf-1?uploadType=multipart&supportsAllDrives=true`,
+    `${driveV2UploadBaseUrl}/files/pdf-1?uploadType=multipart&supportsAllDrives=true&fields=etag`,
     {
-      method: 'PATCH',
+      method: 'PUT',
       token: ANDROID_TOKEN,
-      metadata: { ...managedPdfMetadata(), properties: { externallyTouched: 'android' } },
+      metadata: managedPdfV2Metadata({ externallyTouched: 'android' }),
       bytes: updatedBytes,
       ifMatch: '"pdf-1-v2"',
     }
   );
   assert.equal(updated.status, 200);
-  assert.equal(updated.headers.get('etag'), '"pdf-1-v3"');
+  assert.deepEqual((await updated.json()) as object, { etag: '"pdf-1-v3"' });
 
   const oversizedMetadataPatch = await fetch(
     `${server.driveApiBaseUrl}/files/pdf-1?supportsAllDrives=true`,
