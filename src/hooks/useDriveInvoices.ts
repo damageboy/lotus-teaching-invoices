@@ -24,7 +24,7 @@ export interface DriveInvoicesState {
   error: DriveStoreError | null;
   operationKey: string | null;
   refresh(): Promise<void>;
-  activateRoot(staged: StagedDriveRoot, initialConfig?: AppConfig): Promise<void>;
+  activateRoot(staged: StagedDriveRoot, initialConfig?: AppConfig): Promise<DriveStoreSnapshot>;
   saveConfig(next: AppConfig): Promise<DriveConfigSnapshot>;
   finalize(input: FinalizationInput): Promise<DriveInvoiceEntry>;
   refinalize(input: FinalizationInput, entry: DriveInvoiceEntry): Promise<DriveInvoiceEntry>;
@@ -81,6 +81,11 @@ interface OperationToken {
   id: number;
   key: string;
   context: SemanticContext;
+}
+
+interface MutationBehavior {
+  refreshBefore?: boolean;
+  tolerateSourceChanges?: boolean;
 }
 
 function initialState(
@@ -222,11 +227,27 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
     );
   }, []);
 
+  const identityIsCurrent = useCallback((context: SemanticContext): boolean => {
+    const current = committedOptionsRef.current;
+    return (
+      mountedRef.current &&
+      context.authorizationIncarnation === current.authorizationIncarnation &&
+      context.store === current.store
+    );
+  }, []);
+
   const requireCurrentContext = useCallback(
     (context: SemanticContext): void => {
       if (!contextIsCurrent(context)) throw obsoleteContextError(context, currentContext());
     },
     [contextIsCurrent, currentContext]
+  );
+
+  const requireCurrentIdentity = useCallback(
+    (context: SemanticContext): void => {
+      if (!identityIsCurrent(context)) throw obsoleteContextError(context, currentContext());
+    },
+    [currentContext, identityIsCurrent]
   );
 
   const scheduleStoreRepair = useCallback((store: DriveInvoiceStoreController): void => {
@@ -463,39 +484,62 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
     <T>(
       key: string,
       mutate: (store: DriveInvoiceStoreController) => Promise<T>,
-      refreshBefore = true
+      behavior: MutationBehavior = {}
     ): Promise<T> => {
       const context = currentContext();
       const execute = async (): Promise<T> => {
-        requireCurrentContext(context);
+        const requireOperationContext = behavior.tolerateSourceChanges
+          ? () => requireCurrentIdentity(context)
+          : () => requireCurrentContext(context);
+        requireOperationContext();
         const token = beginOperation(key, context);
         try {
-          if (refreshBefore) {
+          if (behavior.refreshBefore !== false) {
             try {
               await runRefresh();
             } catch (cause) {
-              requireCurrentContext(context);
+              requireOperationContext();
               throw cause;
             }
-            requireCurrentContext(context);
+            requireOperationContext();
           }
 
           let result: T;
           try {
             result = await mutate(context.store);
           } catch (cause) {
-            requireCurrentContext(context);
-            throw publishActionError(cause, context);
+            requireOperationContext();
+            throw publishActionError(
+              cause,
+              behavior.tolerateSourceChanges ? currentContext() : context
+            );
           }
-          requireCurrentContext(context);
+          requireOperationContext();
 
-          try {
-            await runRefresh(true);
-          } catch {
+          if (behavior.tolerateSourceChanges) {
+            while (true) {
+              requireOperationContext();
+              const refreshSignature = committedOptionsRef.current.sourceSignature;
+              try {
+                await runRefresh(true, true);
+              } catch {
+                requireOperationContext();
+                if (committedOptionsRef.current.sourceSignature !== refreshSignature) continue;
+                // The mutation succeeded. Its refresh error is already the current visible state.
+                break;
+              }
+              requireOperationContext();
+              if (committedOptionsRef.current.sourceSignature === refreshSignature) break;
+            }
+          } else {
+            try {
+              await runRefresh(true);
+            } catch {
+              requireCurrentContext(context);
+              // The mutation succeeded. Its refresh error is already the current visible state.
+            }
             requireCurrentContext(context);
-            // The mutation succeeded. Its refresh error is already the current visible state.
           }
-          requireCurrentContext(context);
           return result;
         } finally {
           endOperation(token);
@@ -515,6 +559,7 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
       endOperation,
       publishActionError,
       requireCurrentContext,
+      requireCurrentIdentity,
       runRefresh,
     ]
   );
@@ -522,16 +567,13 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
   const refresh = useCallback(() => runRefresh(), [runRefresh]);
 
   const activateRoot = useCallback(
-    (staged: StagedDriveRoot, initialConfig?: AppConfig): Promise<void> => {
+    (staged: StagedDriveRoot, initialConfig?: AppConfig): Promise<DriveStoreSnapshot> => {
       const driveKey = staged.root.driveId ?? 'my-drive';
       const key = `activateRoot:${driveKey}:${staged.root.folderId}`;
       return enqueueMutation(
         key,
-        (store) =>
-          store
-            .activateRoot(staged, committedOptionsRef.current.sources, initialConfig)
-            .then(() => undefined),
-        false
+        (store) => store.activateRoot(staged, committedOptionsRef.current.sources, initialConfig),
+        { refreshBefore: false, tolerateSourceChanges: true }
       );
     },
     [enqueueMutation]

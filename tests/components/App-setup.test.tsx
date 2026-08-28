@@ -75,7 +75,7 @@ const readyDriveState: DriveInvoicesState = {
   error: null,
   operationKey: null,
   refresh: vi.fn(async () => undefined),
-  activateRoot: vi.fn(async () => undefined),
+  activateRoot: vi.fn(async () => readyDriveState.snapshot as DriveStoreSnapshot),
   saveConfig: vi.fn(async () => ({}) as never),
   finalize: vi.fn(async () => {
     throw new Error('finalize is not used by setup tests');
@@ -371,18 +371,26 @@ describe('App required Google setup', () => {
     expect(mocks.buildCurrentInvoiceSources).not.toHaveBeenCalled();
   });
 
-  it('unlocks and selects Calendar when completion came from Welcome', () => {
+  it('keeps Welcome open for acknowledgement when Drive discovery completes setup', async () => {
     const view = renderDriveStepApp();
     expect(document.body.textContent).toContain('Rates content');
     driveState = readyDriveState;
     authorizationState = { ...authorizationState, hasDrive: true };
     view.rerender();
+
+    expect(screen.getByRole('dialog', { name: 'Welcome to Lotus' })).toBeTruthy();
+    expect(screen.getByText('Existing invoice folder found')).toBeTruthy();
+    expect(screen.getByText('Lotus invoices')).toBeTruthy();
+
+    await click(namedButton('Continue with Lotus invoices'));
+
+    expect(screen.queryByRole('dialog', { name: 'Welcome to Lotus' })).toBeNull();
     expect(document.body.textContent).toContain('Calendar content');
     expect(namedButton('Invoices').disabled).toBe(false);
   });
 
   it('keeps activation alive across mobile-to-desktop history transfer and closes the dialog', async () => {
-    const activation = deferred<void>();
+    const activation = deferred<DriveStoreSnapshot>();
     const activateRoot = vi.fn(() => activation.promise);
     configState = { ...configState, calendarId: 'calendar-a', calendarName: 'Teaching' };
     authorizationState = { ...authorizationState, hasDrive: true };
@@ -427,7 +435,10 @@ describe('App required Google setup', () => {
     driveState = { ...readyDriveState, activateRoot };
     view.rerender();
     await act(async () => {
-      activation.resolve();
+      activation.resolve({
+        stagedRoot: candidateRoot,
+        config: { file: { parents: [candidateRoot.root.folderId] } },
+      } as DriveStoreSnapshot);
       await activation.promise;
       await Promise.resolve();
     });
@@ -449,10 +460,18 @@ describe('App required Google setup', () => {
     expect(document.body.textContent).toContain('Rates content');
   });
 
-  it('suppresses optional Calendar editing permission until setup is ready', () => {
+  it('suppresses optional Calendar editing permission until Drive acknowledgement closes', async () => {
     authorizationState = { ...authorizationState, promptOpen: true };
-    renderIncompleteApp();
+    const view = renderDriveStepApp();
     expect(mocks.calendarPermissionOpen).toBe(false);
+
+    driveState = readyDriveState;
+    view.rerender();
+    expect(screen.getByText('Existing invoice folder found')).toBeTruthy();
+    expect(mocks.calendarPermissionOpen).toBe(false);
+
+    await click(namedButton('Continue with Lotus invoices'));
+    expect(mocks.calendarPermissionOpen).toBe(true);
   });
 
   it('starts on Drive when Calendar is already configured', () => {

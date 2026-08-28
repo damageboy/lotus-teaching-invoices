@@ -62,6 +62,9 @@ function props(overrides: Partial<SetupWizardProps> = {}): SetupWizardProps {
     calendarPicker: calendarController(),
     drive: { status: 'unconfigured', error: null },
     driveFolder: driveController(),
+    driveAcknowledgementRequired: false,
+    detectedDriveFolderName: null,
+    onAcknowledgeDrive: vi.fn(),
     onDismiss: vi.fn(),
     ...overrides,
   };
@@ -100,6 +103,29 @@ describe('SetupWizard', () => {
     expect(screen.getByText('You can change this later in Rates & Config.')).toBeTruthy();
     expect(screen.getByLabelText('Calendar complete')).toBeTruthy();
     expect(screen.getByTestId('setup-step-drive').className).toContain('ring-2');
+  });
+
+  it('names an automatically detected Drive folder and requires acknowledgement', () => {
+    const acknowledgeDrive = vi.fn();
+    const openDialog = vi.fn(async () => undefined);
+    render(
+      <SetupWizard
+        {...props({
+          step: 'drive',
+          driveAcknowledgementRequired: true,
+          detectedDriveFolderName: 'LotusInvoices',
+          driveFolder: driveController({ openDialog }),
+          onAcknowledgeDrive: acknowledgeDrive,
+        })}
+      />
+    );
+
+    expect(screen.getByText('Existing invoice folder found')).toBeTruthy();
+    expect(screen.getByText('LotusInvoices')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Continue with LotusInvoices' }));
+    expect(acknowledgeDrive).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole('button', { name: 'Choose another folder…' }));
+    expect(openDialog).toHaveBeenCalledOnce();
   });
 
   it('routes the Calendar action and renders the same selectable list states as Connections', () => {

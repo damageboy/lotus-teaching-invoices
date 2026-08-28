@@ -420,7 +420,7 @@ export default function App() {
     <div className="flex flex-col h-screen bg-white">
       <UpdateNotification />
       <CalendarPermissionPrompt
-        open={setupReadiness.status === 'ready' && googleAuthorization.promptOpen}
+        open={setupReadiness.status === 'ready' && !wizardOpen && googleAuthorization.promptOpen}
         reason={googleAuthorization.hasCalendarWrite ? 'calendarReadOnly' : 'scopeMissing'}
         isAuthorizing={googleAuthorization.isAuthorizing}
         error={googleAuthorization.error}
@@ -491,6 +491,9 @@ export default function App() {
         calendarPicker={calendarPicker}
         drive={driveInvoices}
         driveFolder={driveFolder}
+        driveAcknowledgementRequired={onboarding.driveAcknowledgementRequired}
+        detectedDriveFolderName={driveInvoices.snapshot?.stagedRoot.root.folderName ?? null}
+        onAcknowledgeDrive={onboarding.acknowledgeDrive}
         onDismiss={dismissOnboarding}
       />
       <DriveFolderDialog
@@ -502,7 +505,10 @@ export default function App() {
         }
         folderService={driveFolderService}
         scanCandidate={driveFolder.scanCandidate}
-        onConfirm={driveFolder.confirmRoot}
+        onConfirm={async (stagedRoot) => {
+          await driveFolder.confirmRoot(stagedRoot);
+          onboarding.acknowledgeDrive();
+        }}
         onClose={driveFolder.closeDialog}
       />
     </div>

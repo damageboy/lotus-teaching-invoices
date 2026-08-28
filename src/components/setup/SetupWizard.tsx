@@ -13,6 +13,9 @@ export interface SetupWizardProps {
   calendarPicker: CalendarPickerController;
   drive: Pick<DriveInvoicesState, 'status' | 'error'>;
   driveFolder: DriveFolderController;
+  driveAcknowledgementRequired: boolean;
+  detectedDriveFolderName: string | null;
+  onAcknowledgeDrive(): void;
   onDismiss(): void;
 }
 
@@ -86,6 +89,9 @@ export function SetupWizard({
   calendarPicker,
   drive,
   driveFolder,
+  driveAcknowledgementRequired,
+  detectedDriveFolderName,
+  onAcknowledgeDrive,
   onDismiss,
 }: SetupWizardProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -243,8 +249,18 @@ export function SetupWizard({
 
   if (!open) return null;
 
-  const primaryAction = step === 'calendar' ? calendarPicker.openList : driveFolder.openDialog;
-  const primaryBusy = step === 'calendar' ? calendarBusy : driveBusy;
+  const detectedDriveFolder =
+    step === 'drive' && driveAcknowledgementRequired && detectedDriveFolderName !== null
+      ? detectedDriveFolderName
+      : null;
+  const primaryAction =
+    step === 'calendar'
+      ? calendarPicker.openList
+      : detectedDriveFolder === null
+        ? driveFolder.openDialog
+        : onAcknowledgeDrive;
+  const primaryBusy =
+    step === 'calendar' ? calendarBusy : detectedDriveFolder === null && driveBusy;
 
   return (
     <div
@@ -288,6 +304,20 @@ export function SetupWizard({
               : 'Lotus stores finalized invoices in this Google Drive folder.'}
           </p>
 
+          {detectedDriveFolder !== null && (
+            <div className="mt-8 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-left">
+              <p className="text-sm font-semibold text-emerald-900">
+                Existing invoice folder found
+              </p>
+              <p className="mt-2 break-words text-lg font-semibold text-gray-950">
+                {detectedDriveFolder}
+              </p>
+              <p className="mt-1 text-sm text-gray-600">
+                Confirm this is the Google Drive folder you want Lotus to use.
+              </p>
+            </div>
+          )}
+
           <div className={`${mobile ? 'mt-auto pt-10' : 'mt-8'} flex flex-col gap-3`}>
             <button
               type="button"
@@ -295,8 +325,23 @@ export function SetupWizard({
               disabled={primaryBusy}
               className="min-h-12 min-w-12 w-full rounded-lg bg-indigo-600 px-5 py-3 text-base font-semibold text-white shadow-sm transition hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none"
             >
-              {step === 'calendar' ? 'Pick calendar…' : 'Pick Drive folder…'}
+              {step === 'calendar'
+                ? 'Pick calendar…'
+                : detectedDriveFolder === null
+                  ? 'Pick Drive folder…'
+                  : `Continue with ${detectedDriveFolder}`}
             </button>
+
+            {detectedDriveFolder !== null && (
+              <button
+                type="button"
+                onClick={() => void driveFolder.openDialog()}
+                disabled={driveBusy}
+                className="min-h-12 min-w-12 w-full rounded-lg border border-indigo-200 px-5 py-3 text-base font-semibold text-indigo-700 hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-40"
+              >
+                Choose another folder…
+              </button>
+            )}
 
             {activeError && (
               <p role="alert" className="text-left text-sm text-red-600">

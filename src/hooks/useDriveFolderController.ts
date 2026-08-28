@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { StagedDriveRoot } from '../lib/drive/folders.js';
 import type { CurrentInvoiceSource, DriveInvoiceScan } from '../lib/drive/invoiceCatalog.js';
-import type { DriveStoreSnapshot } from '../lib/drive/invoiceStore.js';
 import type { AppConfig } from '../lib/types.js';
 import type { DriveInvoicesState } from './useDriveInvoices.js';
 
@@ -41,21 +40,11 @@ interface CommittedOptions extends UseDriveFolderControllerOptions {
 interface OperationContext {
   semanticIncarnation: number;
   sourceIncarnation: number;
-  sourceContextOrigin: string;
-  activationSourceAdoptionAvailable: boolean;
   authorizationIncarnation: number;
   session: number;
 }
 
-interface ActivationSnapshotEvidence {
-  authorizationIncarnation: number;
-  activateRoot: UseDriveFolderControllerOptions['drive']['activateRoot'];
-  snapshot: DriveStoreSnapshot | null;
-}
-
 type OperationName = 'opening' | 'scan' | 'confirmation' | 'retry';
-
-const SETUP_DISCOVERY_SOURCE_CONTEXT = 'setup-discovery';
 
 function sourceSignature(
   sourceContextKey: string,
@@ -109,11 +98,6 @@ export function useDriveFolderController(
     authorizationIncarnation: options.authorizationIncarnation,
     sourceSignature: signature,
   });
-  const activationSnapshotRef = useRef<ActivationSnapshotEvidence>({
-    authorizationIncarnation: options.authorizationIncarnation,
-    activateRoot: options.drive.activateRoot,
-    snapshot: options.drive.status === 'ready' ? options.drive.snapshot : null,
-  });
   const semanticIncarnationRef = useRef(0);
   const sourceIncarnationRef = useRef(0);
   const sessionRef = useRef(0);
@@ -137,21 +121,6 @@ export function useDriveFolderController(
       authorizationIncarnation: options.authorizationIncarnation,
       sourceSignature: signature,
     };
-    const evidence = activationSnapshotRef.current;
-    if (
-      evidence.authorizationIncarnation !== options.authorizationIncarnation ||
-      evidence.activateRoot !== options.drive.activateRoot ||
-      options.drive.status === 'unconfigured' ||
-      options.drive.status === 'authorizationRequired'
-    ) {
-      activationSnapshotRef.current = {
-        authorizationIncarnation: options.authorizationIncarnation,
-        activateRoot: options.drive.activateRoot,
-        snapshot: null,
-      };
-    } else if (options.drive.status === 'ready' && options.drive.snapshot !== null) {
-      activationSnapshotRef.current = { ...evidence, snapshot: options.drive.snapshot };
-    }
     committedOptionsRef.current = { ...options, sourceSignature: signature };
   }, [options, signature]);
 
@@ -168,8 +137,6 @@ export function useDriveFolderController(
     return {
       semanticIncarnation: semanticIncarnationRef.current,
       sourceIncarnation: sourceIncarnationRef.current,
-      sourceContextOrigin: current.sourceContextKey,
-      activationSourceAdoptionAvailable: false,
       authorizationIncarnation: current.authorizationIncarnation,
       session: sessionRef.current,
     };
@@ -234,40 +201,31 @@ export function useDriveFolderController(
     return true;
   }, []);
 
-  const adoptSuccessfulActivation = useCallback(
-    (context: OperationContext, stagedRoot: StagedDriveRoot): boolean => {
+  const operationIdentityIsCurrent = useCallback((context: OperationContext): boolean => {
+    const current = committedOptionsRef.current;
+    return (
+      mountedRef.current &&
+      context.session === sessionRef.current &&
+      context.authorizationIncarnation === current.authorizationIncarnation
+    );
+  }, []);
+
+  const identityObsoleteError = useCallback(
+    (context: OperationContext, operation: OperationName): Error => {
       const current = committedOptionsRef.current;
-      const evidence = activationSnapshotRef.current;
-      const snapshot =
-        current.drive.snapshot ??
-        (current.drive.status === 'loading' &&
-        evidence.authorizationIncarnation === current.authorizationIncarnation &&
-        evidence.activateRoot === current.drive.activateRoot
-          ? evidence.snapshot
-          : null);
-      if (
-        !mountedRef.current ||
-        context.session !== sessionRef.current ||
-        context.authorizationIncarnation !== current.authorizationIncarnation ||
-        !context.activationSourceAdoptionAvailable ||
-        context.sourceContextOrigin !== SETUP_DISCOVERY_SOURCE_CONTEXT ||
-        current.sourceContextKey === SETUP_DISCOVERY_SOURCE_CONTEXT ||
-        context.sourceIncarnation + 1 !== sourceIncarnationRef.current ||
-        context.semanticIncarnation + 1 !== semanticIncarnationRef.current ||
-        (current.drive.status !== 'ready' && current.drive.status !== 'loading') ||
-        snapshot === null ||
-        snapshot.stagedRoot.root.folderId !== stagedRoot.root.folderId ||
-        snapshot.stagedRoot.root.driveId !== stagedRoot.root.driveId ||
-        snapshot.stagedRoot.finalFolder.id !== stagedRoot.finalFolder.id ||
-        snapshot.config.file.parents.length !== 1 ||
-        snapshot.config.file.parents[0] !== stagedRoot.root.folderId
-      ) {
-        return false;
+      if (context.authorizationIncarnation !== current.authorizationIncarnation) {
+        return new Error(
+          `Drive authorization changed before the Drive folder ${operationLabel(operation)}`
+        );
       }
-      context.activationSourceAdoptionAvailable = false;
-      context.sourceIncarnation = sourceIncarnationRef.current;
-      context.semanticIncarnation = semanticIncarnationRef.current;
-      return true;
+      if (context.session !== sessionRef.current) {
+        return new Error(
+          `Drive folder dialog session changed before the Drive folder ${operationLabel(operation)}`
+        );
+      }
+      return new Error(
+        `Drive folder setup changed before the Drive folder ${operationLabel(operation)}`
+      );
     },
     []
   );
@@ -279,20 +237,47 @@ export function useDriveFolderController(
     setDialogOpen(false);
     setOpening(true);
     setError(null);
+    let discoveryMayChangeSources = false;
     try {
       if (!current.hasDriveAuthorization || current.drive.status === 'authorizationRequired') {
         await current.authorizeDrive();
         if (!contextIsCurrent(context)) adoptSuccessfulAuthorization(context);
         requireCurrent(context, 'opening');
+        discoveryMayChangeSources = true;
+        await committedOptionsRef.current.drive.refresh();
+        if (!operationIdentityIsCurrent(context)) {
+          throw identityObsoleteError(context, 'opening');
+        }
       }
-      requireCurrent(context, 'opening');
+      if (discoveryMayChangeSources) {
+        if (!operationIdentityIsCurrent(context)) {
+          throw identityObsoleteError(context, 'opening');
+        }
+      } else {
+        requireCurrent(context, 'opening');
+      }
       setDialogOpen(true);
     } catch (cause) {
-      if (contextIsCurrent(context)) setError(errorMessage(cause));
+      if (
+        discoveryMayChangeSources ? operationIdentityIsCurrent(context) : contextIsCurrent(context)
+      ) {
+        setError(errorMessage(cause));
+      }
     } finally {
-      if (contextIsCurrent(context)) setOpening(false);
+      if (
+        discoveryMayChangeSources ? operationIdentityIsCurrent(context) : contextIsCurrent(context)
+      ) {
+        setOpening(false);
+      }
     }
-  }, [adoptSuccessfulAuthorization, captureContext, contextIsCurrent, requireCurrent]);
+  }, [
+    adoptSuccessfulAuthorization,
+    captureContext,
+    contextIsCurrent,
+    identityObsoleteError,
+    operationIdentityIsCurrent,
+    requireCurrent,
+  ]);
 
   const closeDialog = useCallback((): void => {
     sessionRef.current += 1;
@@ -326,23 +311,31 @@ export function useDriveFolderController(
       const current = committedOptionsRef.current;
       setError(null);
       try {
-        await current.drive.activateRoot(
+        const activated = await current.drive.activateRoot(
           stagedRoot,
           current.drive.status === 'unconfigured' ? current.config : undefined
         );
-        context.activationSourceAdoptionAvailable =
-          context.sourceContextOrigin === SETUP_DISCOVERY_SOURCE_CONTEXT;
-        if (!contextIsCurrent(context) && !adoptSuccessfulActivation(context, stagedRoot)) {
-          throw obsoleteError(context, 'confirmation');
+        if (!operationIdentityIsCurrent(context)) {
+          throw identityObsoleteError(context, 'confirmation');
         }
-        requireCurrent(context, 'confirmation');
+        if (
+          activated.stagedRoot.root.folderId !== stagedRoot.root.folderId ||
+          activated.stagedRoot.root.driveId !== stagedRoot.root.driveId ||
+          activated.stagedRoot.finalFolder.id !== stagedRoot.finalFolder.id ||
+          activated.config.file.parents.length !== 1 ||
+          activated.config.file.parents[0] !== stagedRoot.root.folderId
+        ) {
+          throw new Error('Drive activated a different invoice folder than the selected folder');
+        }
       } catch (cause) {
-        if (!contextIsCurrent(context)) throw obsoleteError(context, 'confirmation');
+        if (!operationIdentityIsCurrent(context)) {
+          throw identityObsoleteError(context, 'confirmation');
+        }
         setError(errorMessage(cause));
         throw cause;
       }
     },
-    [adoptSuccessfulActivation, captureContext, contextIsCurrent, obsoleteError, requireCurrent]
+    [captureContext, identityObsoleteError, operationIdentityIsCurrent]
   );
 
   const retry = useCallback(async (): Promise<void> => {

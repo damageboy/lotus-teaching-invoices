@@ -51,6 +51,26 @@ describe('useSetupOnboarding', () => {
       initialProps: { readiness: driveMissing },
     });
     view.rerender({ readiness: ready });
-    expect(view.result.current.open).toBe(false);
+    expect(view.result.current).toMatchObject({
+      open: true,
+      step: 'drive',
+      driveAcknowledgementRequired: true,
+    });
+
+    act(() => view.result.current.acknowledgeDrive());
+
+    expect(view.result.current).toMatchObject({
+      open: false,
+      driveAcknowledgementRequired: false,
+    });
+  });
+
+  it('does not request acknowledgement for an already-configured cold start', () => {
+    const { result } = renderHook(() => useSetupOnboarding(ready));
+
+    expect(result.current).toMatchObject({
+      open: false,
+      driveAcknowledgementRequired: false,
+    });
   });
 });

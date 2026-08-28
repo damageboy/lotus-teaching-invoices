@@ -58,6 +58,14 @@ function entry(id = 'invoice-pdf'): DriveInvoiceEntry {
   return { file: { id } } as DriveInvoiceEntry;
 }
 
+function source(id: string): CurrentInvoiceSource {
+  return {
+    key: { studioSlug: 'studio-a', monthKey: '2026-08' },
+    studioName: 'Studio A',
+    fingerprint: { sourceSha256: id, calendarSha256: `calendar-${id}` },
+  } as CurrentInvoiceSource;
+}
+
 function store(initial: DriveStoreSnapshot | null = snapshot()) {
   return {
     bootstrap: vi.fn(async () => initial),
@@ -142,6 +150,72 @@ describe('useDriveInvoices', () => {
       next,
       []
     );
+  });
+
+  it('returns the exact snapshot committed by root activation', async () => {
+    const currentStore = store();
+    const activated = snapshot('activated-root');
+    currentStore.activateRoot.mockResolvedValueOnce(activated);
+    currentStore.refresh.mockResolvedValue(activated);
+    const { result } = renderHook(() => useDriveInvoices(options(currentStore)));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    const returned = await act(() => result.current.activateRoot(activated.stagedRoot));
+
+    expect(returned).toBe(activated);
+  });
+
+  it('keeps a committed activation and reconciles it with the latest sources', async () => {
+    const currentStore = store(snapshot('previous-root'));
+    const activation = deferred<DriveStoreSnapshot>();
+    const activated = snapshot('activated-root');
+    const latestSources = [source('latest')];
+    currentStore.activateRoot.mockImplementationOnce(() => activation.promise);
+    currentStore.refresh.mockResolvedValue(activated);
+    const view = renderHook(
+      ({ sourceContextKey, sources, discoveryEnabled }) =>
+        useDriveInvoices(options(currentStore, { sourceContextKey, sources, discoveryEnabled })),
+      {
+        initialProps: {
+          sourceContextKey: 'setup-discovery',
+          sources: [] as CurrentInvoiceSource[],
+          discoveryEnabled: true,
+        },
+      }
+    );
+    await waitFor(() => expect(view.result.current.status).toBe('ready'));
+    view.rerender({
+      sourceContextKey: 'setup-discovery',
+      sources: [],
+      discoveryEnabled: false,
+    });
+    let result!: Promise<DriveStoreSnapshot>;
+    act(() => {
+      result = view.result.current.activateRoot(activated.stagedRoot);
+    });
+
+    view.rerender({
+      sourceContextKey: 'empty-calendar',
+      sources: [],
+      discoveryEnabled: false,
+    });
+    view.rerender({
+      sourceContextKey: 'setup-discovery',
+      sources: [],
+      discoveryEnabled: false,
+    });
+    view.rerender({
+      sourceContextKey: 'latest-sources',
+      sources: latestSources,
+      discoveryEnabled: false,
+    });
+    await act(async () => {
+      activation.resolve(activated);
+      await expect(result).resolves.toBe(activated);
+    });
+
+    expect(currentStore.refresh).toHaveBeenLastCalledWith(latestSources);
+    expect(view.result.current.snapshot?.stagedRoot.root.folderId).toBe('activated-root');
   });
 
   it('returns the invoice entry from a counter-first store result', async () => {
