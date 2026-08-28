@@ -87,7 +87,7 @@ const readyDriveState: DriveInvoicesState = {
 };
 let driveState: DriveInvoicesState;
 const mocks = {
-  buildCurrentInvoiceSources: vi.fn(async () => []),
+  buildCurrentInvoiceSources: vi.fn(async () => ({ sources: [], issues: [] })),
   invoke: vi.fn(async (command: string) => (command === 'read_legacy_config' ? null : null)),
   calendarPermissionOpen: false,
   driveOptions: null as UseDriveInvoicesOptions | null,
@@ -204,11 +204,11 @@ vi.mock('../../src/lib/invoice/rows.js', () => ({
   currentInvoiceSourceInputKey: () => 'fixture',
   visibleCurrentInvoiceSourceBuild: (
     inputKey: string,
-    build: { inputKey: string | null; sources: never[]; error: string | null }
+    build: { inputKey: string | null; sources: never[]; issues: never[]; error: string | null }
   ) =>
     build.inputKey === inputKey
-      ? { sources: build.sources, ready: true, error: build.error }
-      : { sources: [], ready: false, error: null },
+      ? { sources: build.sources, issues: build.issues, ready: true, error: build.error }
+      : { sources: [], issues: [], ready: false, error: null },
 }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ message: vi.fn() }));
 vi.mock('@tauri-apps/plugin-process', () => ({ exit: vi.fn() }));
@@ -484,7 +484,7 @@ describe('App required Google setup', () => {
           : { ...readyDriveState, status: 'loading', snapshot: null };
     mocks.buildCurrentInvoiceSources
       .mockReset()
-      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce({ sources: [], issues: [] })
       .mockImplementation(() => new Promise(() => {}));
     const view = renderApp();
 

@@ -341,7 +341,12 @@ describe('Drive-backed InvoicesTab', () => {
     });
     const view = render(<InvoicesTab {...(props({ drive }) as any)} />);
 
-    expect(document.body.textContent).toContain('Malformed finalized invoice filename: stray.pdf');
+    expect(document.body.textContent).toContain(
+      '1 Drive file needs attention. See logs for details.'
+    );
+    expect(document.body.textContent).not.toContain(
+      'Malformed finalized invoice filename: stray.pdf'
+    );
     expect(document.body.textContent).toContain('Managed Drive file has no canonical invoice key');
     expect(button('Finalize PDF').disabled).toBe(true);
     act(() => view.render(<InvoicesTab {...(props({ drive }) as any)} />));
@@ -371,7 +376,7 @@ describe('Drive-backed InvoicesTab', () => {
 
     render(<InvoicesTab {...(props({ drive }) as any)} />);
 
-    expect(document.body.textContent).toContain('Unrelated managed Drive file is corrupt');
+    expect(document.body.textContent).not.toContain('Unrelated managed Drive file is corrupt');
     expect(button('Re-finalize PDF').disabled).toBe(false);
     expect(button('Open PDF').disabled).toBe(false);
     expect(button('Draft Email').disabled).toBe(false);
@@ -403,6 +408,63 @@ describe('Drive-backed InvoicesTab', () => {
     expect(button('Finalize PDF').disabled).toBe(true);
     expect(button('Open PDF').disabled).toBe(true);
     expect(button('Draft Email').disabled).toBe(true);
+  });
+
+  it('summarizes source issues and keeps each reason inside only its affected row', () => {
+    const betaClass: ParsedClass = {
+      ...currentClass,
+      eventIdentity: { calendarId: 'calendar-a', eventId: 'event-beta' },
+      sourceSummary: 'Beta / Flow',
+      studioName: 'Beta',
+      date: '2026-07-04',
+    };
+    const betaConfig: AppConfig = {
+      ...config,
+      studios: {
+        ...config.studios,
+        Beta: {
+          fullName: 'Beta Studio',
+          address: 'Beta Street',
+          invoiceEmail: 'beta@example.com',
+          rateTiers: [{ minStudents: 1, maxStudents: null, rate: 50 }],
+        },
+      },
+    };
+    const reason = 'Invoice input contains unbillable classes.';
+
+    render(
+      <InvoicesTab
+        {...(props({
+          classes: [currentClass, betaClass],
+          config: betaConfig,
+          sourceIssues: [
+            {
+              key: { studioSlug: 'yoga', monthKey: '2026-07' },
+              studioName: 'Yoga',
+              reason,
+            },
+          ],
+        }) as any)}
+      />
+    );
+
+    expect(document.body.textContent).toContain('1 invoice needs attention.');
+    const rows = [...document.querySelectorAll<HTMLTableRowElement>('tbody tr')];
+    const yogaRow = rows.find((row) => row.textContent?.includes('Yoga'))!;
+    const betaRow = rows.find((row) => row.textContent?.includes('Beta'))!;
+    expect(yogaRow.textContent).toContain('Needs attention');
+    expect(yogaRow.textContent).toContain(reason);
+    expect(betaRow.textContent).not.toContain(reason);
+    expect(
+      [...yogaRow.querySelectorAll<HTMLButtonElement>('button')].find(
+        (candidate) => candidate.textContent === 'Finalize PDF'
+      )?.disabled
+    ).toBe(true);
+    expect(
+      [...betaRow.querySelectorAll<HTMLButtonElement>('button')].find(
+        (candidate) => candidate.textContent === 'Finalize PDF'
+      )?.disabled
+    ).toBe(false);
   });
 
   it('shows historical Drive-only rows and refreshes the configured Drive view', async () => {

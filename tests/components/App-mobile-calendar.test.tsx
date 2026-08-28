@@ -130,9 +130,14 @@ vi.mock('../../src/lib/drive/invoiceStore.js', () => ({
 }));
 vi.mock('../../src/lib/pdf/generatePdf.js', () => ({ renderFinalPdf: vi.fn() }));
 vi.mock('../../src/lib/invoice/rows.js', () => ({
-  buildCurrentInvoiceSources: async () => [],
+  buildCurrentInvoiceSources: async () => ({ sources: [], issues: [] }),
   currentInvoiceSourceInputKey: () => 'fixture',
-  visibleCurrentInvoiceSourceBuild: () => ({ sources: [], ready: true, error: null }),
+  visibleCurrentInvoiceSourceBuild: () => ({
+    sources: [],
+    issues: [],
+    ready: true,
+    error: null,
+  }),
 }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ message: vi.fn() }));
 vi.mock('@tauri-apps/plugin-process', () => ({ exit: vi.fn() }));

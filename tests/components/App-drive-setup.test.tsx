@@ -28,24 +28,27 @@ function deferred<T>() {
 }
 
 const buildCurrentInvoiceSources = vi.fn(
-  async (): Promise<CurrentInvoiceSource[]> => [
-    {
-      key: { studioSlug: 'studio-a', monthKey: '2026-08' },
-      studioName: 'Studio A',
-      invoice: {
+  async (): Promise<{ sources: CurrentInvoiceSource[]; issues: [] }> => ({
+    sources: [
+      {
+        key: { studioSlug: 'studio-a', monthKey: '2026-08' },
         studioName: 'Studio A',
-        invoicePeriod: { from: '2026-08-01', to: '2026-08-31' },
-        generatedAt: '2026-08-27T00:00:00.000Z',
-        issueDate: '2026-08-27',
+        invoice: {
+          studioName: 'Studio A',
+          invoicePeriod: { from: '2026-08-01', to: '2026-08-31' },
+          generatedAt: '2026-08-27T00:00:00.000Z',
+          issueDate: '2026-08-27',
+          classes: [],
+          totalClasses: 0,
+          totalAmount: 0,
+        },
         classes: [],
-        totalClasses: 0,
-        totalAmount: 0,
+        config,
+        fingerprint: { sourceSha256: 'source-a', calendarSha256: 'calendar-a' },
       },
-      classes: [],
-      config,
-      fingerprint: { sourceSha256: 'source-a', calendarSha256: 'calendar-a' },
-    },
-  ]
+    ],
+    issues: [],
+  })
 );
 
 (globalThis as unknown as { __APP_VERSION__: string }).__APP_VERSION__ = 'test';
@@ -168,11 +171,11 @@ vi.mock('../../src/lib/invoice/rows.js', () => ({
   currentInvoiceSourceInputKey: () => 'fixture',
   visibleCurrentInvoiceSourceBuild: (
     inputKey: string,
-    build: { inputKey: string | null; sources: never[]; error: string | null }
+    build: { inputKey: string | null; sources: never[]; issues: never[]; error: string | null }
   ) =>
     build.inputKey === inputKey
-      ? { sources: build.sources, ready: true, error: build.error }
-      : { sources: [], ready: false, error: null },
+      ? { sources: build.sources, issues: build.issues, ready: true, error: build.error }
+      : { sources: [], issues: [], ready: false, error: null },
   buildInvoiceRows: () => [],
 }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ message: vi.fn(), confirm: vi.fn() }));
@@ -289,7 +292,7 @@ describe('App Drive setup without an existing grant', () => {
     await waitFor(() => expect(button('Invoices').disabled).toBe(false));
     await click(button('Invoices'));
     const content = container.querySelector('.flex-1.overflow-auto');
-    expect(content?.textContent).toContain('No invoices');
+    await waitFor(() => expect(content?.textContent).toContain('No invoices'));
     expect(container.querySelector('[role="alert"]')).toBeNull();
     expect(container.querySelector('table')).toBeTruthy();
   });

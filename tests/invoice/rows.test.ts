@@ -84,9 +84,10 @@ describe('buildInvoiceRows', () => {
         visibleCurrentInvoiceSourceBuild('new-input', {
           inputKey: 'old-input',
           sources: [source],
+          issues: [],
           error: null,
         })
-      ).toEqual({ sources: [], ready: false, error: null });
+      ).toEqual({ sources: [], issues: [], ready: false, error: null });
     });
 
     it('keeps a matching failed build inactive while exposing its blocker', () => {
@@ -94,9 +95,37 @@ describe('buildInvoiceRows', () => {
         visibleCurrentInvoiceSourceBuild('current-input', {
           inputKey: 'current-input',
           sources: [],
+          issues: [],
           error: 'Current source is invalid',
         })
-      ).toEqual({ sources: [], ready: false, error: 'Current source is invalid' });
+      ).toEqual({
+        sources: [],
+        issues: [],
+        ready: false,
+        error: 'Current source is invalid',
+      });
+    });
+
+    it('ignores future classes when identifying current invoice input', () => {
+      const current = parsedClass({ date: '2026-07-03' });
+      const future = parsedClass({
+        eventIdentity: { calendarId: 'calendar-a', eventId: 'future-event' },
+        date: '9999-01-03',
+      });
+      const config: AppConfig = {
+        teacher: {
+          name: 'Teacher',
+          address: '',
+          taxNumber: '',
+          bankDetails: { accountOwner: '', iban: '', bic: '' },
+        },
+        calendarId: 'calendar-a',
+        studios: {},
+      };
+
+      expect(currentInvoiceSourceInputKey([current, future], config)).toBe(
+        currentInvoiceSourceInputKey([current], config)
+      );
     });
   });
   it('builds unnumbered semantic sources before the first Drive scan', async () => {
@@ -123,8 +152,8 @@ describe('buildInvoiceRows', () => {
       },
     };
 
-    const [source] = await buildCurrentInvoiceSources([lesson], config);
-    const [changed] = await buildCurrentInvoiceSources([lesson], {
+    const { sources: initialSources, issues } = await buildCurrentInvoiceSources([lesson], config);
+    const { sources: changedSources } = await buildCurrentInvoiceSources([lesson], {
       ...config,
       studios: {
         'Alpha Studio': {
@@ -133,7 +162,10 @@ describe('buildInvoiceRows', () => {
         },
       },
     });
+    const [source] = initialSources;
+    const [changed] = changedSources;
 
+    expect(issues).toEqual([]);
     expect(source).toMatchObject({
       key: { studioSlug: 'alpha-studio', monthKey: '2026-02' },
       studioName: 'Alpha Studio',
@@ -211,8 +243,8 @@ describe('buildInvoiceRows', () => {
     expect(row.driveEntries).toEqual([first, second]);
   });
 
-  describe('conservative current-source construction', () => {
-    it('rejects a current Calendar key whose studio configuration is missing', async () => {
+  describe('current-source issue isolation', () => {
+    it('reports a missing studio against only its Calendar invoice key', async () => {
       const lesson = parsedClass({
         eventIdentity: { calendarId: 'calendar-a', eventId: 'missing-studio' },
         studioName: 'Missing Studio',
@@ -230,12 +262,19 @@ describe('buildInvoiceRows', () => {
         studios: {},
       };
 
-      await expect(buildCurrentInvoiceSources([lesson], config)).rejects.toThrow(
-        'Missing Studio 2026-02: studio configuration is unavailable'
-      );
+      await expect(buildCurrentInvoiceSources([lesson], config)).resolves.toEqual({
+        sources: [],
+        issues: [
+          {
+            key: { studioSlug: 'missing-studio', monthKey: '2026-02' },
+            studioName: 'Missing Studio',
+            reason: 'Studio configuration is unavailable.',
+          },
+        ],
+      });
     });
 
-    it('rejects a current key whose slug matches multiple configured studios', async () => {
+    it('reports a slug collision against only its Calendar invoice key', async () => {
       const lesson = parsedClass({
         eventIdentity: { calendarId: 'calendar-a', eventId: 'ambiguous-studio' },
         studioName: 'Studio A',
@@ -258,16 +297,74 @@ describe('buildInvoiceRows', () => {
         studios: { 'Studio A': studio, 'Studio-A': studio },
       };
 
-      await expect(buildCurrentInvoiceSources([lesson], config)).rejects.toThrow(
-        'studio slug "studio-a" matches multiple configurations'
-      );
+      const result = await buildCurrentInvoiceSources([lesson], config);
+
+      expect(result.sources).toEqual([]);
+      expect(result.issues).toEqual([
+        {
+          key: { studioSlug: 'studio-a', monthKey: '2026-02' },
+          studioName: 'Studio A',
+          reason: 'Studio slug "studio-a" matches multiple configurations: "Studio A", "Studio-A".',
+        },
+      ]);
     });
 
-    it('rejects current source input that cannot produce a complete invoice', async () => {
+    it('keeps valid sources available when another invoice key is unbillable', async () => {
       const lesson = parsedClass({
         eventIdentity: { calendarId: 'calendar-a', eventId: 'zero-students' },
         studioName: 'Alpha Studio',
         date: '2026-02-03',
+        studentCount: 0,
+      });
+      const validLesson = parsedClass({
+        eventIdentity: { calendarId: 'calendar-a', eventId: 'valid' },
+        studioName: 'Beta Studio',
+        date: '2026-02-04',
+        studentCount: 5,
+      });
+      const config: AppConfig = {
+        teacher: {
+          name: 'Teacher',
+          address: '',
+          taxNumber: '',
+          bankDetails: { accountOwner: '', iban: '', bic: '' },
+        },
+        calendarId: 'calendar-a',
+        studios: {
+          'Alpha Studio': {
+            fullName: 'Alpha Studio',
+            address: '',
+            rateTiers: [{ minStudents: 1, maxStudents: null, rate: 50 }],
+          },
+          'Beta Studio': {
+            fullName: 'Beta Studio',
+            address: '',
+            rateTiers: [{ minStudents: 1, maxStudents: null, rate: 50 }],
+          },
+        },
+      };
+
+      const result = await buildCurrentInvoiceSources([lesson, validLesson], config);
+
+      expect(result.sources).toHaveLength(1);
+      expect(result.sources[0]).toMatchObject({
+        key: { studioSlug: 'beta-studio', monthKey: '2026-02' },
+        studioName: 'Beta Studio',
+      });
+      expect(result.issues).toEqual([
+        {
+          key: { studioSlug: 'alpha-studio', monthKey: '2026-02' },
+          studioName: 'Alpha Studio',
+          reason: 'Invoice input contains unbillable classes.',
+        },
+      ]);
+    });
+
+    it('does not report an unbillable recurring class from a future month', async () => {
+      const futureLesson = parsedClass({
+        eventIdentity: { calendarId: 'calendar-a', eventId: 'future-zero-students' },
+        studioName: 'Alpha Studio',
+        date: '9999-01-03',
         studentCount: 0,
       });
       const config: AppConfig = {
@@ -287,9 +384,10 @@ describe('buildInvoiceRows', () => {
         },
       };
 
-      await expect(buildCurrentInvoiceSources([lesson], config)).rejects.toThrow(
-        'Alpha Studio 2026-02: invoice input contains unbillable classes'
-      );
+      await expect(buildCurrentInvoiceSources([futureLesson], config)).resolves.toEqual({
+        sources: [],
+        issues: [],
+      });
     });
   });
 

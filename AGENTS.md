@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Do exactly what the user asks and do not invent, infer, or perform additional work. Do not modify, format, restore, clean up, or otherwise touch files outside the requested operation. If additional work appears necessary, explain it and obtain the user's explicit approval before proceeding.
 
+Generic skills and workflows must never broaden the user's explicit scope. Treat targeted Git history requests (such as squash, reword, or reorder) as narrow Git operations—not as branch completion or integration. Perform only the safety checks necessary for the requested rewrite; do not run tests or builds, merge, push, clean up, or invoke branch-finishing workflows unless the user explicitly asks.
+
 ## Commands
 
 ```bash

@@ -259,6 +259,9 @@ describe('mobile Drive invoice view', () => {
     render(<InvoicesTab {...(props({ drive }) as any)} />);
 
     expect(document.body.textContent).toContain(
+      '1 Drive file needs attention. See logs for details.'
+    );
+    expect(document.body.textContent).not.toContain(
       'Malformed finalized invoice filename: mobile-stray.pdf'
     );
     expect(document.body.textContent).toContain('Managed mobile Drive file has no invoice key');
@@ -277,7 +280,7 @@ describe('mobile Drive invoice view', () => {
 
     render(<InvoicesTab {...(props({ drive }) as any)} />);
 
-    expect(document.body.textContent).toContain('Unrelated managed mobile file is corrupt');
+    expect(document.body.textContent).not.toContain('Unrelated managed mobile file is corrupt');
     expect(button('Re-finalize PDF').disabled).toBe(false);
     expect(button('Open PDF').disabled).toBe(false);
     expect(button('Draft Email').disabled).toBe(false);
@@ -332,5 +335,62 @@ describe('mobile Drive invoice view', () => {
     expect(document.body.textContent).toContain('3/2025');
     await click(button('Refresh Drive'));
     expect(drive.refresh).toHaveBeenCalledOnce();
+  });
+
+  it('summarizes source issues and keeps each reason inside only its affected card', () => {
+    const betaLesson: ParsedClass = {
+      ...lesson,
+      eventIdentity: { calendarId: 'fixture-calendar', eventId: 'beta-event' },
+      sourceSummary: 'Beta / Flow',
+      studioName: 'Beta',
+      date: '2026-07-04',
+    };
+    const betaConfig: AppConfig = {
+      ...config,
+      studios: {
+        ...config.studios,
+        Beta: {
+          fullName: 'Beta Studio',
+          address: 'Beta Street',
+          invoiceEmail: 'beta@example.com',
+          rateTiers: [{ minStudents: 1, maxStudents: null, rate: 50 }],
+        },
+      },
+    };
+    const reason = 'Invoice input contains unbillable classes.';
+
+    render(
+      <InvoicesTab
+        {...(props({
+          classes: [lesson, betaLesson],
+          config: betaConfig,
+          sourceIssues: [
+            {
+              key: { studioSlug: 'test-studio', monthKey: '2026-07' },
+              studioName: 'Test Studio',
+              reason,
+            },
+          ],
+        }) as any)}
+      />
+    );
+
+    expect(document.body.textContent).toContain('1 invoice needs attention.');
+    const cards = [...document.querySelectorAll<HTMLElement>('article')];
+    const affectedCard = cards.find((card) => card.textContent?.includes('Test Studio'))!;
+    const betaCard = cards.find((card) => card.textContent?.includes('Beta'))!;
+    expect(affectedCard.textContent).toContain('Needs attention');
+    expect(affectedCard.textContent).toContain(reason);
+    expect(betaCard.textContent).not.toContain(reason);
+    expect(
+      [...affectedCard.querySelectorAll<HTMLButtonElement>('button')].find(
+        (candidate) => candidate.textContent === 'Finalize PDF'
+      )?.disabled
+    ).toBe(true);
+    expect(
+      [...betaCard.querySelectorAll<HTMLButtonElement>('button')].find(
+        (candidate) => candidate.textContent === 'Finalize PDF'
+      )?.disabled
+    ).toBe(false);
   });
 });

@@ -7,7 +7,11 @@ import type { DriveInvoiceConflict, DriveInvoiceEntry } from '../../lib/drive/in
 import type { AppConfig, InvoicePeriod, ParsedClass } from '../../lib/types.js';
 import { createGmailDraft } from '../../lib/gmail/drafts.js';
 import { generateInvoice } from '../../lib/invoice/generator.js';
-import { buildInvoiceRows, type InvoiceRow } from '../../lib/invoice/rows.js';
+import {
+  buildInvoiceRows,
+  type CurrentInvoiceSourceIssue,
+  type InvoiceRow,
+} from '../../lib/invoice/rows.js';
 import { logError, logWarn } from '../../lib/logger.js';
 import { generateAndOpenPdf, openPdfBytes, type OpenPdfResult } from '../../lib/pdf/generatePdf.js';
 import {
@@ -42,6 +46,7 @@ interface Props {
   classes: ParsedClass[];
   config: AppConfig;
   sourceError?: string | null;
+  sourceIssues?: readonly CurrentInvoiceSourceIssue[];
   drive: DriveInvoicesState;
   dependencies?: Partial<InvoiceActionDependencies>;
 }
@@ -84,8 +89,9 @@ function firstReason(...reasons: Array<string | null>): string | null {
 
 function conflictAppliesToRow(conflict: DriveInvoiceConflict, row: InvoiceRow): boolean {
   return (
-    conflict.scope === 'global' ||
-    (conflict.key.studioSlug === row.key.studioSlug && conflict.key.monthKey === row.key.monthKey)
+    conflict.scope === 'invoice' &&
+    conflict.key.studioSlug === row.key.studioSlug &&
+    conflict.key.monthKey === row.key.monthKey
   );
 }
 
@@ -122,6 +128,8 @@ function availabilityFor(
   config: AppConfig,
   drive: DriveInvoicesState,
   sourceError: string | null,
+  sourceIssueReason: string | null,
+  globalConflictReason: string | null,
   mutationError: string | null
 ): InvoiceDisplayRow['availability'] {
   const studio = config.studios[row.studioName];
@@ -130,6 +138,7 @@ function availabilityFor(
     (lesson) => lesson.studentCount === 0 && lesson.date < today
   ).length;
   const contentReason = firstReason(
+    sourceIssueReason,
     row.classes.length === 0 ? 'Current Calendar invoice input is unavailable.' : null,
     row.studioConfigReason,
     studio === undefined && row.studioConfigReason === null
@@ -140,7 +149,7 @@ function availabilityFor(
       : null,
     total === null ? 'Invoice total is unavailable. Check studio rates and student counts.' : null
   );
-  const globalReason = firstReason(sourceError, driveStatusReason(drive));
+  const globalReason = firstReason(sourceError, driveStatusReason(drive), globalConflictReason);
   const selected = row.driveEntries.length === 1 ? row.driveEntries[0] : null;
   const remoteReason = entryReason(row.driveEntries);
   const hasFresh = selected?.state === 'fresh';
@@ -189,7 +198,10 @@ function availabilityFor(
 
   let status: InvoiceDisplayRow['availability']['status'];
   let statusLabel: string;
-  if (hasFresh) {
+  if (contentReason !== null) {
+    status = 'attention';
+    statusLabel = 'Needs attention';
+  } else if (hasFresh) {
     status = 'fresh';
     statusLabel = 'Finalized';
   } else if (hasStale) {
@@ -198,9 +210,6 @@ function availabilityFor(
   } else if (row.driveEntries.length > 0) {
     status = 'blocked';
     statusLabel = 'Blocked';
-  } else if (contentReason !== null) {
-    status = 'attention';
-    statusLabel = 'Needs attention';
   } else if (globalReason !== null) {
     status = 'setup';
     statusLabel = 'Needs setup';
@@ -228,6 +237,7 @@ function InvoicesTabContent({
   classes,
   config,
   sourceError = null,
+  sourceIssues = [],
   drive,
   dependencies: dependencyOverrides,
 }: Props) {
@@ -242,6 +252,19 @@ function InvoicesTabContent({
       (row) => row.monthKey <= currentMonth
     );
   }, [classes, config, driveEntries]);
+  const sourceIssuesByKey = useMemo(
+    () =>
+      new Map(
+        sourceIssues.map((issue) => [
+          `${issue.key.studioSlug}\u0000${issue.key.monthKey}`,
+          issue.reason,
+        ])
+      ),
+    [sourceIssues]
+  );
+  const scanConflicts = drive.snapshot?.scan.blockingConflicts ?? [];
+  const globalConflictReason =
+    scanConflicts.find((conflict) => conflict.scope === 'global')?.message ?? null;
 
   const displayRows = useMemo(
     () =>
@@ -273,13 +296,13 @@ function InvoicesTabContent({
             config,
             drive,
             sourceError,
-            drive.snapshot?.scan.blockingConflicts.find((conflict) =>
-              conflictAppliesToRow(conflict, row)
-            )?.message ?? null
+            sourceIssuesByKey.get(`${row.key.studioSlug}\u0000${row.key.monthKey}`) ?? null,
+            globalConflictReason,
+            scanConflicts.find((conflict) => conflictAppliesToRow(conflict, row))?.message ?? null
           ),
         };
       }),
-    [config, drive, rows, sourceError]
+    [config, drive, globalConflictReason, rows, scanConflicts, sourceError, sourceIssuesByKey]
   );
 
   function setRowError(row: InvoiceRow, message: string | null): void {
@@ -387,17 +410,25 @@ function InvoicesTabContent({
   }
 
   const scanWarnings = drive.snapshot?.scan.warnings ?? [];
-  const scanConflicts = drive.snapshot?.scan.blockingConflicts ?? [];
-  const scanConflictMessages = scanConflicts.map((conflict) => conflict.message);
+  const globalConflictMessages = scanConflicts
+    .filter((conflict) => conflict.scope === 'global')
+    .map((conflict) => conflict.message);
   const globalMessages = [
     sourceError,
     drive.error?.message ?? null,
-    ...scanConflictMessages,
-    ...scanWarnings,
+    ...globalConflictMessages,
   ].filter(
     (message, index, all): message is string =>
       message !== null && message.length > 0 && all.indexOf(message) === index
   );
+  const attentionMessages = [
+    sourceIssues.length > 0
+      ? `${sourceIssues.length} ${sourceIssues.length === 1 ? 'invoice needs' : 'invoices need'} attention.`
+      : null,
+    scanWarnings.length > 0
+      ? `${scanWarnings.length} Drive ${scanWarnings.length === 1 ? 'file needs' : 'files need'} attention. See logs for details.`
+      : null,
+  ].filter((message): message is string => message !== null);
   const scanMessageSignature = JSON.stringify([scanWarnings, scanConflicts]);
 
   useEffect(() => {
@@ -411,6 +442,7 @@ function InvoicesTabContent({
     displayRows,
     driveStatus: drive.status,
     globalMessages,
+    attentionMessages,
     operationKey: drive.operationKey,
     rowAction,
     rowErrors,
@@ -448,6 +480,16 @@ function InvoicesTabContent({
             </p>
           ))}
 
+          {attentionMessages.map((message) => (
+            <p
+              key={message}
+              role="status"
+              className="rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-800"
+            >
+              {message}
+            </p>
+          ))}
+
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="border-b border-gray-200 text-left text-xs uppercase text-gray-500">
@@ -468,8 +510,10 @@ function InvoicesTabContent({
                 </tr>
               )}
               {displayRows.map(
-                ({ row, rowKey: key, total, invoiceNumber, driveEntry, availability }) => {
+                ({ row, rowKey: key, total, invoiceNumber, driveEntry, availability }, index) => {
                   const busy = drive.operationKey !== null || rowAction !== null;
+                  const startsMonth =
+                    index === 0 || displayRows[index - 1]?.row.monthKey !== row.monthKey;
                   const finalizeLabel =
                     drive.operationKey === `finalize:${row.key.studioSlug}:${row.key.monthKey}`
                       ? 'Finalizing…'
@@ -479,68 +523,80 @@ function InvoicesTabContent({
                           ? 'Re-finalize PDF'
                           : 'Finalize PDF';
                   return (
-                    <tr
-                      key={key}
-                      data-invoice-status={availability.status}
-                      className="border-b border-gray-100"
-                    >
-                      <td className="py-2 pr-4">{row.studioName}</td>
-                      <td className="py-2 pr-4">{row.label}</td>
-                      <td className="py-2 pr-4 text-right">{row.classCount}</td>
-                      <td className="py-2 pr-4 text-right font-mono">
-                        {total === null ? '—' : `€${total.toFixed(2)}`}
-                      </td>
-                      <td className="py-2 pr-4">
-                        <span>{availability.statusLabel}</span>
-                        {invoiceNumber && <span className="ml-2 font-mono">{invoiceNumber}</span>}
-                        {availability.reasons.map((reason) => (
-                          <p key={reason} className="text-xs text-amber-700">
-                            {reason}
-                          </p>
-                        ))}
-                        {rowErrors[key] && (
-                          <p role="alert" className="text-xs text-red-600">
-                            {rowErrors[key]}
-                          </p>
-                        )}
-                      </td>
-                      <td className="py-2 text-right">
-                        <div className="flex flex-wrap justify-end gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handlePreview(row)}
-                            disabled={!availability.preview.enabled || busy}
-                            className="rounded bg-indigo-50 px-3 py-1 text-xs text-indigo-700 disabled:opacity-40"
+                    <React.Fragment key={key}>
+                      {startsMonth && (
+                        <tr className="border-y-2 border-indigo-200 bg-indigo-50">
+                          <th
+                            scope="rowgroup"
+                            colSpan={6}
+                            className="px-3 py-2 text-left text-sm font-bold tracking-wide text-indigo-950"
                           >
-                            {rowAction === `preview:${key}` ? 'Generating…' : 'Preview PDF'}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleFinalize(row)}
-                            disabled={!availability.finalize.enabled || busy}
-                            className="rounded bg-indigo-50 px-3 py-1 text-xs text-indigo-700 disabled:opacity-40"
-                          >
-                            {finalizeLabel}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleOpen(row)}
-                            disabled={!availability.open.enabled || busy}
-                            className="rounded bg-emerald-50 px-3 py-1 text-xs text-emerald-700 disabled:opacity-40"
-                          >
-                            {rowAction === `open:${key}` ? 'Opening…' : 'Open PDF'}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDraftEmail(row)}
-                            disabled={!availability.draftEmail.enabled || busy}
-                            className="rounded bg-amber-50 px-3 py-1 text-xs text-amber-700 disabled:opacity-40"
-                          >
-                            {rowAction === `draft:${key}` ? 'Drafting…' : 'Draft Email'}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
+                            {row.label}
+                          </th>
+                        </tr>
+                      )}
+                      <tr
+                        data-invoice-status={availability.status}
+                        className="border-b border-gray-100"
+                      >
+                        <td className="py-2 pr-4">{row.studioName}</td>
+                        <td className="py-2 pr-4">{row.label}</td>
+                        <td className="py-2 pr-4 text-right">{row.classCount}</td>
+                        <td className="py-2 pr-4 text-right font-mono">
+                          {total === null ? '—' : `€${total.toFixed(2)}`}
+                        </td>
+                        <td className="py-2 pr-4">
+                          <span>{availability.statusLabel}</span>
+                          {invoiceNumber && <span className="ml-2 font-mono">{invoiceNumber}</span>}
+                          {availability.reasons.map((reason) => (
+                            <p key={reason} className="text-xs text-amber-700">
+                              {reason}
+                            </p>
+                          ))}
+                          {rowErrors[key] && (
+                            <p role="alert" className="text-xs text-red-600">
+                              {rowErrors[key]}
+                            </p>
+                          )}
+                        </td>
+                        <td className="py-2 text-right">
+                          <div className="flex flex-wrap justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handlePreview(row)}
+                              disabled={!availability.preview.enabled || busy}
+                              className="rounded bg-indigo-50 px-3 py-1 text-xs text-indigo-700 disabled:opacity-40"
+                            >
+                              {rowAction === `preview:${key}` ? 'Generating…' : 'Preview PDF'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleFinalize(row)}
+                              disabled={!availability.finalize.enabled || busy}
+                              className="rounded bg-indigo-50 px-3 py-1 text-xs text-indigo-700 disabled:opacity-40"
+                            >
+                              {finalizeLabel}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleOpen(row)}
+                              disabled={!availability.open.enabled || busy}
+                              className="rounded bg-emerald-50 px-3 py-1 text-xs text-emerald-700 disabled:opacity-40"
+                            >
+                              {rowAction === `open:${key}` ? 'Opening…' : 'Open PDF'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDraftEmail(row)}
+                              disabled={!availability.draftEmail.enabled || busy}
+                              className="rounded bg-amber-50 px-3 py-1 text-xs text-amber-700 disabled:opacity-40"
+                            >
+                              {rowAction === `draft:${key}` ? 'Drafting…' : 'Draft Email'}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    </React.Fragment>
                   );
                 }
               )}

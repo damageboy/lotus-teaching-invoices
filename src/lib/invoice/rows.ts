@@ -24,7 +24,28 @@ export interface StudioSlugResolution {
 export interface CurrentInvoiceSourceBuild {
   inputKey: string | null;
   sources: CurrentInvoiceSource[];
+  issues: CurrentInvoiceSourceIssue[];
   error: string | null;
+}
+
+export interface CurrentInvoiceSourceIssue {
+  key: InvoiceKey;
+  studioName: string;
+  reason: string;
+}
+
+export interface CurrentInvoiceSourceResult {
+  sources: CurrentInvoiceSource[];
+  issues: CurrentInvoiceSourceIssue[];
+}
+
+function currentMonthKey(): string {
+  return new Date().toISOString().slice(0, 7);
+}
+
+function currentInvoiceClasses(classes: readonly ParsedClass[]): ParsedClass[] {
+  const throughMonth = currentMonthKey();
+  return classes.filter((lesson) => lesson.date.slice(0, 7) <= throughMonth);
 }
 
 export function currentInvoiceSourceInputKey(
@@ -32,16 +53,25 @@ export function currentInvoiceSourceInputKey(
   config: AppConfig
 ): string {
   const { invoiceSequenceByYear: _invoiceSequenceByYear, ...sourceConfig } = config;
-  return JSON.stringify([classes, sourceConfig]);
+  return JSON.stringify([currentInvoiceClasses(classes), sourceConfig]);
 }
 
 export function visibleCurrentInvoiceSourceBuild(
   currentInputKey: string,
   build: CurrentInvoiceSourceBuild
-): { sources: CurrentInvoiceSource[]; ready: boolean; error: string | null } {
-  if (build.inputKey !== currentInputKey) return { sources: [], ready: false, error: null };
-  if (build.error !== null) return { sources: [], ready: false, error: build.error };
-  return { sources: build.sources, ready: true, error: null };
+): {
+  sources: CurrentInvoiceSource[];
+  issues: CurrentInvoiceSourceIssue[];
+  ready: boolean;
+  error: string | null;
+} {
+  if (build.inputKey !== currentInputKey) {
+    return { sources: [], issues: [], ready: false, error: null };
+  }
+  if (build.error !== null) {
+    return { sources: [], issues: [], ready: false, error: build.error };
+  }
+  return { sources: build.sources, issues: build.issues, ready: true, error: null };
 }
 
 const MONTH_NAMES = [
@@ -152,37 +182,36 @@ export function buildInvoiceRows(
 export async function buildCurrentInvoiceSources(
   classes: ParsedClass[],
   config: AppConfig
-): Promise<CurrentInvoiceSource[]> {
-  if (classes.length === 0) return [];
+): Promise<CurrentInvoiceSourceResult> {
+  const relevantClasses = currentInvoiceClasses(classes);
+  if (relevantClasses.length === 0) return { sources: [], issues: [] };
   if (config.calendarId === undefined || config.calendarId.trim().length === 0) {
     throw new Error('Current invoice sources are blocked: Calendar configuration is unavailable.');
   }
   const calendarId = config.calendarId;
-  const rows = buildInvoiceRows(classes, [], config);
-  const failures: string[] = [];
+  const rows = buildInvoiceRows(relevantClasses, [], config);
+  const issues: CurrentInvoiceSourceIssue[] = [];
+  const reportIssue = (row: InvoiceRow, reason: string): null => {
+    issues.push({ key: { ...row.key }, studioName: row.studioName, reason });
+    return null;
+  };
   const pending = rows.map(async (row): Promise<CurrentInvoiceSource | null> => {
-    const prefix = `${row.studioName} ${row.monthKey}`;
     const currentNames = [...new Set(row.classes.map((lesson) => lesson.studioName))];
     const studio = config.studios[row.studioName];
     if (currentNames.length !== 1) {
-      failures.push(`${prefix}: multiple Calendar studio names share one Drive slug`);
-      return null;
+      return reportIssue(row, 'Multiple Calendar studio names share one Drive slug.');
     }
     if (studio === undefined) {
-      failures.push(`${prefix}: studio configuration is unavailable`);
-      return null;
+      return reportIssue(row, 'Studio configuration is unavailable.');
     }
     if (row.studioConfigReason !== null) {
-      failures.push(
-        `${prefix}: ${row.studioConfigReason
-          .replace(/^Drive /, 'studio ')
-          .replace('configured studios', 'configurations')}`
-      );
-      return null;
+      const reason = row.studioConfigReason
+        .replace(/^Drive /, 'studio ')
+        .replace('configured studios', 'configurations');
+      return reportIssue(row, `${reason[0].toUpperCase()}${reason.slice(1)}`);
     }
     if (row.classes.some((lesson) => lesson.eventIdentity.calendarId !== config.calendarId)) {
-      failures.push(`${prefix}: Calendar identity does not match the selected calendar`);
-      return null;
+      return reportIssue(row, 'Calendar identity does not match the selected calendar.');
     }
     try {
       const generated = generateInvoice(row.studioName, row.classes, studio, {
@@ -192,8 +221,7 @@ export async function buildCurrentInvoiceSources(
         ).padStart(2, '0')}`,
       });
       if (generated.warnings.length > 0 || generated.invoice.totalClasses !== row.classes.length) {
-        failures.push(`${prefix}: invoice input contains unbillable classes`);
-        return null;
+        return reportIssue(row, 'Invoice input contains unbillable classes.');
       }
       const invoice = generated.invoice;
       // This fingerprint only invalidates controller requests when business input changes.
@@ -214,13 +242,13 @@ export async function buildCurrentInvoiceSources(
         fingerprint: await fingerprintInvoiceSource(semantic),
       };
     } catch (error) {
-      failures.push(`${prefix}: ${error instanceof Error ? error.message : String(error)}`);
-      return null;
+      const message = error instanceof Error ? error.message : String(error);
+      return reportIssue(row, /[.!?]$/.test(message) ? message : `${message}.`);
     }
   });
   const resolved = await Promise.all(pending);
-  if (failures.length > 0) {
-    throw new Error(`Current invoice sources are blocked: ${failures.sort().join('; ')}`);
-  }
-  return resolved.filter((source): source is CurrentInvoiceSource => source !== null);
+  return {
+    sources: resolved.filter((source): source is CurrentInvoiceSource => source !== null),
+    issues,
+  };
 }

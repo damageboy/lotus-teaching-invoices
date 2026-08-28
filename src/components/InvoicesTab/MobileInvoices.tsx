@@ -28,6 +28,7 @@ interface Props {
   displayRows: InvoiceDisplayRow[];
   driveStatus: DriveInvoicesStatus;
   globalMessages: readonly string[];
+  attentionMessages: readonly string[];
   operationKey: string | null;
   rowAction: string | null;
   rowErrors: Readonly<Record<string, string>>;
@@ -74,6 +75,7 @@ export function MobileInvoices({
   displayRows,
   driveStatus,
   globalMessages,
+  attentionMessages,
   operationKey,
   rowAction,
   rowErrors,
@@ -107,6 +109,16 @@ export function MobileInvoices({
         </p>
       ))}
 
+      {attentionMessages.map((message) => (
+        <p
+          key={message}
+          role="status"
+          className="rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"
+        >
+          {message}
+        </p>
+      ))}
+
       {monthGroups.length === 0 ? (
         <p className="py-8 text-center text-gray-400">No invoices</p>
       ) : (
@@ -114,103 +126,108 @@ export function MobileInvoices({
           <section
             key={monthKey}
             aria-label={`${rows[0].row.label} invoices`}
-            className="flex flex-col gap-3"
+            className="overflow-hidden rounded-xl border-2 border-indigo-200 bg-indigo-50/40 shadow-sm"
           >
-            <h2 className="text-sm font-semibold text-gray-600">{rows[0].row.label}</h2>
-            {rows.map(({ row, rowKey, total, invoiceNumber, driveEntry, availability }) => {
-              const anotherActionRunning = operationKey !== null || rowAction !== null;
-              const finalLabel = driveEntry?.state === 'stale' ? 'Re-finalize PDF' : 'Finalize PDF';
-              return (
-                <article
-                  key={rowKey}
-                  aria-label={`${row.studioName} invoice for ${row.label}`}
-                  data-invoice-status={availability.status}
-                  className="rounded-xl border border-indigo-100 bg-white p-4 shadow-sm"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h3 className="font-semibold text-gray-900">{row.studioName}</h3>
-                      <p className="text-sm text-gray-500">{row.label}</p>
-                    </div>
-                    <span
-                      className={`rounded-full px-2 py-1 text-xs font-medium ${statusClasses(availability.status)}`}
-                    >
-                      {availability.statusLabel}
-                    </span>
-                  </div>
-
-                  <dl className="mt-4 grid grid-cols-2 gap-3 border-y border-gray-100 py-3 text-sm">
-                    {invoiceNumber && (
+            <h2 className="border-b-2 border-indigo-200 bg-indigo-100 px-4 py-3 text-base font-bold text-indigo-950">
+              {rows[0].row.label}
+            </h2>
+            <div className="flex flex-col gap-3 p-3">
+              {rows.map(({ row, rowKey, total, invoiceNumber, driveEntry, availability }) => {
+                const anotherActionRunning = operationKey !== null || rowAction !== null;
+                const finalLabel =
+                  driveEntry?.state === 'stale' ? 'Re-finalize PDF' : 'Finalize PDF';
+                return (
+                  <article
+                    key={rowKey}
+                    aria-label={`${row.studioName} invoice for ${row.label}`}
+                    data-invoice-status={availability.status}
+                    className="rounded-xl border border-indigo-100 bg-white p-4 shadow-sm"
+                  >
+                    <div className="flex items-start justify-between gap-3">
                       <div>
-                        <dt className="text-gray-500">Invoice #</dt>
-                        <dd className="font-mono font-semibold text-gray-900">{invoiceNumber}</dd>
+                        <h3 className="font-semibold text-gray-900">{row.studioName}</h3>
+                        <p className="text-sm text-gray-500">{row.label}</p>
                       </div>
-                    )}
-                    <div>
-                      <dt className="text-gray-500">Classes</dt>
-                      <dd className="font-semibold text-gray-900">
-                        {classCountLabel(row.classCount)}
-                      </dd>
+                      <span
+                        className={`rounded-full px-2 py-1 text-xs font-medium ${statusClasses(availability.status)}`}
+                      >
+                        {availability.statusLabel}
+                      </span>
                     </div>
-                    <div>
-                      <dt className="text-gray-500">Total</dt>
-                      <dd className="font-mono font-semibold text-gray-900">
-                        {total === null ? 'Unavailable' : `€${total.toFixed(2)}`}
-                      </dd>
-                    </div>
-                  </dl>
 
-                  <div className="mt-3 flex flex-col gap-2">
-                    {availability.reasons.map((reason) => (
-                      <p key={reason} className="text-sm text-amber-700">
-                        {reason}
-                      </p>
-                    ))}
-                    {rowErrors[rowKey] && (
-                      <p role="alert" className="text-sm text-red-600">
-                        {rowErrors[rowKey]}
-                      </p>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => onFinalize(row)}
-                      disabled={!availability.finalize.enabled || anotherActionRunning}
-                      title={availability.finalize.reason ?? undefined}
-                      className="min-h-12 w-full rounded bg-indigo-600 px-4 text-sm font-semibold text-white disabled:opacity-40"
-                    >
-                      {operationLabel(row, driveEntry, operationKey, finalLabel)}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onPreview(row)}
-                      disabled={!availability.preview.enabled || anotherActionRunning}
-                      title={availability.preview.reason ?? undefined}
-                      className="min-h-12 w-full rounded border border-indigo-300 px-4 text-sm font-semibold text-indigo-700 disabled:opacity-40"
-                    >
-                      {rowAction === `preview:${rowKey}` ? 'Generating…' : 'Preview PDF'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onOpen(row)}
-                      disabled={!availability.open.enabled || anotherActionRunning}
-                      title={availability.open.reason ?? undefined}
-                      className="min-h-12 w-full rounded border border-emerald-300 px-4 text-sm font-semibold text-emerald-800 disabled:opacity-40"
-                    >
-                      {rowAction === `open:${rowKey}` ? 'Opening…' : 'Open PDF'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onDraftEmail(row)}
-                      disabled={!availability.draftEmail.enabled || anotherActionRunning}
-                      title={availability.draftEmail.reason ?? undefined}
-                      className="min-h-12 w-full rounded border border-amber-300 px-4 text-sm font-semibold text-amber-800 disabled:opacity-40"
-                    >
-                      {rowAction === `draft:${rowKey}` ? 'Drafting…' : 'Draft Email'}
-                    </button>
-                  </div>
-                </article>
-              );
-            })}
+                    <dl className="mt-4 grid grid-cols-2 gap-3 border-y border-gray-100 py-3 text-sm">
+                      {invoiceNumber && (
+                        <div>
+                          <dt className="text-gray-500">Invoice #</dt>
+                          <dd className="font-mono font-semibold text-gray-900">{invoiceNumber}</dd>
+                        </div>
+                      )}
+                      <div>
+                        <dt className="text-gray-500">Classes</dt>
+                        <dd className="font-semibold text-gray-900">
+                          {classCountLabel(row.classCount)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-gray-500">Total</dt>
+                        <dd className="font-mono font-semibold text-gray-900">
+                          {total === null ? 'Unavailable' : `€${total.toFixed(2)}`}
+                        </dd>
+                      </div>
+                    </dl>
+
+                    <div className="mt-3 flex flex-col gap-2">
+                      {availability.reasons.map((reason) => (
+                        <p key={reason} className="text-sm text-amber-700">
+                          {reason}
+                        </p>
+                      ))}
+                      {rowErrors[rowKey] && (
+                        <p role="alert" className="text-sm text-red-600">
+                          {rowErrors[rowKey]}
+                        </p>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => onFinalize(row)}
+                        disabled={!availability.finalize.enabled || anotherActionRunning}
+                        title={availability.finalize.reason ?? undefined}
+                        className="min-h-12 w-full rounded bg-indigo-600 px-4 text-sm font-semibold text-white disabled:opacity-40"
+                      >
+                        {operationLabel(row, driveEntry, operationKey, finalLabel)}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onPreview(row)}
+                        disabled={!availability.preview.enabled || anotherActionRunning}
+                        title={availability.preview.reason ?? undefined}
+                        className="min-h-12 w-full rounded border border-indigo-300 px-4 text-sm font-semibold text-indigo-700 disabled:opacity-40"
+                      >
+                        {rowAction === `preview:${rowKey}` ? 'Generating…' : 'Preview PDF'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onOpen(row)}
+                        disabled={!availability.open.enabled || anotherActionRunning}
+                        title={availability.open.reason ?? undefined}
+                        className="min-h-12 w-full rounded border border-emerald-300 px-4 text-sm font-semibold text-emerald-800 disabled:opacity-40"
+                      >
+                        {rowAction === `open:${rowKey}` ? 'Opening…' : 'Open PDF'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDraftEmail(row)}
+                        disabled={!availability.draftEmail.enabled || anotherActionRunning}
+                        title={availability.draftEmail.reason ?? undefined}
+                        className="min-h-12 w-full rounded border border-amber-300 px-4 text-sm font-semibold text-amber-800 disabled:opacity-40"
+                      >
+                        {rowAction === `draft:${rowKey}` ? 'Drafting…' : 'Draft Email'}
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
           </section>
         ))
       )}

@@ -106,10 +106,12 @@ export default function App() {
   const [invoiceSourceBuild, setInvoiceSourceBuild] = useState<CurrentInvoiceSourceBuild>({
     inputKey: null,
     sources: [],
+    issues: [],
     error: null,
   });
   const {
     sources: invoiceSources,
+    issues: invoiceSourceIssues,
     ready: invoiceSourcesReady,
     error: invoiceSourceError,
   } = visibleCurrentInvoiceSourceBuild(invoiceSourceInputKey, invoiceSourceBuild);
@@ -215,14 +217,14 @@ export default function App() {
 
   useEffect(() => {
     if (setupReadiness.status !== 'ready') {
-      setInvoiceSourceBuild({ inputKey: null, sources: [], error: null });
+      setInvoiceSourceBuild({ inputKey: null, sources: [], issues: [], error: null });
       return;
     }
     let current = true;
     void buildCurrentInvoiceSources(classes, config).then(
-      (sources) => {
+      ({ sources, issues }) => {
         if (!current) return;
-        setInvoiceSourceBuild({ inputKey: invoiceSourceInputKey, sources, error: null });
+        setInvoiceSourceBuild({ inputKey: invoiceSourceInputKey, sources, issues, error: null });
       },
       (cause) => {
         if (!current) return;
@@ -231,6 +233,7 @@ export default function App() {
         setInvoiceSourceBuild({
           inputKey: invoiceSourceInputKey,
           sources: [],
+          issues: [],
           error: sourceMessage,
         });
       }
@@ -389,6 +392,7 @@ export default function App() {
             config={config}
             drive={driveInvoices}
             sourceError={invoiceSourceError}
+            sourceIssues={invoiceSourceIssues}
           />
         )}
         {visibleActiveTab === 'income' && (
