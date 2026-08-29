@@ -83,6 +83,148 @@ afterEach(() => cleanup());
 afterAll(() => restoreDom());
 
 describe('useCalendarPicker', () => {
+  it('validates a configured Calendar non-interactively', async () => {
+    dependencies.listCalendars.mockResolvedValueOnce([
+      { id: 'calendar-a', summary: 'Teaching', accessRole: 'owner' },
+    ]);
+    const saveConfig = vi.fn(async () => undefined);
+    const view = renderHook(() =>
+      useCalendarPicker(
+        {
+          config: {
+            ...unconfiguredConfig,
+            calendarId: 'calendar-a',
+            calendarName: 'Teaching',
+            calendarAccessRole: 'owner',
+          },
+          saveConfig,
+          validationEnabled: true,
+          authorizationIncarnation: 4,
+        },
+        dependencies
+      )
+    );
+
+    await waitFor(() => expect(view.result.current.connectionStatus).toBe('accessible'));
+
+    expect(dependencies.listCalendars).toHaveBeenCalledWith();
+    expect(saveConfig).not.toHaveBeenCalled();
+  });
+
+  it('refreshes changed Calendar metadata before marking it accessible', async () => {
+    dependencies.listCalendars.mockResolvedValueOnce([
+      { id: 'calendar-a', summary: 'Current Name', accessRole: 'writer' },
+    ]);
+    const saveConfig = vi.fn(async () => undefined);
+    const view = renderHook(() =>
+      useCalendarPicker(
+        {
+          config: {
+            ...unconfiguredConfig,
+            calendarId: 'calendar-a',
+            calendarName: 'Old Name',
+            calendarAccessRole: 'owner',
+          },
+          saveConfig,
+          validationEnabled: true,
+        },
+        dependencies
+      )
+    );
+
+    await waitFor(() => expect(view.result.current.connectionStatus).toBe('accessible'));
+
+    expect(saveConfig).toHaveBeenCalledOnce();
+    expect(
+      saveConfig.mock.calls[0][0]({
+        ...unconfiguredConfig,
+        calendarId: 'calendar-a',
+        calendarName: 'Old Name',
+        calendarAccessRole: 'owner',
+      })
+    ).toMatchObject({
+      calendarId: 'calendar-a',
+      calendarName: 'Current Name',
+      calendarAccessRole: 'writer',
+    });
+  });
+
+  it('marks a configured but inaccessible Calendar as missing without rewriting config', async () => {
+    dependencies.listCalendars.mockResolvedValueOnce([{ id: 'other-calendar', summary: 'Other' }]);
+    const saveConfig = vi.fn(async () => undefined);
+    const view = renderHook(() =>
+      useCalendarPicker(
+        {
+          config: { ...unconfiguredConfig, calendarId: 'calendar-a', calendarName: 'Teaching' },
+          saveConfig,
+          validationEnabled: true,
+        },
+        dependencies
+      )
+    );
+
+    await waitFor(() => expect(view.result.current.connectionStatus).toBe('missing'));
+    expect(saveConfig).not.toHaveBeenCalled();
+  });
+
+  it('keeps transient validation unavailable until Retry succeeds', async () => {
+    dependencies.listCalendars
+      .mockRejectedValueOnce(new Error('Calendar temporarily unavailable'))
+      .mockResolvedValueOnce([{ id: 'calendar-a', summary: 'Teaching' }]);
+    const view = renderHook(() =>
+      useCalendarPicker(
+        {
+          config: { ...unconfiguredConfig, calendarId: 'calendar-a', calendarName: 'Teaching' },
+          saveConfig: vi.fn(async () => undefined),
+          validationEnabled: true,
+        },
+        dependencies
+      )
+    );
+    await waitFor(() => expect(view.result.current.connectionStatus).toBe('unavailable'));
+
+    await act(() => view.result.current.retryValidation());
+
+    expect(view.result.current.connectionStatus).toBe('accessible');
+    expect(dependencies.listCalendars).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects validation from an older authorization incarnation', async () => {
+    const first = deferred<CalendarListEntry[]>();
+    const second = deferred<CalendarListEntry[]>();
+    dependencies.listCalendars
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+    const config = {
+      ...unconfiguredConfig,
+      calendarId: 'calendar-a',
+      calendarName: 'Teaching',
+    };
+    const view = renderHook(
+      ({ authorizationIncarnation }) =>
+        useCalendarPicker(
+          {
+            config,
+            saveConfig: vi.fn(async () => undefined),
+            validationEnabled: true,
+            authorizationIncarnation,
+          },
+          dependencies
+        ),
+      { initialProps: { authorizationIncarnation: 1 } }
+    );
+
+    view.rerender({ authorizationIncarnation: 2 });
+    await act(async () => {
+      first.resolve([{ id: 'calendar-a', summary: 'Stale' }]);
+      await first.promise;
+    });
+    expect(view.result.current.connectionStatus).toBe('checking');
+
+    second.resolve([{ id: 'calendar-a', summary: 'Teaching' }]);
+    await waitFor(() => expect(view.result.current.connectionStatus).toBe('accessible'));
+  });
+
   it('does not publish a Calendar selection until durable save succeeds', async () => {
     const pending = deferred<void>();
     let requested: AppConfig | null = null;
@@ -397,7 +539,7 @@ describe('useCalendarPicker', () => {
     const saveConfig = vi.fn(async () => undefined);
     const view = renderHook(
       ({ config }: { config: AppConfig }) =>
-        useCalendarPicker({ config, saveConfig }, dependencies),
+        useCalendarPicker({ config, saveConfig, validationEnabled: false }, dependencies),
       { initialProps: { config: calendarA } }
     );
 

@@ -1,12 +1,20 @@
 import type { DriveInvoicesStatus } from '../../hooks/useDriveInvoices.js';
 import type { DriveStoreSnapshot } from '../drive/invoiceStore.js';
 
+export type CalendarConnectionStatus =
+  | 'unchecked'
+  | 'checking'
+  | 'accessible'
+  | 'missing'
+  | 'unavailable';
+
 export type SetupStep = 'calendar' | 'drive';
 export type SetupReadinessStatus = 'checking' | 'incomplete' | 'ready' | 'unavailable';
 
 export interface SetupReadinessInput {
   configLoading: boolean;
   calendarId?: string;
+  calendarStatus?: CalendarConnectionStatus;
   authorizationLoading: boolean;
   hasDrive: boolean;
   driveStatus: DriveInvoicesStatus;
@@ -21,14 +29,17 @@ export interface SetupReadiness {
 }
 
 export function deriveSetupReadiness(input: SetupReadinessInput): SetupReadiness {
-  const calendarConfigured = Boolean(input.calendarId?.trim());
   const driveConfigured = input.hasDrive && input.driveSnapshot !== null;
-  const firstIncompleteStep = !calendarConfigured ? 'calendar' : !driveConfigured ? 'drive' : null;
+  const calendarStatus =
+    input.calendarStatus ?? (input.calendarId?.trim() ? 'accessible' : 'missing');
+  const calendarConfigured = driveConfigured && calendarStatus === 'accessible';
+  const firstIncompleteStep = !driveConfigured ? 'drive' : !calendarConfigured ? 'calendar' : null;
 
   if (
     input.configLoading ||
     input.authorizationLoading ||
-    (input.hasDrive && input.driveSnapshot === null && input.driveStatus === 'loading')
+    (input.hasDrive && input.driveSnapshot === null && input.driveStatus === 'loading') ||
+    (driveConfigured && (calendarStatus === 'unchecked' || calendarStatus === 'checking'))
   ) {
     return { status: 'checking', calendarConfigured, driveConfigured, firstIncompleteStep };
   }
@@ -36,9 +47,10 @@ export function deriveSetupReadiness(input: SetupReadinessInput): SetupReadiness
     return { status: 'ready', calendarConfigured, driveConfigured, firstIncompleteStep: null };
   }
   if (
-    input.hasDrive &&
-    input.driveSnapshot === null &&
-    (input.driveStatus === 'offline' || input.driveStatus === 'blocked')
+    (input.hasDrive &&
+      input.driveSnapshot === null &&
+      (input.driveStatus === 'offline' || input.driveStatus === 'blocked')) ||
+    (driveConfigured && calendarStatus === 'unavailable')
   ) {
     return { status: 'unavailable', calendarConfigured, driveConfigured, firstIncompleteStep };
   }

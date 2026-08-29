@@ -10,12 +10,12 @@ const { useSetupOnboarding } = await import('../../src/hooks/useSetupOnboarding.
 const calendarMissing: SetupReadiness = {
   status: 'incomplete',
   calendarConfigured: false,
-  driveConfigured: false,
+  driveConfigured: true,
   firstIncompleteStep: 'calendar',
 };
 const driveMissing: SetupReadiness = {
   status: 'incomplete',
-  calendarConfigured: true,
+  calendarConfigured: false,
   driveConfigured: false,
   firstIncompleteStep: 'drive',
 };
@@ -38,12 +38,12 @@ describe('useSetupOnboarding', () => {
     expect(fresh.result.current.open).toBe(true);
   });
 
-  it('advances from Calendar to Drive when readiness changes', () => {
+  it('advances from Drive to Calendar when the selected config still needs one', () => {
     const view = renderHook(({ readiness }) => useSetupOnboarding(readiness), {
-      initialProps: { readiness: calendarMissing },
+      initialProps: { readiness: driveMissing },
     });
-    view.rerender({ readiness: driveMissing });
-    expect(view.result.current).toMatchObject({ open: true, step: 'drive' });
+    view.rerender({ readiness: calendarMissing });
+    expect(view.result.current).toMatchObject({ open: true, step: 'calendar' });
   });
 
   it('closes synchronously when setup becomes ready', () => {

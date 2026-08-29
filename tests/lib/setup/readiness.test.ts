@@ -6,7 +6,7 @@ import {
 
 const base: SetupReadinessInput = {
   configLoading: false,
-  calendarId: 'teaching@example.test',
+  calendarStatus: 'accessible',
   authorizationLoading: false,
   hasDrive: true,
   driveStatus: 'ready',
@@ -22,16 +22,44 @@ describe('deriveSetupReadiness', () => {
     ).toBe('checking');
   });
 
-  it('requires a non-blank Calendar id and a current authorized snapshot', () => {
-    expect(deriveSetupReadiness({ ...base, calendarId: '  ' })).toMatchObject({
+  it('resolves Drive before Calendar', () => {
+    expect(
+      deriveSetupReadiness({
+        ...base,
+        hasDrive: false,
+        driveSnapshot: null,
+        calendarStatus: 'missing',
+      })
+    ).toMatchObject({
       status: 'incomplete',
       calendarConfigured: false,
-      firstIncompleteStep: 'calendar',
+      firstIncompleteStep: 'drive',
     });
     expect(deriveSetupReadiness({ ...base, hasDrive: false, driveSnapshot: null })).toMatchObject({
       status: 'incomplete',
       driveConfigured: false,
       firstIncompleteStep: 'drive',
+    });
+    expect(deriveSetupReadiness({ ...base, calendarStatus: 'missing' })).toMatchObject({
+      status: 'incomplete',
+      driveConfigured: true,
+      calendarConfigured: false,
+      firstIncompleteStep: 'calendar',
+    });
+  });
+
+  it('waits for Calendar validation only after Drive is configured', () => {
+    expect(deriveSetupReadiness({ ...base, calendarStatus: 'checking' })).toMatchObject({
+      status: 'checking',
+      firstIncompleteStep: 'calendar',
+    });
+    expect(deriveSetupReadiness({ ...base, calendarStatus: 'unchecked' })).toMatchObject({
+      status: 'checking',
+      firstIncompleteStep: 'calendar',
+    });
+    expect(deriveSetupReadiness({ ...base, calendarStatus: 'unavailable' })).toMatchObject({
+      status: 'unavailable',
+      firstIncompleteStep: 'calendar',
     });
   });
 

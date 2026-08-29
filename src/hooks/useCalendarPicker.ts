@@ -5,6 +5,7 @@ import {
   type CalendarListEntry,
 } from '../lib/calendar/calendar-api.js';
 import type { AppConfig } from '../lib/types.js';
+import type { CalendarConnectionStatus } from '../lib/setup/readiness.js';
 
 export interface CalendarPickerController {
   calendars: readonly CalendarListEntry[] | null;
@@ -13,14 +14,20 @@ export interface CalendarPickerController {
   saving: boolean;
   error: string | null;
   selectedName: string;
+  connectionStatus: CalendarConnectionStatus;
   openList(): Promise<void>;
   select(calendar: CalendarListEntry): Promise<void>;
   closeList(): void;
+  retryValidation(): Promise<void>;
 }
+
+export type { CalendarConnectionStatus } from '../lib/setup/readiness.js';
 
 export interface UseCalendarPickerOptions {
   config: AppConfig;
   saveConfig(update: (current: AppConfig) => AppConfig | null): Promise<void>;
+  validationEnabled?: boolean;
+  authorizationIncarnation?: number;
 }
 
 export interface CalendarPickerDependencies {
@@ -40,6 +47,14 @@ function calendarIdentity(config: AppConfig): string {
   ]);
 }
 
+function validationIdentity(options: UseCalendarPickerOptions, config = options.config): string {
+  return JSON.stringify([
+    options.validationEnabled ?? true,
+    options.authorizationIncarnation ?? 0,
+    calendarIdentity(config),
+  ]);
+}
+
 function configWithCalendar(config: AppConfig, calendar: CalendarListEntry): AppConfig {
   const { calendarAccessRole: _previousAccessRole, ...configWithoutAccessRole } = config;
   return {
@@ -54,20 +69,23 @@ export function useCalendarPicker(
   options: UseCalendarPickerOptions,
   dependencies: CalendarPickerDependencies = { listCalendars }
 ): CalendarPickerController {
+  const currentValidationIdentity = validationIdentity(options);
   const [calendars, setCalendars] = useState<readonly CalendarListEntry[] | null>(null);
   const [listOpen, setListOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<CalendarConnectionStatus>('unchecked');
   const mountedRef = useRef(true);
   const requestRef = useRef(0);
   const semanticIncarnationRef = useRef(0);
-  const committedIdentityRef = useRef(calendarIdentity(options.config));
+  const committedIdentityRef = useRef(validationIdentity(options));
+  const completedValidationRef = useRef<string | null>(null);
   const committedOptionsRef = useRef(options);
   const selectionOperationRef = useRef<SelectionOperation | null>(null);
 
   useLayoutEffect(() => {
-    const identity = calendarIdentity(options.config);
+    const identity = validationIdentity(options);
     const operation = selectionOperationRef.current;
     if (identity !== committedIdentityRef.current) {
       committedIdentityRef.current = identity;
@@ -78,6 +96,15 @@ export function useCalendarPicker(
       setLoading(false);
       if (operation === null) setSaving(false);
       setError(null);
+      setConnectionStatus(
+        completedValidationRef.current === identity
+          ? 'accessible'
+          : !(options.validationEnabled ?? true)
+            ? 'unchecked'
+            : options.config.calendarId?.trim()
+              ? 'checking'
+              : 'missing'
+      );
     }
     committedOptionsRef.current = options;
   }, [options]);
@@ -121,15 +148,68 @@ export function useCalendarPicker(
     [dependencies.listCalendars, isCurrent]
   );
 
+  const validateConnection = useCallback(async (): Promise<void> => {
+    const current = committedOptionsRef.current;
+    if (!(current.validationEnabled ?? true)) {
+      setConnectionStatus('unchecked');
+      return;
+    }
+    const calendarId = current.config.calendarId?.trim();
+    if (!calendarId) {
+      setConnectionStatus('missing');
+      return;
+    }
+    const request = ++requestRef.current;
+    const incarnation = semanticIncarnationRef.current;
+    setConnectionStatus('checking');
+    setLoading(true);
+    setError(null);
+    try {
+      const nextCalendars = await dependencies.listCalendars();
+      if (!isCurrent(request, incarnation)) return;
+      setCalendars(nextCalendars);
+      const selected = nextCalendars.find((calendar) => calendar.id === calendarId);
+      if (selected === undefined) {
+        setConnectionStatus('missing');
+        return;
+      }
+      const nextConfig = configWithCalendar(current.config, selected);
+      const nextIdentity = validationIdentity(current, nextConfig);
+      if (calendarIdentity(nextConfig) !== calendarIdentity(current.config)) {
+        completedValidationRef.current = nextIdentity;
+        try {
+          await current.saveConfig((latest) =>
+            isCurrent(request, incarnation) && latest.calendarId?.trim() === calendarId
+              ? configWithCalendar(latest, selected)
+              : null
+          );
+        } catch (cause) {
+          if (completedValidationRef.current === nextIdentity) {
+            completedValidationRef.current = null;
+          }
+          throw cause;
+        }
+        if (!isCurrent(request, incarnation)) return;
+      }
+      completedValidationRef.current = nextIdentity;
+      setConnectionStatus('accessible');
+    } catch (cause) {
+      if (isCurrent(request, incarnation)) {
+        setConnectionStatus('unavailable');
+        setError(calendarErrorMessage(cause));
+      }
+    } finally {
+      if (isCurrent(request, incarnation)) setLoading(false);
+    }
+  }, [dependencies.listCalendars, isCurrent]);
+
   useEffect(() => {
-    if (!options.config.calendarId || options.config.calendarName?.trim()) return;
-    void loadList(false);
-  }, [
-    loadList,
-    options.config.calendarId,
-    options.config.calendarName,
-    options.config.calendarAccessRole,
-  ]);
+    if (completedValidationRef.current === currentValidationIdentity) {
+      setConnectionStatus('accessible');
+      return;
+    }
+    void validateConnection();
+  }, [currentValidationIdentity, validateConnection]);
 
   const openList = useCallback((): Promise<void> => loadList(true), [loadList]);
 
@@ -173,6 +253,11 @@ export function useCalendarPicker(
     setError(null);
   }, []);
 
+  const retryValidation = useCallback((): Promise<void> => {
+    completedValidationRef.current = null;
+    return validateConnection();
+  }, [validateConnection]);
+
   const selectedName =
     options.config.calendarName?.trim() ||
     calendars?.find((calendar) => calendar.id === options.config.calendarId)?.summary.trim() ||
@@ -185,8 +270,10 @@ export function useCalendarPicker(
     saving,
     error,
     selectedName,
+    connectionStatus,
     openList,
     select,
     closeList,
+    retryValidation,
   };
 }

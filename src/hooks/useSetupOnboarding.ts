@@ -12,7 +12,7 @@ export interface SetupOnboardingController {
 
 export function useSetupOnboarding(readiness: SetupReadiness): SetupOnboardingController {
   const [dismissed, setDismissed] = useState(false);
-  const [step, setStep] = useState<SetupStep>(readiness.firstIncompleteStep ?? 'calendar');
+  const [step, setStep] = useState<SetupStep>(readiness.firstIncompleteStep ?? 'drive');
   const [driveSetupActive, setDriveSetupActive] = useState(
     readiness.firstIncompleteStep === 'drive'
   );
