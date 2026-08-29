@@ -7,15 +7,18 @@ use tauri::State;
 
 const AUTH_TOKENS_FILE: &str = "google-tokens.json";
 const LEGACY_AUTH_TOKENS_FILE: &str = "gmail-tokens.json";
+const DRIVE_CONFIG_POINTER_FILE: &str = "drive-config-pointer.json";
 const PROMPT_PREFERENCE_FILE: &str = "calendar-edit-prompt-preference.json";
 const CALENDAR_CACHE_FILE: &str = "calendar-cache.sqlite";
 const AUTH_LOCK_FILE: &str = ".google-tokens.lock";
 const LEGACY_AUTH_LOCK_FILE: &str = ".gmail-tokens.lock";
+const DRIVE_CONFIG_POINTER_LOCK_FILE: &str = ".drive-config-pointer.lock";
 const LEGACY_CONFIG_FILE: &str = "config.yaml";
 const TEMP_FILE_MARKER: &str = "lotus-write-v1";
 const MAX_TEMP_CREATE_ATTEMPTS: usize = 32;
 static NEXT_TEMP_FILE_ID: AtomicU64 = AtomicU64::new(0);
 static AUTH_WRITE_MUTEX: Mutex<()> = Mutex::new(());
+static DRIVE_CONFIG_POINTER_WRITE_MUTEX: Mutex<()> = Mutex::new(());
 static CONFIG_DELETE_MUTEX: Mutex<()> = Mutex::new(());
 
 fn migrate_auth_storage(root: &Path) -> io::Result<()> {
@@ -257,6 +260,7 @@ fn owned_temp_writer_pid(file_name: &str) -> Option<u32> {
     for managed_file in [
         AUTH_TOKENS_FILE,
         LEGACY_AUTH_TOKENS_FILE,
+        DRIVE_CONFIG_POINTER_FILE,
         PROMPT_PREFERENCE_FILE,
     ] {
         let prefix = format!(".{managed_file}.");
@@ -350,12 +354,20 @@ impl AppStorage {
         self.root.join(AUTH_TOKENS_FILE)
     }
 
+    pub fn drive_config_pointer_path(&self) -> PathBuf {
+        self.root.join(DRIVE_CONFIG_POINTER_FILE)
+    }
+
     pub fn prompt_preference_path(&self) -> PathBuf {
         self.root.join(PROMPT_PREFERENCE_FILE)
     }
 
     fn auth_lock_path(&self) -> PathBuf {
         self.root.join(AUTH_LOCK_FILE)
+    }
+
+    fn drive_config_pointer_lock_path(&self) -> PathBuf {
+        self.root.join(DRIVE_CONFIG_POINTER_LOCK_FILE)
     }
 
     pub fn calendar_cache_path(&self) -> PathBuf {
@@ -397,6 +409,26 @@ impl AppStorage {
             return Ok(StorageWriteOutcome::Conflict);
         }
         self.write_atomic(self.auth_tokens_path(), raw)
+    }
+
+    pub fn read_drive_config_pointer(&self) -> io::Result<Option<String>> {
+        Self::read_optional(self.drive_config_pointer_path())
+    }
+
+    pub fn compare_and_write_drive_config_pointer(
+        &self,
+        raw: &str,
+        expected_raw: Option<&str>,
+    ) -> io::Result<StorageWriteOutcome> {
+        let _process_guard = DRIVE_CONFIG_POINTER_WRITE_MUTEX
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let _file_lock = AuthFileLock::acquire(&self.drive_config_pointer_lock_path())?;
+        let current = self.read_drive_config_pointer()?;
+        if current.as_deref() != expected_raw {
+            return Ok(StorageWriteOutcome::Conflict);
+        }
+        self.write_atomic(self.drive_config_pointer_path(), raw)
     }
 
     pub fn read_prompt_preference(&self) -> io::Result<Option<String>> {
@@ -456,6 +488,24 @@ pub fn write_auth_tokens(
 }
 
 #[tauri::command]
+pub fn read_drive_config_pointer(storage: State<'_, AppStorage>) -> Result<Option<String>, String> {
+    storage
+        .read_drive_config_pointer()
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn write_drive_config_pointer(
+    storage: State<'_, AppStorage>,
+    raw: String,
+    expected_raw: Option<String>,
+) -> Result<StorageWriteOutcome, String> {
+    storage
+        .compare_and_write_drive_config_pointer(&raw, expected_raw.as_deref())
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub fn read_legacy_config(
     storage: State<'_, AppStorage>,
     config_path: State<'_, crate::ConfigPath>,
@@ -499,8 +549,8 @@ pub fn write_calendar_edit_prompt_preference(
 mod tests {
     use super::{
         cleanup_owned_temp_files_with, commit_staged_with, stage_atomic_write_with, AppStorage,
-        StorageWriteOutcome, AUTH_LOCK_FILE, AUTH_TOKENS_FILE, LEGACY_AUTH_LOCK_FILE,
-        LEGACY_AUTH_TOKENS_FILE,
+        StorageWriteOutcome, AUTH_LOCK_FILE, AUTH_TOKENS_FILE, DRIVE_CONFIG_POINTER_FILE,
+        LEGACY_AUTH_LOCK_FILE, LEGACY_AUTH_TOKENS_FILE,
     };
     use std::cell::Cell;
     use std::io;
@@ -518,6 +568,93 @@ mod tests {
 
         assert_eq!(storage.read_auth_tokens().unwrap(), None);
         assert_eq!(storage.read_prompt_preference().unwrap(), None);
+    }
+
+    #[test]
+    fn drive_config_pointer_round_trips_exact_bytes_with_private_permissions() {
+        let root = tempfile::tempdir().unwrap();
+        let storage = AppStorage::new(root.path().to_path_buf()).unwrap();
+        let raw = "{\n  \"version\": 1,\n  \"configFileId\": \"file-1\"\n}";
+
+        assert_eq!(storage.read_drive_config_pointer().unwrap(), None);
+        assert_eq!(
+            storage
+                .compare_and_write_drive_config_pointer(raw, None)
+                .unwrap(),
+            StorageWriteOutcome::Durable
+        );
+        assert_eq!(
+            storage.read_drive_config_pointer().unwrap().as_deref(),
+            Some(raw)
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(storage.drive_config_pointer_path())
+                    .unwrap()
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o600
+            );
+        }
+    }
+
+    #[test]
+    fn drive_config_pointer_compare_and_swap_preserves_newer_bytes() {
+        let root = tempfile::tempdir().unwrap();
+        let first = AppStorage::new(root.path().to_path_buf()).unwrap();
+        let second = AppStorage::new(root.path().to_path_buf()).unwrap();
+        std::fs::write(first.drive_config_pointer_path(), "old").unwrap();
+
+        assert_eq!(
+            first
+                .compare_and_write_drive_config_pointer("new", Some("old"))
+                .unwrap(),
+            StorageWriteOutcome::Durable
+        );
+        assert_eq!(
+            second
+                .compare_and_write_drive_config_pointer("stale", Some("old"))
+                .unwrap(),
+            StorageWriteOutcome::Conflict
+        );
+        assert_eq!(
+            first.read_drive_config_pointer().unwrap().as_deref(),
+            Some("new")
+        );
+    }
+
+    #[test]
+    fn drive_config_pointer_storage_is_independent_from_auth_storage() {
+        let root = tempfile::tempdir().unwrap();
+        let storage = AppStorage::new(root.path().to_path_buf()).unwrap();
+
+        storage.compare_and_write_auth_tokens("auth", None).unwrap();
+        storage
+            .compare_and_write_drive_config_pointer("pointer", None)
+            .unwrap();
+
+        assert_eq!(storage.read_auth_tokens().unwrap().as_deref(), Some("auth"));
+        assert_eq!(
+            storage.read_drive_config_pointer().unwrap().as_deref(),
+            Some("pointer")
+        );
+    }
+
+    #[test]
+    fn startup_cleanup_removes_a_dead_owned_drive_pointer_temp() {
+        let root = tempfile::tempdir().unwrap();
+        let dead_pid = 41_111;
+        let temp = root
+            .path()
+            .join(owned_temp_name(DRIVE_CONFIG_POINTER_FILE, 100, dead_pid, 1));
+        std::fs::write(&temp, "temp").unwrap();
+
+        cleanup_owned_temp_files_with(root.path(), |_| false).unwrap();
+
+        assert!(!temp.exists());
     }
 
     #[test]
@@ -554,8 +691,13 @@ mod tests {
             Err(error) => error,
         };
 
-        assert!(error.to_string().contains("Both google-tokens.json and gmail-tokens.json"));
-        assert_eq!(std::fs::read_to_string(root.path().join(AUTH_TOKENS_FILE)).unwrap(), "new");
+        assert!(error
+            .to_string()
+            .contains("Both google-tokens.json and gmail-tokens.json"));
+        assert_eq!(
+            std::fs::read_to_string(root.path().join(AUTH_TOKENS_FILE)).unwrap(),
+            "new"
+        );
         assert_eq!(
             std::fs::read_to_string(root.path().join(LEGACY_AUTH_TOKENS_FILE)).unwrap(),
             "old"
