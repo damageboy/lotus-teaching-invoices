@@ -67,6 +67,7 @@ let authorizationState: {
 
 const readyDriveState: DriveInvoicesState = {
   status: 'ready' as const,
+  configSnapshot: null,
   snapshot: {
     stagedRoot: {
       root: { folderId: 'root-a', driveId: null, folderName: 'Lotus invoices' },
@@ -391,6 +392,28 @@ describe('App required Google setup', () => {
     await settleLocalPointerRead();
     expect(document.body.textContent).toBe('Loading…');
     expect(screen.queryByRole('dialog', { name: 'Welcome to Lotus' })).toBeNull();
+  });
+
+  it('shows cached Calendar while invoice discovery verifies an exact loaded config', async () => {
+    configState = { ...configState, calendarId: 'calendar-a', calendarName: 'Teaching' };
+    authorizationState = { ...authorizationState, isLoading: false, hasDrive: true };
+    driveState = {
+      ...driveState,
+      status: 'loading',
+      configSnapshot: {
+        file: { id: 'config-file', parents: ['root-a'] },
+        config: configState,
+      } as never,
+      snapshot: null,
+    };
+
+    renderApp();
+    await settleLocalPointerRead();
+
+    expect(document.body.textContent).toContain('Calendar content');
+    expect(document.body.textContent).not.toBe('Loading…');
+    expect(namedButton('Calendar').disabled).toBe(false);
+    expect(namedButton('Invoices').disabled).toBe(true);
   });
 
   it('selects Calendar after a configured cold start finishes checking Drive', async () => {

@@ -10,6 +10,7 @@ import {
   type DriveStoreSnapshot,
   type FinalizationInput,
 } from '../../src/lib/drive/invoiceStore.js';
+import type { DriveConfigSnapshot } from '../../src/lib/drive/configFile.js';
 import type { DriveConfigPointerRead } from '../../src/lib/drive/configPointer.js';
 import { installReactTestEnvironment } from '../helpers/react-test-env.js';
 
@@ -86,10 +87,13 @@ function store(initial: DriveStoreSnapshot | null = snapshot()) {
   return {
     bootstrap: vi.fn(async () => initial),
     loadByFileId: vi.fn(async () => initial ?? snapshot()),
+    loadConfigByFileId: vi.fn(async () => (initial ?? snapshot()).config),
+    loadInvoicesForConfig: vi.fn(async () => initial ?? snapshot()),
     discoverRecovery: vi.fn(async () => ({ candidates: [], issues: [] })),
     inspectRecoveryFolder: vi.fn(async () => ({ candidates: [], issues: [] })),
     adoptRecoveryCandidate: vi.fn(async () => initial ?? snapshot()),
     refresh: vi.fn(async () => initial ?? snapshot()),
+    rescanInvoices: vi.fn(async () => initial ?? snapshot()),
     activateRoot: vi.fn(async () => initial ?? snapshot()),
     saveConfig: vi.fn(async (_base, next) => ({
       ...(initial ?? snapshot()),
@@ -134,9 +138,59 @@ describe('useDriveInvoices', () => {
 
     await waitFor(() => expect(result.current.status).toBe('ready'));
 
-    expect(currentStore.loadByFileId).toHaveBeenCalledWith('config-file', []);
+    expect(currentStore.loadConfigByFileId).toHaveBeenCalledWith('config-file');
+    expect(currentStore.loadInvoicesForConfig).toHaveBeenCalledWith(
+      expect.objectContaining({ file: expect.objectContaining({ id: 'config-file' }) }),
+      []
+    );
     expect(currentStore.discoverRecovery).not.toHaveBeenCalled();
     expect(result.current.snapshot?.config.file.id).toBe('config-file');
+  });
+
+  it('publishes the pointed config while invoice discovery is still loading', async () => {
+    const currentStore = store();
+    const configLoad = deferred<DriveConfigSnapshot>();
+    const invoiceLoad = deferred<DriveStoreSnapshot>();
+    currentStore.loadConfigByFileId.mockImplementationOnce(() => configLoad.promise);
+    currentStore.loadInvoicesForConfig.mockImplementationOnce(() => invoiceLoad.promise);
+    currentStore.loadByFileId.mockImplementationOnce(() => invoiceLoad.promise);
+    const { result } = renderHook(() => useDriveInvoices(options(currentStore)));
+
+    await act(async () => configLoad.resolve(snapshot().config));
+    await waitFor(() => expect(result.current.configSnapshot?.file.id).toBe('config-file'));
+
+    expect(result.current.status).toBe('loading');
+    expect(result.current.snapshot).toBeNull();
+
+    await act(async () => invoiceLoad.resolve(snapshot()));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+  });
+
+  it('coalesces source changes into the pointed invoice discovery already in flight', async () => {
+    const currentStore = store();
+    const invoiceLoad = deferred<DriveStoreSnapshot>();
+    currentStore.loadInvoicesForConfig.mockImplementationOnce(() => invoiceLoad.promise);
+    const latestSources = [source('latest')];
+    const view = renderHook(
+      ({ sourceContextKey, sources }) =>
+        useDriveInvoices(options(currentStore, { sourceContextKey, sources })),
+      {
+        initialProps: {
+          sourceContextKey: 'setup-discovery',
+          sources: [] as CurrentInvoiceSource[],
+        },
+      }
+    );
+    await waitFor(() => expect(view.result.current.configSnapshot).not.toBeNull());
+
+    act(() => view.rerender({ sourceContextKey: 'current-invoices', sources: latestSources }));
+
+    expect(currentStore.loadConfigByFileId).toHaveBeenCalledOnce();
+    expect(currentStore.loadInvoicesForConfig).toHaveBeenCalledOnce();
+
+    await act(async () => invoiceLoad.resolve(snapshot()));
+    await waitFor(() => expect(view.result.current.status).toBe('ready'));
+    expect(currentStore.rescanInvoices).toHaveBeenCalledWith(latestSources);
   });
 
   it('publishes unconfigured recovery without a local authority', async () => {
@@ -225,7 +279,7 @@ describe('useDriveInvoices', () => {
 
   it('keeps retryable pointed failures out of recovery', async () => {
     const currentStore = store();
-    currentStore.loadByFileId.mockRejectedValueOnce(
+    currentStore.loadConfigByFileId.mockRejectedValueOnce(
       new DriveStoreError('offline', 'temporarily unavailable', true)
     );
     const { result } = renderHook(() => useDriveInvoices(options(currentStore)));
@@ -238,7 +292,7 @@ describe('useDriveInvoices', () => {
 
   it('enters recovery after a definitive pointed-file failure while retaining old raw', async () => {
     const currentStore = store();
-    currentStore.loadByFileId.mockRejectedValueOnce(
+    currentStore.loadConfigByFileId.mockRejectedValueOnce(
       new DriveStoreError('corrupt', 'selected file is dead', false)
     );
     currentStore.discoverRecovery.mockResolvedValueOnce({
@@ -294,7 +348,7 @@ describe('useDriveInvoices', () => {
       { initialProps: { sourceContextKey: 'setup-discovery' } }
     );
     await waitFor(() => expect(view.result.current.status).toBe('ready'));
-    currentStore.refresh.mockImplementationOnce(() => pendingRefresh.promise);
+    currentStore.rescanInvoices.mockImplementationOnce(() => pendingRefresh.promise);
 
     act(() => view.rerender({ sourceContextKey: 'current-invoices' }));
 
@@ -302,7 +356,8 @@ describe('useDriveInvoices', () => {
     expect(view.result.current.snapshot?.config.file.id).toBe('config-file');
 
     await act(async () => pendingRefresh.resolve(snapshot()));
-    await waitFor(() => expect(currentStore.refresh).toHaveBeenCalledOnce());
+    await waitFor(() => expect(currentStore.rescanInvoices).toHaveBeenCalledOnce());
+    expect(currentStore.refresh).not.toHaveBeenCalled();
   });
 
   it('saves configuration through the current snapshot', async () => {

@@ -326,6 +326,7 @@ export class DriveInvoiceStore {
   private readonly generateFileId: () => Promise<string>;
   private currentSources: CurrentInvoiceSource[] = [];
   private selectedConfigFileId: string | null = null;
+  private currentSnapshot: DriveStoreSnapshot | null = null;
 
   constructor(
     private readonly api: DriveApi,
@@ -355,6 +356,7 @@ export class DriveInvoiceStore {
       if (discovery.kind === 'unconfigured') {
         this.currentSources = exactSources;
         this.selectedConfigFileId = null;
+        this.currentSnapshot = null;
         return null;
       }
       if (discovery.kind === 'conflict') {
@@ -378,9 +380,26 @@ export class DriveInvoiceStore {
     fileId: string,
     sources: readonly CurrentInvoiceSource[]
   ): Promise<DriveStoreSnapshot> {
+    const config = await this.loadConfigByFileId(fileId);
+    return this.loadInvoicesForConfig(config, sources);
+  }
+
+  async loadConfigByFileId(fileId: string): Promise<DriveConfigSnapshot> {
+    try {
+      return await this.repository.loadByFileId(fileId);
+    } catch (error) {
+      throw mapLowerError(error);
+    }
+  }
+
+  async loadInvoicesForConfig(
+    config: DriveConfigSnapshot,
+    sources: readonly CurrentInvoiceSource[]
+  ): Promise<DriveStoreSnapshot> {
+    const exactConfig = snapshotValue(config, 'Drive configuration could not be snapshotted');
     const exactSources = snapshotSources(sources);
     try {
-      return await this.loadConfigured(await this.repository.loadByFileId(fileId), exactSources);
+      return await this.loadConfigured(exactConfig, exactSources);
     } catch (error) {
       throw mapLowerError(error);
     }
@@ -511,6 +530,25 @@ export class DriveInvoiceStore {
     const exactSources = snapshotSources(sources);
     try {
       return await this.refreshInternal(exactSources);
+    } catch (error) {
+      throw mapLowerError(error);
+    }
+  }
+
+  async rescanInvoices(sources: readonly CurrentInvoiceSource[]): Promise<DriveStoreSnapshot> {
+    const exactSources = snapshotSources(sources);
+    const current = this.currentSnapshot;
+    if (current === null) throw invalidState('No validated Drive invoice root is available');
+    const exactCurrent = snapshotValue(current, 'Drive snapshot could not be snapshotted');
+    try {
+      const snapshot = {
+        config: exactCurrent.config,
+        stagedRoot: exactCurrent.stagedRoot,
+        scan: await scanFinalFolder(this.api, exactCurrent.stagedRoot, exactSources),
+      };
+      this.currentSources = exactSources;
+      this.currentSnapshot = snapshot;
+      return snapshot;
     } catch (error) {
       throw mapLowerError(error);
     }
@@ -746,6 +784,7 @@ export class DriveInvoiceStore {
     const snapshot = { config, stagedRoot, scan };
     this.currentSources = snapshotSources(sources);
     this.selectedConfigFileId = config.file.id;
+    this.currentSnapshot = snapshot;
     return snapshot;
   }
 

@@ -227,6 +227,23 @@ function makeStore(
 }
 
 describe('DriveInvoiceStore cloud configuration', () => {
+  it('publishes an exact pointed configuration before resolving invoice folders', async () => {
+    const api = new MemoryDriveApi(configuredDrive());
+    const store = makeStore(api);
+
+    const loadedConfig = await store.loadConfigByFileId(CONFIG_ID);
+
+    expect(loadedConfig.file.id).toBe(CONFIG_ID);
+    expect(loadedConfig.config.calendarId).toBe('calendar-id');
+    expect(api.listRequests()).toEqual([]);
+
+    const snapshot = await store.loadInvoicesForConfig(loadedConfig, []);
+
+    expect(snapshot.config).toEqual(loadedConfig);
+    expect(snapshot.stagedRoot.root.folderId).toBe(ROOT_ID);
+    expect(api.listRequests()).toHaveLength(2);
+  });
+
   it('loads the pointed configuration and root without whole-Drive discovery', async () => {
     const otherRoot = folder('other-root', 'Other', ['root']);
     const otherFinal = folder('other-final', 'Final', [otherRoot.id]);
@@ -264,6 +281,23 @@ describe('DriveInvoiceStore cloud configuration', () => {
     expect(refreshed.config.file.id).toBe(CONFIG_ID);
     expect(refreshed.config.config.invoiceSequenceByYear).toEqual({ '2026': 23 });
     expect(configDiscoveryRequests(api)).toEqual([]);
+  });
+
+  it('rescans changed invoice sources without reloading config or root folders', async () => {
+    const source = await currentSource();
+    const api = new MemoryDriveApi(
+      configuredDrive([await managedPdf(source.fingerprint.sourceSha256)])
+    );
+    const store = makeStore(api);
+    await store.loadByFileId(CONFIG_ID, []);
+    api.clearListRequests();
+
+    const rescanned = await store.rescanInvoices([source]);
+
+    expect(rescanned.scan.entries).toHaveLength(1);
+    expect(rescanned.scan.entries[0].state).toBe('fresh');
+    expect(api.listRequests()).toHaveLength(1);
+    expect(api.listRequests()[0].query).toContain(`'${FINAL_ID}' in parents`);
   });
 
   it('follows the pointed file when its parent changes and reflects the live folder name', async () => {

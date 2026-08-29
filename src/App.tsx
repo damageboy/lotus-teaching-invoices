@@ -187,11 +187,11 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    setRemoteConfig(driveInvoices.snapshot?.config ?? null);
+    setRemoteConfig(driveInvoices.configSnapshot);
     setDriveConfigUnavailable(
-      driveInvoices.snapshot === null && driveInvoices.status !== 'loading'
+      driveInvoices.configSnapshot === null && driveInvoices.status !== 'loading'
     );
-  }, [driveInvoices.snapshot, driveInvoices.status]);
+  }, [driveInvoices.configSnapshot, driveInvoices.status]);
 
   useEffect(() => {
     const receipt = legacyConfig.raw;
@@ -266,9 +266,17 @@ export default function App() {
     driveSnapshot: setupDriveSnapshot,
     driveStaged: driveFolder.pendingNewRoot !== null,
   });
-  const setupBlocked = setupReadiness.status !== 'ready';
+  const verifyingConfiguredStartup =
+    driveInvoices.configSnapshot !== null &&
+    driveInvoices.snapshot === null &&
+    driveInvoices.status === 'loading';
+  const setupBlocked = setupReadiness.status !== 'ready' && !verifyingConfiguredStartup;
   const visibleActiveTab: AppTab = setupBlocked ? 'rates' : activeTab;
-  const disabledTabs: readonly AppTab[] = setupBlocked ? ['calendar', 'invoices', 'income'] : [];
+  const disabledTabs: readonly AppTab[] = verifyingConfiguredStartup
+    ? ['invoices', 'income']
+    : setupBlocked
+      ? ['calendar', 'invoices', 'income']
+      : [];
   const onboarding = useSetupOnboarding(setupReadiness);
   const setupPresenterResolvedRef = useRef(false);
   const completionOriginRef = useRef<'welcome' | 'dismissed' | null>(null);
@@ -412,7 +420,11 @@ export default function App() {
     void showFatalConfigError();
   }, [configLoading, configLoadError]);
 
-  if (setupReadiness.status === 'checking' && !setupPresenterResolvedRef.current) {
+  if (
+    setupReadiness.status === 'checking' &&
+    !setupPresenterResolvedRef.current &&
+    !verifyingConfiguredStartup
+  ) {
     return <div className="flex items-center justify-center h-screen text-gray-500">Loading…</div>;
   }
 

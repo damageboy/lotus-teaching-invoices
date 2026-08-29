@@ -24,6 +24,7 @@ export type DriveInvoicesStatus =
 
 export interface DriveInvoicesState {
   status: DriveInvoicesStatus;
+  configSnapshot: DriveConfigSnapshot | null;
   snapshot: DriveStoreSnapshot | null;
   error: DriveStoreError | null;
   operationKey: string | null;
@@ -54,10 +55,13 @@ type DriveInvoiceStoreController = Pick<
   DriveInvoiceStore,
   | 'bootstrap'
   | 'loadByFileId'
+  | 'loadConfigByFileId'
+  | 'loadInvoicesForConfig'
   | 'discoverRecovery'
   | 'inspectRecoveryFolder'
   | 'adoptRecoveryCandidate'
   | 'refresh'
+  | 'rescanInvoices'
   | 'activateRoot'
   | 'saveConfig'
   | 'finalize'
@@ -86,6 +90,7 @@ interface MachineState {
   sourceSignature: string;
   pointerSignature: string;
   status: DriveInvoicesStatus;
+  configSnapshot: DriveConfigSnapshot | null;
   snapshot: DriveStoreSnapshot | null;
   error: DriveStoreError | null;
   operationKey: string | null;
@@ -133,6 +138,7 @@ function initialState(
     sourceSignature: signature,
     pointerSignature,
     status: 'loading',
+    configSnapshot: null,
     snapshot: null,
     error: null,
     operationKey: null,
@@ -323,14 +329,19 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
         store: current.store,
       };
       const existing = refreshInFlightRef.current;
+      const pointedDiscoveryInFlight =
+        current.pointer?.kind === 'valid' &&
+        machineRef.current.configSnapshot !== null &&
+        machineRef.current.snapshot === null;
       if (
         !force &&
         existing !== null &&
-        existing.semanticIncarnation === context.incarnation &&
         existing.authorizationIncarnation === current.authorizationIncarnation &&
-        existing.sourceSignature === current.sourceSignature &&
         existing.pointerSignature === context.pointerSignature &&
-        existing.store === current.store
+        existing.store === current.store &&
+        (pointedDiscoveryInFlight ||
+          (existing.semanticIncarnation === context.incarnation &&
+            existing.sourceSignature === current.sourceSignature))
       ) {
         return existing.promise;
       }
@@ -338,12 +349,20 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
       const authorizationIncarnation = current.authorizationIncarnation;
       const store = current.store;
       const sources = current.sources;
+      const previousMachine = machineRef.current;
       const hasSnapshot =
         knownConfigured ||
-        (machineRef.current.store === store &&
-          machineRef.current.authorizationIncarnation === authorizationIncarnation &&
-          machineRef.current.pointerSignature === context.pointerSignature &&
-          machineRef.current.snapshot !== null);
+        (previousMachine.store === store &&
+          previousMachine.authorizationIncarnation === authorizationIncarnation &&
+          previousMachine.pointerSignature === context.pointerSignature &&
+          previousMachine.snapshot !== null);
+      const sourceOnlyRefresh =
+        !force &&
+        hasSnapshot &&
+        previousMachine.sourceSignature !== current.sourceSignature &&
+        previousMachine.store === store &&
+        previousMachine.authorizationIncarnation === authorizationIncarnation &&
+        previousMachine.pointerSignature === context.pointerSignature;
       const refreshGeneration = ++refreshGenerationRef.current;
       const actionErrorGeneration = actionErrorGenerationRef.current;
 
@@ -370,10 +389,13 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
       });
 
       const promise = (async () => {
+        let resolvedSourceSignature = context.sourceSignature;
         try {
           let snapshot: DriveStoreSnapshot | null;
           if (hasSnapshot) {
-            snapshot = await store.refresh(sources);
+            snapshot = sourceOnlyRefresh
+              ? await store.rescanInvoices(sources)
+              : await store.refresh(sources);
           } else {
             let recoveryError: DriveStoreError | null = null;
             if (current.pointer === undefined) {
@@ -383,7 +405,15 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
               }
             } else if (current.pointer.kind === 'valid') {
               try {
-                snapshot = await store.loadByFileId(current.pointer.fileId, sources);
+                const configSnapshot = await store.loadConfigByFileId(current.pointer.fileId);
+                if (
+                  !contextIsCurrent(context) ||
+                  refreshGenerationRef.current !== refreshGeneration
+                ) {
+                  return;
+                }
+                updateMachine((state) => ({ ...state, configSnapshot }));
+                snapshot = await store.loadInvoicesForConfig(configSnapshot, sources);
               } catch (cause) {
                 recoveryError = normalizeError(cause);
                 if (
@@ -425,7 +455,7 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
               }));
               return;
             }
-            if (!contextIsCurrent(context) || refreshGenerationRef.current !== refreshGeneration) {
+            if (!identityIsCurrent(context) || refreshGenerationRef.current !== refreshGeneration) {
               const latest = committedOptionsRef.current;
               const currentMachine = machineRef.current;
               const currentGenerationConfigured =
@@ -444,7 +474,20 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
               return;
             }
           }
-          if (!contextIsCurrent(context) || refreshGenerationRef.current !== refreshGeneration) {
+          while (
+            snapshot !== null &&
+            identityIsCurrent(context) &&
+            refreshGenerationRef.current === refreshGeneration
+          ) {
+            const latest = committedOptionsRef.current;
+            if (latest.sourceSignature === resolvedSourceSignature) break;
+            resolvedSourceSignature = latest.sourceSignature;
+            snapshot = await store.rescanInvoices(latest.sources);
+          }
+          const latest = committedOptionsRef.current;
+          const resolvedContextIsCurrent =
+            identityIsCurrent(context) && latest.sourceSignature === resolvedSourceSignature;
+          if (!resolvedContextIsCurrent || refreshGenerationRef.current !== refreshGeneration) {
             if (repairingStoreState) scheduleStoreRepair(store);
             return;
           }
@@ -455,17 +498,19 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
                   ...state,
                   store,
                   authorizationIncarnation,
-                  sourceSignature: current.sourceSignature,
+                  sourceSignature: resolvedSourceSignature,
                   pointerSignature: context.pointerSignature,
+                  configSnapshot: snapshot?.config ?? state.configSnapshot,
                   snapshot,
                 }
               : {
                   ...state,
                   store,
                   authorizationIncarnation,
-                  sourceSignature: current.sourceSignature,
+                  sourceSignature: resolvedSourceSignature,
                   pointerSignature: context.pointerSignature,
                   status: snapshot === null ? 'unconfigured' : 'ready',
+                  configSnapshot: snapshot?.config ?? state.configSnapshot,
                   snapshot,
                   recovery: null,
                   error: null,
@@ -474,22 +519,24 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
         } catch (cause) {
           const error = normalizeError(cause);
           if (
-            contextIsCurrent(context) &&
+            identityIsCurrent(context) &&
             refreshGenerationRef.current === refreshGeneration &&
             actionErrorGenerationRef.current === actionErrorGeneration
           ) {
             const status = statusForError(error);
+            const latest = committedOptionsRef.current;
             updateMachine((state) => ({
               ...state,
               store,
               authorizationIncarnation,
-              sourceSignature: current.sourceSignature,
+              sourceSignature: latest.sourceSignature,
               pointerSignature: context.pointerSignature,
               status,
               snapshot:
                 status === 'unconfigured' || status === 'authorizationRequired'
                   ? (error.snapshot ?? null)
                   : state.snapshot,
+              configSnapshot: error.snapshot?.config ?? state.configSnapshot,
               error,
               recovery: null,
             }));
@@ -517,7 +564,7 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
       );
       return promise;
     },
-    [contextIsCurrent, scheduleStoreRepair, updateMachine]
+    [contextIsCurrent, identityIsCurrent, scheduleStoreRepair, updateMachine]
   );
 
   useEffect(() => {
@@ -588,6 +635,7 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
           ...state,
           status: statusForError(error),
           snapshot: error.snapshot ?? state.snapshot,
+          configSnapshot: error.snapshot?.config ?? state.configSnapshot,
           error,
         }));
       }
@@ -725,6 +773,7 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
           updateMachine((state) => ({
             ...state,
             status: 'ready',
+            configSnapshot: adopted.config,
             snapshot: adopted,
             recovery: null,
             error: null,
@@ -767,6 +816,7 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
             updateMachine((state) => ({
               ...state,
               status: 'ready',
+              configSnapshot: activated.config,
               snapshot: activated,
               recovery: null,
               error: null,
@@ -817,6 +867,7 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
           updateMachine((state) => ({
             ...state,
             status: 'ready',
+            configSnapshot: activated.config,
             snapshot: activated,
             recovery: null,
             error: null,
@@ -887,12 +938,11 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
   useLayoutEffect(() => {
     const committed = committedSemanticRef.current;
     committedOptionsRef.current = { ...options, sourceSignature: signature };
-    if (
+    const identityChanged =
       committed.authorizationIncarnation !== options.authorizationIncarnation ||
-      committed.sourceSignature !== signature ||
       committed.pointerSignature !== selectedPointerSignature ||
-      committed.store !== options.store
-    ) {
+      committed.store !== options.store;
+    if (identityChanged || committed.sourceSignature !== signature) {
       committedSemanticRef.current = {
         authorizationIncarnation: options.authorizationIncarnation,
         sourceSignature: signature,
@@ -900,7 +950,7 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
         store: options.store,
       };
       semanticIncarnationRef.current += 1;
-      refreshInFlightRef.current = null;
+      if (identityChanged) refreshInFlightRef.current = null;
     }
   });
 
@@ -983,6 +1033,7 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
 
   return {
     status: visibleMachine.status,
+    configSnapshot: visibleMachine.configSnapshot,
     snapshot: visibleMachine.snapshot,
     error: visibleMachine.error,
     operationKey: visibleMachine.operationKey,
