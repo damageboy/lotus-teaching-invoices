@@ -68,6 +68,21 @@ vi.mock('../../src/hooks/useCalendarEditing.js', () => ({
     saveSeriesStudioEdit: vi.fn(),
   }),
 }));
+vi.mock('../../src/hooks/useCalendarPicker.js', () => ({
+  useCalendarPicker: () => ({
+    calendars: null,
+    listOpen: false,
+    loading: false,
+    saving: false,
+    error: null,
+    selectedName: 'Teaching',
+    connectionStatus: 'accessible',
+    openList: vi.fn(async () => undefined),
+    select: vi.fn(async () => undefined),
+    closeList: vi.fn(),
+    retryValidation: vi.fn(async () => undefined),
+  }),
+}));
 vi.mock('../../src/hooks/useDriveInvoices.js', () => ({
   useDriveInvoices: () => ({
     status: 'ready',
@@ -142,6 +157,7 @@ vi.mock('../../src/lib/invoice/rows.js', () => ({
 vi.mock('@tauri-apps/plugin-dialog', () => ({ message: vi.fn() }));
 vi.mock('@tauri-apps/plugin-process', () => ({ exit: vi.fn() }));
 
+const { waitFor } = await import('@testing-library/react');
 const { default: App } = await import('../../src/App.js');
 
 function namedButton(name: string): HTMLButtonElement {
@@ -189,7 +205,7 @@ afterAll(() => restoreEnvironment());
 describe('App mobile Calendar activation', () => {
   it('increments every mobile Calendar selection but not other App routes', async () => {
     const view = renderApp();
-    expect(latestCalendarActivation).toBe(0);
+    await waitFor(() => expect(latestCalendarActivation).toBe(0));
 
     await click(namedButton('Calendar'));
     expect(latestCalendarActivation).toBe(1);

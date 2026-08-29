@@ -139,6 +139,21 @@ vi.mock('../../src/hooks/useCalendarEditing.js', () => ({
     saveSeriesStudioEdit: vi.fn(),
   }),
 }));
+vi.mock('../../src/hooks/useCalendarPicker.js', () => ({
+  useCalendarPicker: ({ config }: { config: AppConfig }) => ({
+    calendars: null,
+    listOpen: false,
+    loading: false,
+    saving: false,
+    error: null,
+    selectedName: config.calendarName ?? 'Not configured',
+    connectionStatus: config.calendarId?.trim() ? 'accessible' : 'missing',
+    openList: vi.fn(async () => undefined),
+    select: vi.fn(async () => undefined),
+    closeList: vi.fn(),
+    retryValidation: vi.fn(async () => undefined),
+  }),
+}));
 vi.mock('../../src/hooks/useDriveInvoices.js', () => ({
   useDriveInvoices: (options: UseDriveInvoicesOptions) => {
     mocks.driveOptions = options;
@@ -263,6 +278,10 @@ function renderDriveStepApp() {
   return renderApp();
 }
 
+async function settleLocalPointerRead(): Promise<void> {
+  await waitFor(() => expect(mocks.driveOptions?.pointer).toMatchObject({ kind: 'absent' }));
+}
+
 beforeEach(() => {
   compactLayout = false;
   configState = {
@@ -311,6 +330,44 @@ afterEach(() => {
 afterAll(() => restoreEnvironment());
 
 describe('App required Google setup', () => {
+  it('waits for the local pointer read before enabling Drive bootstrap', async () => {
+    const pointerRead = deferred<string | null>();
+    mocks.invoke.mockImplementation((command: string) =>
+      command === 'read_drive_config_pointer' ? pointerRead.promise : Promise.resolve(null)
+    );
+    renderIncompleteApp();
+
+    expect(mocks.driveOptions?.discoveryEnabled).toBe(false);
+    expect(mocks.driveOptions?.pointer).toBeUndefined();
+    expect(document.body.textContent).toBe('Loading…');
+
+    await act(async () => {
+      pointerRead.resolve(null);
+      await pointerRead.promise;
+    });
+
+    await settleLocalPointerRead();
+    expect(mocks.driveOptions?.discoveryEnabled).toBe(true);
+  });
+
+  it('passes a valid local pointer to exact-file startup', async () => {
+    mocks.invoke.mockImplementation(async (command: string) =>
+      command === 'read_drive_config_pointer'
+        ? JSON.stringify({ version: 1, configFileId: 'config-file-7' })
+        : null
+    );
+    authorizationState = { ...authorizationState, hasDrive: true };
+    driveState = readyDriveState;
+    renderApp();
+
+    await waitFor(() =>
+      expect(mocks.driveOptions?.pointer).toMatchObject({
+        kind: 'valid',
+        fileId: 'config-file-7',
+      })
+    );
+  });
+
   it('removes the exact legacy YAML after a cloud config is loaded', async () => {
     const raw = 'teacher:\n  name: Legacy\nstudios: {}\n';
     mocks.invoke.mockImplementation(async (command: string) =>
@@ -327,19 +384,21 @@ describe('App required Google setup', () => {
     );
   });
 
-  it('shows only loading while authorized Drive discovery is unresolved', () => {
+  it('shows only loading while authorized Drive discovery is unresolved', async () => {
     authorizationState = { ...authorizationState, isLoading: false, hasDrive: true };
     driveState = { ...driveState, status: 'loading', snapshot: null };
     renderApp();
+    await settleLocalPointerRead();
     expect(document.body.textContent).toBe('Loading…');
     expect(screen.queryByRole('dialog', { name: 'Welcome to Lotus' })).toBeNull();
   });
 
-  it('selects Calendar after a configured cold start finishes checking Drive', () => {
+  it('selects Calendar after a configured cold start finishes checking Drive', async () => {
     configState = { ...configState, calendarId: 'calendar-a', calendarName: 'Teaching' };
     authorizationState = { ...authorizationState, hasDrive: true };
     driveState = { ...driveState, status: 'loading', snapshot: null };
     const view = renderApp();
+    await settleLocalPointerRead();
     expect(document.body.textContent).toBe('Loading…');
 
     driveState = readyDriveState;
@@ -348,8 +407,9 @@ describe('App required Google setup', () => {
     expect(document.body.textContent).toContain('Calendar content');
   });
 
-  it('opens Welcome over Rates and gates every other desktop destination', () => {
+  it('opens Welcome over Rates and gates every other desktop destination', async () => {
     renderIncompleteApp();
+    await settleLocalPointerRead();
     expect(screen.getByRole('dialog', { name: 'Welcome to Lotus' })).toBeTruthy();
     expect(document.body.textContent).toContain('Rates content');
     expect(namedButton('Calendar').disabled).toBe(true);
@@ -358,11 +418,12 @@ describe('App required Google setup', () => {
     expect(namedButton('Rates & Config').disabled).toBe(false);
   });
 
-  it('gates mobile destinations while leaving Settings available', () => {
+  it('gates mobile destinations while leaving Settings available', async () => {
     configState = { ...configState, calendarId: undefined };
     authorizationState = { ...authorizationState, hasDrive: false };
     driveState = { ...driveState, status: 'authorizationRequired', snapshot: null };
     renderApp({ compact: true });
+    await settleLocalPointerRead();
     expect(document.body.textContent).toContain('Rates content');
     expect(namedButton('Calendar').disabled).toBe(true);
     expect(namedButton('Invoices').disabled).toBe(true);
@@ -372,24 +433,20 @@ describe('App required Google setup', () => {
 
   it('dismisses for the session, keeps Rates active, and does not build invoice sources', async () => {
     renderIncompleteApp();
+    await settleLocalPointerRead();
     await click(namedButton('Set up later'));
     expect(screen.queryByRole('dialog', { name: 'Welcome to Lotus' })).toBeNull();
     expect(document.body.textContent).toContain('Rates content');
     expect(mocks.buildCurrentInvoiceSources).not.toHaveBeenCalled();
   });
 
-  it('keeps Welcome open for acknowledgement when Drive discovery completes setup', async () => {
+  it('closes Welcome when a confirmed Drive configuration completes setup', async () => {
     const view = renderDriveStepApp();
+    await settleLocalPointerRead();
     expect(document.body.textContent).toContain('Rates content');
     driveState = readyDriveState;
     authorizationState = { ...authorizationState, hasDrive: true };
     view.rerender();
-
-    expect(screen.getByRole('dialog', { name: 'Welcome to Lotus' })).toBeTruthy();
-    expect(screen.getByText('Existing invoice folder found')).toBeTruthy();
-    expect(screen.getByText('Lotus invoices')).toBeTruthy();
-
-    await click(namedButton('Continue with Lotus invoices'));
 
     expect(screen.queryByRole('dialog', { name: 'Welcome to Lotus' })).toBeNull();
     expect(document.body.textContent).toContain('Calendar content');
@@ -413,6 +470,7 @@ describe('App required Google setup', () => {
     };
     const historyBack = vi.spyOn(window.history, 'back').mockImplementation(() => undefined);
     const view = renderApp({ compact: true });
+    await settleLocalPointerRead();
     const wizardHistoryState = window.history.state;
 
     await click(namedButton('Pick Drive folder…'));
@@ -469,6 +527,7 @@ describe('App required Google setup', () => {
 
   it('unlocks without leaving Rates when completion came after dismissal', async () => {
     const view = renderDriveStepApp();
+    await settleLocalPointerRead();
     await click(namedButton('Set up later'));
     driveState = { ...driveState, status: 'loading', snapshot: null };
     view.rerender();
@@ -478,22 +537,23 @@ describe('App required Google setup', () => {
     expect(document.body.textContent).toContain('Rates content');
   });
 
-  it('suppresses optional Calendar editing permission until Drive acknowledgement closes', async () => {
+  it('suppresses optional Calendar editing permission until required setup closes', async () => {
     authorizationState = { ...authorizationState, promptOpen: true };
     const view = renderDriveStepApp();
+    await settleLocalPointerRead();
     expect(mocks.calendarPermissionOpen).toBe(false);
 
     driveState = readyDriveState;
     view.rerender();
-    expect(screen.getByText('Existing invoice folder found')).toBeTruthy();
-    expect(mocks.calendarPermissionOpen).toBe(false);
-
-    await click(namedButton('Continue with Lotus invoices'));
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Welcome to Lotus' })).toBeNull()
+    );
     expect(mocks.calendarPermissionOpen).toBe(true);
   });
 
-  it('starts on Drive when Calendar is already configured', () => {
+  it('starts on Drive when Calendar is already configured', async () => {
     renderDriveStepApp();
+    await settleLocalPointerRead();
     expect(screen.getByRole('heading', { name: 'Choose your invoice folder' })).toBeTruthy();
     expect(document.body.textContent).toContain('Step 1 of 2');
   });
@@ -502,7 +562,8 @@ describe('App required Google setup', () => {
     configState = { ...configState, calendarId: 'calendar-a', calendarName: 'Teaching' };
     driveState = { ...driveState, status: 'authorizationRequired', snapshot: null };
     renderApp();
-    expect(mocks.driveOptions?.discoveryEnabled).toBe(false);
+    await settleLocalPointerRead();
+    expect(mocks.driveOptions?.discoveryEnabled).toBe(true);
     const pickDrive = namedButton('Pick Drive folder…');
     expect(pickDrive.disabled).toBe(false);
     await click(pickDrive);
@@ -524,6 +585,7 @@ describe('App required Google setup', () => {
       .mockResolvedValueOnce({ sources: [], issues: [] })
       .mockImplementation(() => new Promise(() => {}));
     const view = renderApp();
+    await settleLocalPointerRead();
 
     await waitFor(() => expect(mocks.driveOptions?.sourceContextKey).toBe('fixture'));
     await act(async () => {
@@ -540,15 +602,16 @@ describe('App required Google setup', () => {
     expect(document.body.textContent).toContain('Calendar content');
   });
 
-  it('starts on Calendar when Drive is already configured', () => {
+  it('starts on Calendar when Drive is already configured', async () => {
     authorizationState = { ...authorizationState, hasDrive: true };
     driveState = readyDriveState;
     renderApp();
+    await settleLocalPointerRead();
     expect(screen.getByRole('heading', { name: 'Choose your teaching calendar' })).toBeTruthy();
     expect(document.body.textContent).toContain('Step 2 of 2');
   });
 
-  it('shows the unavailable Drive error and its Retry action', () => {
+  it('shows the unavailable Drive error and its Retry action', async () => {
     configState = { ...configState, calendarId: 'calendar-a', calendarName: 'Teaching' };
     authorizationState = { ...authorizationState, hasDrive: true };
     driveState = {
@@ -558,6 +621,7 @@ describe('App required Google setup', () => {
       error: { message: 'Drive unavailable' } as DriveInvoicesState['error'],
     };
     renderApp();
+    await settleLocalPointerRead();
     expect(screen.getByRole('alert').textContent).toBe('Drive unavailable');
     expect(screen.getByRole('button', { name: 'Retry Google Drive' })).toBeTruthy();
   });
@@ -567,6 +631,7 @@ describe('App required Google setup', () => {
     authorizationState = { ...authorizationState, hasDrive: true };
     driveState = readyDriveState;
     const view = renderApp();
+    await settleLocalPointerRead();
     await click(namedButton('Income'));
     expect(document.body.textContent).toContain('Income content');
 
@@ -582,6 +647,7 @@ describe('App required Google setup', () => {
 
   it('preserves session dismissal when the layout changes', async () => {
     const view = renderIncompleteApp();
+    await settleLocalPointerRead();
     await click(namedButton('Set up later'));
     compactLayout = true;
     view.rerender();
@@ -592,6 +658,7 @@ describe('App required Google setup', () => {
   it('publishes invoice source errors only after setup is ready', async () => {
     mocks.buildCurrentInvoiceSources.mockRejectedValue(new Error('Source build failed'));
     const view = renderIncompleteApp();
+    await settleLocalPointerRead();
     expect(mocks.buildCurrentInvoiceSources).not.toHaveBeenCalled();
     expect(document.body.textContent).not.toContain('Source build failed');
 

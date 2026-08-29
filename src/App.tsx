@@ -32,6 +32,11 @@ import { DriveFolderService } from './lib/drive/folders';
 import { scanFinalFolder } from './lib/drive/invoiceCatalog';
 import { DriveInvoiceStore } from './lib/drive/invoiceStore';
 import type { DriveConfigSnapshot } from './lib/drive/configFile';
+import {
+  installDriveConfigPointer,
+  readDriveConfigPointer,
+  type DriveConfigPointerRead,
+} from './lib/drive/configPointer';
 import type { DriveInvoicesState } from './hooks/useDriveInvoices';
 import { renderFinalPdf } from './lib/pdf/generatePdf';
 import { deriveSetupReadiness } from './lib/setup/readiness';
@@ -56,6 +61,11 @@ export default function App() {
     error: string | null;
   }>({ loaded: false, error: null });
   const [migrationCleanupError, setMigrationCleanupError] = useState<string | null>(null);
+  const [driveConfigPointer, setDriveConfigPointer] = useState<{
+    loaded: boolean;
+    value: DriveConfigPointerRead | null;
+    error: string | null;
+  }>({ loaded: false, value: null, error: null });
   const cleanedMigrationRef = useRef<string | null>(null);
   const saveRemoteConfig = useCallback((next: Parameters<DriveInvoicesState['saveConfig']>[0]) => {
     const drive = driveInvoicesRef.current;
@@ -77,10 +87,9 @@ export default function App() {
     ...(legacyConfig.raw === undefined ? {} : { legacyLocalYaml: legacyConfig.raw }),
     saveRemote: saveRemoteConfig,
   });
-  const configLoading = remoteConfigLoading;
-  const configLoadError = legacyConfig.error ?? remoteConfigLoadError;
+  const configLoading = remoteConfigLoading || !driveConfigPointer.loaded;
+  const configLoadError = driveConfigPointer.error ?? legacyConfig.error ?? remoteConfigLoadError;
   const configSaveError = migrationCleanupError ?? remoteConfigSaveError;
-  const calendarPicker = useCalendarPicker({ config, saveConfig: saveUpdateOrThrow });
   const {
     classes,
     isLoading: calLoading,
@@ -123,8 +132,22 @@ export default function App() {
     sources: driveSources,
     sourceContextKey: driveSourceContextKey,
     authorizationIncarnation: googleAuthorization.authorizationIncarnation,
-    discoveryEnabled: !googleAuthorization.isLoading && legacyConfig.loaded,
+    discoveryEnabled:
+      !googleAuthorization.isLoading &&
+      legacyConfig.loaded &&
+      driveConfigPointer.loaded &&
+      driveConfigPointer.error === null,
     foregroundRefreshEnabled: activeTab === 'invoices' && invoiceSourcesReady,
+    ...(driveConfigPointer.value === null ? {} : { pointer: driveConfigPointer.value }),
+    installPointer: async (fileId, expectedRaw) => {
+      const installed = await installDriveConfigPointer(fileId, expectedRaw);
+      setDriveConfigPointer({
+        loaded: true,
+        value: { kind: 'valid', raw: installed.raw, fileId: installed.fileId },
+        error: null,
+      });
+      return installed;
+    },
     ...(legacyConfig.raw === undefined ? {} : { legacyLocalYaml: legacyConfig.raw }),
   });
   driveInvoicesRef.current = driveInvoices;
@@ -139,6 +162,23 @@ export default function App() {
       (cause) => {
         if (!current) return;
         setLegacyConfig({ loaded: true, error: String(cause) });
+      }
+    );
+    return () => {
+      current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let current = true;
+    void readDriveConfigPointer().then(
+      (value) => {
+        if (current) setDriveConfigPointer({ loaded: true, value, error: null });
+      },
+      (cause) => {
+        if (current) {
+          setDriveConfigPointer({ loaded: true, value: null, error: String(cause) });
+        }
       }
     );
     return () => {
@@ -176,14 +216,6 @@ export default function App() {
     status: driveInvoices.status,
     snapshot: driveInvoices.snapshot,
   });
-  const setupReadiness = deriveSetupReadiness({
-    configLoading,
-    calendarId: config.calendarId,
-    authorizationLoading: googleAuthorization.isLoading,
-    hasDrive: googleAuthorization.hasDrive,
-    driveStatus: driveInvoices.status,
-    driveSnapshot: setupDriveSnapshot,
-  });
   const scanDriveFolderCandidate = useCallback(
     (
       stagedRoot: Parameters<typeof scanFinalFolder>[1],
@@ -200,6 +232,39 @@ export default function App() {
     sources: driveSources,
     sourceContextKey: driveSourceContextKey,
     scanCandidate: scanDriveFolderCandidate,
+  });
+  const calendarPicker = useCalendarPicker({
+    config,
+    saveConfig: saveUpdateOrThrow,
+    validationEnabled: remoteConfig !== null || driveFolder.pendingNewRoot !== null,
+    authorizationIncarnation: googleAuthorization.authorizationIncarnation,
+  });
+  const pendingRootCompletionRef = useRef<string | null>(null);
+  useEffect(() => {
+    const pending = driveFolder.pendingNewRoot;
+    if (pending === null || calendarPicker.connectionStatus !== 'accessible') return;
+    const key = JSON.stringify([
+      pending.root.folderId,
+      pending.root.driveId,
+      config.calendarId ?? null,
+      config.calendarName ?? null,
+      config.calendarAccessRole ?? null,
+    ]);
+    if (pendingRootCompletionRef.current === key) return;
+    pendingRootCompletionRef.current = key;
+    void driveFolder.completePendingNewRoot(config).catch(() => undefined);
+  }, [calendarPicker.connectionStatus, config, driveFolder]);
+  useEffect(() => {
+    if (driveFolder.pendingNewRoot === null) pendingRootCompletionRef.current = null;
+  }, [driveFolder.pendingNewRoot]);
+  const setupReadiness = deriveSetupReadiness({
+    configLoading,
+    calendarStatus: calendarPicker.connectionStatus,
+    authorizationLoading: googleAuthorization.isLoading,
+    hasDrive: googleAuthorization.hasDrive,
+    driveStatus: driveInvoices.status,
+    driveSnapshot: setupDriveSnapshot,
+    driveStaged: driveFolder.pendingNewRoot !== null,
   });
   const setupBlocked = setupReadiness.status !== 'ready';
   const visibleActiveTab: AppTab = setupBlocked ? 'rates' : activeTab;
@@ -491,9 +556,6 @@ export default function App() {
         calendarPicker={calendarPicker}
         drive={driveInvoices}
         driveFolder={driveFolder}
-        driveAcknowledgementRequired={onboarding.driveAcknowledgementRequired}
-        detectedDriveFolderName={driveInvoices.snapshot?.stagedRoot.root.folderName ?? null}
-        onAcknowledgeDrive={onboarding.acknowledgeDrive}
         onDismiss={dismissOnboarding}
       />
       <DriveFolderDialog
@@ -507,7 +569,6 @@ export default function App() {
         scanCandidate={driveFolder.scanCandidate}
         onConfirm={async (stagedRoot) => {
           await driveFolder.confirmRoot(stagedRoot);
-          onboarding.acknowledgeDrive();
         }}
         onClose={driveFolder.closeDialog}
       />

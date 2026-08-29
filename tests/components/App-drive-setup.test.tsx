@@ -78,7 +78,13 @@ vi.mock('../../src/hooks/useConfig.js', () => ({
     saveUpdateOrThrow: vi.fn(async () => undefined),
   }),
 }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async () => null) }));
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: vi.fn(async (command: string) =>
+    command === 'read_drive_config_pointer'
+      ? JSON.stringify({ version: 1, configFileId: 'config-file' })
+      : null
+  ),
+}));
 vi.mock('../../src/hooks/useCalendarData.js', () => ({
   useCalendarData: () => ({
     classes,
@@ -121,9 +127,11 @@ vi.mock('../../src/hooks/useCalendarPicker.js', () => ({
     saving: false,
     error: null,
     selectedName: 'Not configured',
+    connectionStatus: 'accessible',
     openList: vi.fn(async () => undefined),
     select: vi.fn(async () => undefined),
     closeList: vi.fn(),
+    retryValidation: vi.fn(async () => undefined),
   }),
 }));
 vi.mock('../../src/hooks/useCompactLayout.js', () => ({
@@ -183,7 +191,7 @@ vi.mock('@tauri-apps/plugin-process', () => ({ exit: vi.fn() }));
 
 const { waitFor } = await import('@testing-library/react');
 const { DriveInvoiceStore, DriveStoreError } = await import('../../src/lib/drive/invoiceStore.js');
-const realBootstrap = DriveInvoiceStore.prototype.bootstrap;
+const realLoadByFileId = DriveInvoiceStore.prototype.loadByFileId;
 const realRefresh = DriveInvoiceStore.prototype.refresh;
 const readySnapshot = {
   config: {
@@ -195,12 +203,12 @@ const readySnapshot = {
   },
   scan: { entries: [], warnings: [], blockingConflicts: [] },
 } as DriveStoreSnapshot;
-const bootstrap = vi
-  .spyOn(DriveInvoiceStore.prototype, 'bootstrap')
-  .mockImplementation(function (sources) {
+const loadByFileId = vi
+  .spyOn(DriveInvoiceStore.prototype, 'loadByFileId')
+  .mockImplementation(function (fileId, sources) {
     if (publishReadySnapshot) return Promise.resolve(readySnapshot);
-    if (publishUnconfiguredSnapshot) return Promise.resolve(null);
-    return realBootstrap.call(this, sources);
+    if (publishUnconfiguredSnapshot) return Promise.resolve(null as never);
+    return realLoadByFileId.call(this, fileId, sources);
   });
 const storeRefresh = vi
   .spyOn(DriveInvoiceStore.prototype, 'refresh')
@@ -246,7 +254,7 @@ afterEach(async () => {
   await new Promise((resolve) => setTimeout(resolve, 0));
   allowDrive.mockClear();
   getAccessToken.mockClear();
-  bootstrap.mockClear();
+  loadByFileId.mockClear();
   storeRefresh.mockClear();
   buildCurrentInvoiceSources.mockClear();
   publishReadySnapshot = false;
@@ -259,7 +267,7 @@ afterEach(async () => {
   };
 });
 afterAll(() => {
-  bootstrap.mockRestore();
+  loadByFileId.mockRestore();
   storeRefresh.mockRestore();
   restoreEnvironment();
 });
@@ -290,8 +298,9 @@ describe('App Drive setup without an existing grant', () => {
     authorizationState = { ...authorizationState, authorizationIncarnation: 2 };
     rerender();
     await waitFor(() => expect(button('Invoices').disabled).toBe(false));
-    await click(button('Invoices'));
     const content = container.querySelector('.flex-1.overflow-auto');
+    await waitFor(() => expect(content?.textContent).toBe('Calendar'));
+    await click(button('Invoices'));
     await waitFor(() => expect(content?.textContent).toContain('No invoices'));
     expect(container.querySelector('[role="alert"]')).toBeNull();
     expect(container.querySelector('table')).toBeTruthy();
@@ -316,7 +325,7 @@ describe('App Drive setup without an existing grant', () => {
 
     rerender();
     expect(buildCurrentInvoiceSources).toHaveBeenCalledOnce();
-    expect(bootstrap).toHaveBeenCalledOnce();
+    expect(loadByFileId).toHaveBeenCalledOnce();
     expect(storeRefresh).toHaveBeenCalledOnce();
     expect(storeRefresh.mock.calls[0][0][0].fingerprint.sourceSha256).toBe('source-a');
     expect(container.textContent).toContain('Calendar');
@@ -327,7 +336,7 @@ describe('App Drive setup without an existing grant', () => {
     });
     await waitFor(() => expect(button('Invoices').disabled).toBe(false));
     expect(buildCurrentInvoiceSources).toHaveBeenCalledOnce();
-    expect(bootstrap).toHaveBeenCalledOnce();
+    expect(loadByFileId).toHaveBeenCalledOnce();
   });
 
   it('keeps setup unlocked and retryable after a real-hook transient full-source error', async () => {
@@ -355,13 +364,13 @@ describe('App Drive setup without an existing grant', () => {
     expect(button('Invoices').disabled).toBe(false);
     expect(button('Retry Google Drive').disabled).toBe(false);
     expect(buildCurrentInvoiceSources).toHaveBeenCalledOnce();
-    expect(bootstrap).toHaveBeenCalledOnce();
+    expect(loadByFileId).toHaveBeenCalledOnce();
     expect(storeRefresh).toHaveBeenCalledOnce();
     expect(storeRefresh.mock.calls[0][0][0].fingerprint.sourceSha256).toBe('source-a');
 
     rerender();
     expect(buildCurrentInvoiceSources).toHaveBeenCalledOnce();
-    expect(bootstrap).toHaveBeenCalledOnce();
+    expect(loadByFileId).toHaveBeenCalledOnce();
     expect(storeRefresh).toHaveBeenCalledOnce();
 
     refreshOverride = () => Promise.resolve(readySnapshot);
@@ -372,12 +381,12 @@ describe('App Drive setup without an existing grant', () => {
     );
     expect(button('Invoices').disabled).toBe(false);
     expect(buildCurrentInvoiceSources).toHaveBeenCalledOnce();
-    expect(bootstrap).toHaveBeenCalledOnce();
+    expect(loadByFileId).toHaveBeenCalledOnce();
     expect(storeRefresh.mock.calls[1][0][0].fingerprint.sourceSha256).toBe('source-a');
 
     rerender();
     expect(buildCurrentInvoiceSources).toHaveBeenCalledOnce();
-    expect(bootstrap).toHaveBeenCalledOnce();
+    expect(loadByFileId).toHaveBeenCalledOnce();
     expect(storeRefresh).toHaveBeenCalledTimes(2);
   });
 
@@ -402,7 +411,7 @@ describe('App Drive setup without an existing grant', () => {
     });
 
     await waitFor(() => expect(button('Invoices').disabled).toBe(true));
-    await waitFor(() => expect(bootstrap).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(loadByFileId).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(button('Pick Drive folder…').disabled).toBe(false));
     expect(container.textContent).toContain('Choose your invoice folder');
     expect(buildCurrentInvoiceSources).toHaveBeenCalledOnce();

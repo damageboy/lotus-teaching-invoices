@@ -46,31 +46,17 @@ describe('useSetupOnboarding', () => {
     expect(view.result.current).toMatchObject({ open: true, step: 'calendar' });
   });
 
-  it('closes synchronously when setup becomes ready', () => {
+  it('closes when setup becomes ready after the required Drive confirmation', () => {
     const view = renderHook(({ readiness }) => useSetupOnboarding(readiness), {
       initialProps: { readiness: driveMissing },
     });
     view.rerender({ readiness: ready });
-    expect(view.result.current).toMatchObject({
-      open: true,
-      step: 'drive',
-      driveAcknowledgementRequired: true,
-    });
-
-    act(() => view.result.current.acknowledgeDrive());
-
-    expect(view.result.current).toMatchObject({
-      open: false,
-      driveAcknowledgementRequired: false,
-    });
+    expect(view.result.current).toMatchObject({ open: false, step: 'drive' });
   });
 
   it('does not request acknowledgement for an already-configured cold start', () => {
     const { result } = renderHook(() => useSetupOnboarding(ready));
 
-    expect(result.current).toMatchObject({
-      open: false,
-      driveAcknowledgementRequired: false,
-    });
+    expect(result.current).toMatchObject({ open: false });
   });
 });

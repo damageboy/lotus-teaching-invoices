@@ -19,6 +19,7 @@ export interface SetupReadinessInput {
   hasDrive: boolean;
   driveStatus: DriveInvoicesStatus;
   driveSnapshot: DriveStoreSnapshot | null;
+  driveStaged?: boolean;
 }
 
 export interface SetupReadiness {
@@ -30,16 +31,24 @@ export interface SetupReadiness {
 
 export function deriveSetupReadiness(input: SetupReadinessInput): SetupReadiness {
   const driveConfigured = input.hasDrive && input.driveSnapshot !== null;
+  const driveResolvedForSetup = driveConfigured || input.driveStaged === true;
   const calendarStatus =
     input.calendarStatus ?? (input.calendarId?.trim() ? 'accessible' : 'missing');
   const calendarConfigured = driveConfigured && calendarStatus === 'accessible';
-  const firstIncompleteStep = !driveConfigured ? 'drive' : !calendarConfigured ? 'calendar' : null;
+  const firstIncompleteStep = !driveResolvedForSetup
+    ? 'drive'
+    : !calendarConfigured
+      ? 'calendar'
+      : null;
 
   if (
     input.configLoading ||
     input.authorizationLoading ||
     (input.hasDrive && input.driveSnapshot === null && input.driveStatus === 'loading') ||
-    (driveConfigured && (calendarStatus === 'unchecked' || calendarStatus === 'checking'))
+    (driveResolvedForSetup &&
+      (calendarStatus === 'unchecked' ||
+        calendarStatus === 'checking' ||
+        (input.driveStaged === true && calendarStatus === 'accessible')))
   ) {
     return { status: 'checking', calendarConfigured, driveConfigured, firstIncompleteStep };
   }

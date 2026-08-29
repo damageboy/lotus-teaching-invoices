@@ -383,15 +383,23 @@ export function useDriveFolderController(
     const context = captureContext();
     setError(null);
     try {
-      await committedOptionsRef.current.drive.refresh();
+      if (pendingNewRoot !== null) {
+        await committedOptionsRef.current.drive.completeNewRoot(
+          pendingNewRoot,
+          committedOptionsRef.current.config
+        );
+      } else {
+        await committedOptionsRef.current.drive.refresh();
+      }
       requireCurrent(context, 'retry');
+      if (pendingNewRoot !== null) setPendingNewRoot(null);
       if (generation === retryGenerationRef.current) setError(null);
     } catch (cause) {
       if (!contextIsCurrent(context)) throw obsoleteError(context, 'retry');
       if (generation === retryGenerationRef.current) setError(errorMessage(cause));
       throw cause;
     }
-  }, [captureContext, contextIsCurrent, obsoleteError, requireCurrent]);
+  }, [captureContext, contextIsCurrent, obsoleteError, pendingNewRoot, requireCurrent]);
 
   return {
     dialogOpen,

@@ -207,6 +207,28 @@ describe('useDriveFolderController', () => {
     expect(result.current.pendingNewRoot).toBeNull();
   });
 
+  it('retries failed creation for the same staged root', async () => {
+    const driveState = drive();
+    driveState.completeNewRoot
+      .mockRejectedValueOnce(new Error('Pointer write failed'))
+      .mockResolvedValueOnce(configuredSnapshot());
+    const { result } = renderHook(() => useDriveFolderController(options({ drive: driveState })));
+    await act(() => result.current.confirmRoot(stagedRoot));
+
+    await act(async () => {
+      await expect(result.current.completePendingNewRoot(DEFAULT_CONFIG)).rejects.toThrow(
+        'Pointer write failed'
+      );
+    });
+    expect(result.current.pendingNewRoot).toEqual(stagedRoot);
+
+    await act(() => result.current.retry());
+
+    expect(driveState.completeNewRoot).toHaveBeenCalledTimes(2);
+    expect(driveState.completeNewRoot).toHaveBeenLastCalledWith(stagedRoot, DEFAULT_CONFIG);
+    expect(result.current.pendingNewRoot).toBeNull();
+  });
+
   it('publishes selected-folder candidates without staging or creating', async () => {
     const driveState = drive();
     driveState.resolveRoot.mockResolvedValueOnce({

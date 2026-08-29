@@ -48,6 +48,38 @@ describe('deriveSetupReadiness', () => {
     });
   });
 
+  it('advances a staged empty Drive folder to Calendar without marking setup ready', () => {
+    expect(
+      deriveSetupReadiness({
+        ...base,
+        driveStaged: true,
+        driveSnapshot: null,
+        driveStatus: 'unconfigured',
+        calendarStatus: 'missing',
+      })
+    ).toMatchObject({
+      status: 'incomplete',
+      driveConfigured: false,
+      calendarConfigured: false,
+      firstIncompleteStep: 'calendar',
+    });
+
+    expect(
+      deriveSetupReadiness({
+        ...base,
+        driveStaged: true,
+        driveSnapshot: null,
+        driveStatus: 'unconfigured',
+        calendarStatus: 'accessible',
+      })
+    ).toMatchObject({
+      status: 'checking',
+      driveConfigured: false,
+      calendarConfigured: false,
+      firstIncompleteStep: 'calendar',
+    });
+  });
+
   it('waits for Calendar validation only after Drive is configured', () => {
     expect(deriveSetupReadiness({ ...base, calendarStatus: 'checking' })).toMatchObject({
       status: 'checking',
