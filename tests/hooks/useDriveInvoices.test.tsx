@@ -4,7 +4,13 @@ import type {
   CurrentInvoiceSource,
   DriveInvoiceEntry,
 } from '../../src/lib/drive/invoiceCatalog.js';
-import type { DriveStoreSnapshot, FinalizationInput } from '../../src/lib/drive/invoiceStore.js';
+import {
+  DriveStoreError,
+  type DriveConfigCandidate,
+  type DriveStoreSnapshot,
+  type FinalizationInput,
+} from '../../src/lib/drive/invoiceStore.js';
+import type { DriveConfigPointerRead } from '../../src/lib/drive/configPointer.js';
 import { installReactTestEnvironment } from '../helpers/react-test-env.js';
 
 const restoreDom = installReactTestEnvironment();
@@ -58,6 +64,16 @@ function entry(id = 'invoice-pdf'): DriveInvoiceEntry {
   return { file: { id } } as DriveInvoiceEntry;
 }
 
+function candidate(fileId = 'config-file', folderName = 'Invoices'): DriveConfigCandidate {
+  return {
+    fileId,
+    kind: 'configured',
+    root: { folderId: `root-${fileId}`, driveId: null, folderName },
+    rootFile: { id: `root-${fileId}` } as never,
+    calendarName: 'Teaching',
+  };
+}
+
 function source(id: string): CurrentInvoiceSource {
   return {
     key: { studioSlug: 'studio-a', monthKey: '2026-08' },
@@ -69,6 +85,10 @@ function source(id: string): CurrentInvoiceSource {
 function store(initial: DriveStoreSnapshot | null = snapshot()) {
   return {
     bootstrap: vi.fn(async () => initial),
+    loadByFileId: vi.fn(async () => initial ?? snapshot()),
+    discoverRecovery: vi.fn(async () => ({ candidates: [], issues: [] })),
+    inspectRecoveryFolder: vi.fn(async () => ({ candidates: [], issues: [] })),
+    adoptRecoveryCandidate: vi.fn(async () => initial ?? snapshot()),
     refresh: vi.fn(async () => initial ?? snapshot()),
     activateRoot: vi.fn(async () => initial ?? snapshot()),
     saveConfig: vi.fn(async (_base, next) => ({
@@ -82,6 +102,11 @@ function store(initial: DriveStoreSnapshot | null = snapshot()) {
 }
 
 function options(currentStore: ReturnType<typeof store>, overrides: Record<string, unknown> = {}) {
+  const pointer: DriveConfigPointerRead = {
+    kind: 'valid',
+    raw: '{"version":1,"configFileId":"config-file"}',
+    fileId: 'config-file',
+  };
   return {
     store: currentStore,
     sources: [] as CurrentInvoiceSource[],
@@ -89,6 +114,11 @@ function options(currentStore: ReturnType<typeof store>, overrides: Record<strin
     authorizationIncarnation: 1,
     discoveryEnabled: true,
     foregroundRefreshEnabled: false,
+    pointer,
+    installPointer: vi.fn(async (fileId: string) => ({
+      fileId,
+      raw: `{"version":1,"configFileId":"${fileId}"}`,
+    })),
     ...overrides,
   };
 }
@@ -96,7 +126,7 @@ function options(currentStore: ReturnType<typeof store>, overrides: Record<strin
 describe('useDriveInvoices', () => {
   afterAll(restoreDom);
 
-  it('publishes the cloud snapshot and passes legacy YAML only to bootstrap', async () => {
+  it('loads a valid pointer directly and performs no recovery discovery', async () => {
     const currentStore = store();
     const { result } = renderHook(() =>
       useDriveInvoices(options(currentStore, { legacyLocalYaml: 'teacher: {}\n' }))
@@ -104,16 +134,156 @@ describe('useDriveInvoices', () => {
 
     await waitFor(() => expect(result.current.status).toBe('ready'));
 
-    expect(currentStore.bootstrap).toHaveBeenCalledWith([], 'teacher: {}\n');
+    expect(currentStore.loadByFileId).toHaveBeenCalledWith('config-file', []);
+    expect(currentStore.discoverRecovery).not.toHaveBeenCalled();
     expect(result.current.snapshot?.config.file.id).toBe('config-file');
   });
 
-  it('publishes unconfigured discovery without a local authority', async () => {
+  it('publishes unconfigured recovery without a local authority', async () => {
     const currentStore = store(null);
-    const { result } = renderHook(() => useDriveInvoices(options(currentStore)));
+    const pointer: DriveConfigPointerRead = { kind: 'absent', raw: null };
+    const { result } = renderHook(() => useDriveInvoices(options(currentStore, { pointer })));
 
     await waitFor(() => expect(result.current.status).toBe('unconfigured'));
     expect(result.current.snapshot).toBeNull();
+    expect(result.current.recovery).toEqual({
+      candidates: [],
+      issues: [],
+      previousPointerRaw: null,
+    });
+    expect(currentStore.discoverRecovery).toHaveBeenCalledOnce();
+    expect(currentStore.loadByFileId).not.toHaveBeenCalled();
+  });
+
+  it('requires confirmation for one discovered candidate and installs nothing automatically', async () => {
+    const currentStore = store();
+    currentStore.discoverRecovery.mockResolvedValueOnce({
+      candidates: [candidate()],
+      issues: [],
+    });
+    const installPointer = vi.fn();
+    const pointer: DriveConfigPointerRead = { kind: 'absent', raw: null };
+    const { result } = renderHook(() =>
+      useDriveInvoices(options(currentStore, { pointer, installPointer }))
+    );
+
+    await waitFor(() => expect(result.current.status).toBe('confirmationRequired'));
+
+    expect(result.current.recovery?.candidates).toHaveLength(1);
+    expect(installPointer).not.toHaveBeenCalled();
+    expect(result.current.snapshot).toBeNull();
+  });
+
+  it('confirms one exact candidate before installing its ID and publishing ready', async () => {
+    const currentStore = store();
+    currentStore.discoverRecovery.mockResolvedValueOnce({
+      candidates: [candidate('config-2')],
+      issues: [],
+    });
+    const installPointer = vi.fn(async (fileId: string, expectedRaw: string | null) => ({
+      fileId,
+      raw: 'installed',
+      expectedRaw,
+    }));
+    const pointer: DriveConfigPointerRead = { kind: 'absent', raw: null };
+    const { result } = renderHook(() =>
+      useDriveInvoices(options(currentStore, { pointer, installPointer }))
+    );
+    await waitFor(() => expect(result.current.status).toBe('confirmationRequired'));
+
+    await act(() => result.current.confirmRecoveryCandidate('config-2'));
+
+    expect(currentStore.adoptRecoveryCandidate).toHaveBeenCalledWith('config-2', [], undefined);
+    expect(installPointer).toHaveBeenCalledWith('config-2', null);
+    expect(currentStore.refresh).not.toHaveBeenCalled();
+    expect(result.current.status).toBe('ready');
+    expect(result.current.snapshot?.config.file.id).toBe('config-file');
+  });
+
+  it('does not publish an adopted candidate when local pointer installation fails', async () => {
+    const currentStore = store();
+    currentStore.discoverRecovery.mockResolvedValueOnce({
+      candidates: [candidate('config-2')],
+      issues: [],
+    });
+    const pointer: DriveConfigPointerRead = { kind: 'absent', raw: null };
+    const installPointer = vi.fn(async () => Promise.reject(new Error('local write failed')));
+    const { result } = renderHook(() =>
+      useDriveInvoices(options(currentStore, { pointer, installPointer }))
+    );
+    await waitFor(() => expect(result.current.status).toBe('confirmationRequired'));
+
+    await act(async () => {
+      await expect(result.current.confirmRecoveryCandidate('config-2')).rejects.toThrow(
+        'local write failed'
+      );
+    });
+
+    expect(result.current.snapshot).toBeNull();
+    expect(result.current.status).toBe('blocked');
+  });
+
+  it('keeps retryable pointed failures out of recovery', async () => {
+    const currentStore = store();
+    currentStore.loadByFileId.mockRejectedValueOnce(
+      new DriveStoreError('offline', 'temporarily unavailable', true)
+    );
+    const { result } = renderHook(() => useDriveInvoices(options(currentStore)));
+
+    await waitFor(() => expect(result.current.status).toBe('offline'));
+
+    expect(result.current.recovery).toBeNull();
+    expect(currentStore.discoverRecovery).not.toHaveBeenCalled();
+  });
+
+  it('enters recovery after a definitive pointed-file failure while retaining old raw', async () => {
+    const currentStore = store();
+    currentStore.loadByFileId.mockRejectedValueOnce(
+      new DriveStoreError('corrupt', 'selected file is dead', false)
+    );
+    currentStore.discoverRecovery.mockResolvedValueOnce({
+      candidates: [candidate('config-2')],
+      issues: [{ fileId: 'config-file', message: 'Invalid configuration' }],
+    });
+    const { result } = renderHook(() => useDriveInvoices(options(currentStore)));
+
+    await waitFor(() => expect(result.current.status).toBe('confirmationRequired'));
+
+    expect(result.current.recovery?.previousPointerRaw).toBe(
+      '{"version":1,"configFileId":"config-file"}'
+    );
+  });
+
+  it('rejects stale confirmation after an authorization A-B-A transition', async () => {
+    const currentStore = store();
+    const adoption = deferred<DriveStoreSnapshot>();
+    currentStore.discoverRecovery.mockResolvedValue({
+      candidates: [candidate('config-2')],
+      issues: [],
+    });
+    currentStore.adoptRecoveryCandidate.mockImplementationOnce(() => adoption.promise);
+    const installPointer = vi.fn();
+    const pointer: DriveConfigPointerRead = { kind: 'absent', raw: null };
+    const view = renderHook(
+      ({ authorizationIncarnation }) =>
+        useDriveInvoices(
+          options(currentStore, { pointer, installPointer, authorizationIncarnation })
+        ),
+      { initialProps: { authorizationIncarnation: 1 } }
+    );
+    await waitFor(() => expect(view.result.current.status).toBe('confirmationRequired'));
+    let confirmation!: Promise<DriveStoreSnapshot>;
+    act(() => {
+      confirmation = view.result.current.confirmRecoveryCandidate('config-2');
+    });
+    act(() => view.rerender({ authorizationIncarnation: 2 }));
+    act(() => view.rerender({ authorizationIncarnation: 3 }));
+
+    await act(async () => {
+      adoption.resolve(snapshot());
+      await expect(confirmation).rejects.toThrow(/authorization changed/);
+    });
+    expect(installPointer).not.toHaveBeenCalled();
   });
 
   it('keeps a configured snapshot ready while refreshing changed invoice sources', async () => {

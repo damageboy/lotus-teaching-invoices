@@ -64,6 +64,31 @@ describe('useDriveSetupSnapshot', () => {
     }
   });
 
+  it('clears pointed evidence when recovery confirmation is required', () => {
+    const store = {};
+    const confirmed = snapshot('root-a');
+    const view = renderHook(({ fixture }: { fixture: Fixture }) => useDriveSetupSnapshot(fixture), {
+      initialProps: {
+        fixture: { store, authorizationIncarnation: 4, status: 'ready', snapshot: confirmed },
+      },
+    });
+
+    view.rerender({
+      fixture: {
+        store,
+        authorizationIncarnation: 4,
+        status: 'confirmationRequired',
+        snapshot: null,
+      },
+    });
+    expect(view.result.current).toBeNull();
+
+    view.rerender({
+      fixture: { store, authorizationIncarnation: 4, status: 'loading', snapshot: null },
+    });
+    expect(view.result.current).toBeNull();
+  });
+
   it('rejects retained evidence immediately when store or authorization identity changes', () => {
     const storeA = {};
     const storeB = {};

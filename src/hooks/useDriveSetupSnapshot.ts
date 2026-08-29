@@ -20,7 +20,11 @@ function isTransient(status: DriveInvoicesStatus): boolean {
 }
 
 function isConclusiveReset(status: DriveInvoicesStatus): boolean {
-  return status === 'unconfigured' || status === 'authorizationRequired';
+  return (
+    status === 'unconfigured' ||
+    status === 'authorizationRequired' ||
+    status === 'confirmationRequired'
+  );
 }
 
 export function useDriveSetupSnapshot({

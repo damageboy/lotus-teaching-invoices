@@ -102,6 +102,7 @@ function driveStatusReason(drive: DriveInvoicesState): string | null {
     case 'authorizationRequired':
       return drive.error?.message ?? 'Google Drive authorization is required.';
     case 'unconfigured':
+    case 'confirmationRequired':
       return 'Choose a Drive folder to use finalized invoice actions.';
     case 'loading':
       return 'Google Drive invoice status is loading.';
