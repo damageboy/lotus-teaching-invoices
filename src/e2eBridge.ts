@@ -26,6 +26,7 @@ export interface E2eEventSeed {
 export interface E2eSeedRequest {
   configYaml: string;
   calendarId: string;
+  driveConfigPointerRaw?: string | null;
   authorization: E2eAuthorizationSeed;
   events: E2eEventSeed[];
   syncToken: string;
@@ -39,6 +40,8 @@ export interface E2eRuntimeStatus {
   cachedEventCount: number;
   syncStatePresent: boolean;
   writeCapable: boolean;
+  driveConfigPointerStatus: 'absent' | 'valid' | 'invalid';
+  driveConfigPointerFileId: string | null;
   pendingEditJournalPath: string;
 }
 

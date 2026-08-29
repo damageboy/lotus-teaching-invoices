@@ -35,6 +35,7 @@ describe('Boot', () => {
       {
         configYaml: readFileSync(e2eConfigPath(), 'utf8'),
         calendarId: 'teaching@example.test',
+        driveConfigPointerRaw: JSON.stringify({ version: 1, configFileId: 'control-1' }),
         authorization: {
           accessToken: 'e2e-access-token',
           refreshToken: 'e2e-refresh-token',

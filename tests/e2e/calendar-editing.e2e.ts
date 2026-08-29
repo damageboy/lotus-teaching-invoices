@@ -47,6 +47,7 @@ function editingConfigWithSecondStudio(): string {
 const seed = {
   configYaml: editingConfigWithSecondStudio(),
   calendarId: CALENDAR_ID,
+  driveConfigPointerRaw: JSON.stringify({ version: 1, configFileId: 'control-1' }),
   authorization: {
     accessToken: 'e2e-access-token',
     refreshToken: 'e2e-refresh-token',
@@ -155,8 +156,10 @@ describe('Calendar editing isolated bootstrap', () => {
     expect(config.calendarName).toBe('Teaching Calendar');
     expect(config.calendarAccessRole).toBe('owner');
     expect(readdirSync(seeded.dataRoot).sort()).toEqual([
+      '.drive-config-pointer.lock',
       '.google-tokens.lock',
       'calendar-cache.sqlite',
+      'drive-config-pointer.json',
       'google-tokens.json',
     ]);
 

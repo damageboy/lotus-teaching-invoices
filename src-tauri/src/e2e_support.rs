@@ -24,16 +24,18 @@ pub(crate) const SUPPRESS_OPEN_FILE_ENV: &str = "LOTUS_E2E_SUPPRESS_OPEN_FILE";
 pub(crate) struct IsolatedStoragePaths {
     pub calendar_cache: PathBuf,
     pub auth_record: PathBuf,
+    pub drive_config_pointer: PathBuf,
     pub prompt_preference: PathBuf,
     pub pending_edit_journal: PathBuf,
 }
 
 impl IsolatedStoragePaths {
     #[cfg(test)]
-    pub fn all(&self) -> [&Path; 4] {
+    pub fn all(&self) -> [&Path; 5] {
         [
             &self.calendar_cache,
             &self.auth_record,
+            &self.drive_config_pointer,
             &self.prompt_preference,
             &self.pending_edit_journal,
         ]
@@ -44,6 +46,7 @@ pub(crate) fn isolated_storage_paths(storage: &AppStorage) -> IsolatedStoragePat
     IsolatedStoragePaths {
         calendar_cache: storage.calendar_cache_path(),
         auth_record: storage.auth_tokens_path(),
+        drive_config_pointer: storage.drive_config_pointer_path(),
         prompt_preference: storage.prompt_preference_path(),
         pending_edit_journal: storage.root().join("calendar-edit-operations.sqlite"),
     }
@@ -417,6 +420,8 @@ pub(crate) struct E2eEventSeed {
 pub(crate) struct E2eSeedRequest {
     config_yaml: String,
     calendar_id: String,
+    #[serde(default)]
+    drive_config_pointer_raw: Option<String>,
     authorization: E2eAuthorizationSeed,
     events: Vec<E2eEventSeed>,
     sync_token: String,
@@ -432,7 +437,32 @@ pub(crate) struct E2eRuntimeStatus {
     pub cached_event_count: usize,
     pub sync_state_present: bool,
     pub write_capable: bool,
+    pub drive_config_pointer_status: String,
+    pub drive_config_pointer_file_id: Option<String>,
     pub pending_edit_journal_path: PathBuf,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct E2eDriveConfigPointer {
+    version: u64,
+    config_file_id: String,
+}
+
+fn drive_config_pointer_status(storage: &AppStorage) -> Result<(String, Option<String>), String> {
+    let Some(raw) = storage
+        .read_drive_config_pointer()
+        .map_err(|error| error.to_string())?
+    else {
+        return Ok(("absent".to_string(), None));
+    };
+    let parsed = serde_json::from_str::<E2eDriveConfigPointer>(&raw);
+    match parsed {
+        Ok(pointer) if pointer.version == 1 && !pointer.config_file_id.trim().is_empty() => {
+            Ok(("valid".to_string(), Some(pointer.config_file_id)))
+        }
+        _ => Ok(("invalid".to_string(), None)),
+    }
 }
 
 fn validate_nonempty(value: &str, label: &str) -> Result<(), String> {
@@ -465,6 +495,8 @@ pub(crate) fn runtime_status(
             })
         });
     let paths = isolated_storage_paths(storage);
+    let (drive_config_pointer_status, drive_config_pointer_file_id) =
+        drive_config_pointer_status(storage)?;
     Ok(E2eRuntimeStatus {
         data_root: runtime.data_root.clone(),
         config_path: runtime.config_path.clone(),
@@ -478,6 +510,8 @@ pub(crate) fn runtime_status(
             .map_err(|error| error.to_string())?
             .is_some(),
         write_capable,
+        drive_config_pointer_status,
+        drive_config_pointer_file_id,
         pending_edit_journal_path: paths.pending_edit_journal,
     })
 }
@@ -517,6 +551,36 @@ pub(crate) fn seed_runtime(
 
     std::fs::write(runtime.config_path(), seed.config_yaml.as_bytes())
         .map_err(|error| error.to_string())?;
+    match seed.drive_config_pointer_raw {
+        Some(raw) => {
+            let expected = storage
+                .read_drive_config_pointer()
+                .map_err(|error| error.to_string())?;
+            match storage
+                .compare_and_write_drive_config_pointer(&raw, expected.as_deref())
+                .map_err(|error| error.to_string())?
+            {
+                StorageWriteOutcome::Durable
+                | StorageWriteOutcome::CommittedButDurabilityUncertain => {}
+                StorageWriteOutcome::Conflict => {
+                    return Err(
+                        "E2E Drive config pointer seed conflicted with another writer".to_string(),
+                    )
+                }
+            }
+        }
+        None => {
+            let path = storage.drive_config_pointer_path();
+            match std::fs::symlink_metadata(&path) {
+                Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => {
+                    std::fs::remove_file(path).map_err(|error| error.to_string())?;
+                }
+                Ok(_) => return Err("The E2E Drive config pointer path is invalid".to_string()),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error.to_string()),
+            }
+        }
+    }
     let auth_raw = serde_json::to_string_pretty(&serde_json::json!({
         "access_token": seed.authorization.access_token,
         "refresh_token": seed.authorization.refresh_token,
@@ -961,6 +1025,10 @@ mod tests {
         );
         assert_eq!(paths.auth_record, root.path().join("google-tokens.json"));
         assert_eq!(
+            paths.drive_config_pointer,
+            root.path().join("drive-config-pointer.json")
+        );
+        assert_eq!(
             paths.prompt_preference,
             root.path().join("calendar-edit-prompt-preference.json")
         );
@@ -971,6 +1039,34 @@ mod tests {
         for path in paths.all() {
             assert_eq!(path.parent(), Some(root.path()));
         }
+    }
+
+    #[test]
+    fn pointer_status_exposes_only_valid_file_identity() {
+        let root = tempfile::tempdir().unwrap();
+        let storage = AppStorage::new(root.path().to_path_buf()).unwrap();
+
+        assert_eq!(
+            super::drive_config_pointer_status(&storage).unwrap(),
+            ("absent".to_string(), None)
+        );
+        storage
+            .compare_and_write_drive_config_pointer("not-json", None)
+            .unwrap();
+        assert_eq!(
+            super::drive_config_pointer_status(&storage).unwrap(),
+            ("invalid".to_string(), None)
+        );
+        storage
+            .compare_and_write_drive_config_pointer(
+                r#"{"version":1,"configFileId":"config-2"}"#,
+                Some("not-json"),
+            )
+            .unwrap();
+        assert_eq!(
+            super::drive_config_pointer_status(&storage).unwrap(),
+            ("valid".to_string(), Some("config-2".to_string()))
+        );
     }
 
     #[test]
@@ -1150,6 +1246,9 @@ mod tests {
         let seed = E2eSeedRequest {
             config_yaml: config_yaml.to_string(),
             calendar_id: "teaching@example.test".to_string(),
+            drive_config_pointer_raw: Some(
+                r#"{"version":1,"configFileId":"config-file-1"}"#.to_string(),
+            ),
             authorization: E2eAuthorizationSeed {
                 access_token: "e2e-access-token".to_string(),
                 refresh_token: "e2e-refresh-token".to_string(),
@@ -1198,8 +1297,14 @@ mod tests {
         assert!(status.auth_record_present);
         assert_eq!(status.cached_event_count, 1);
         assert!(status.write_capable);
+        assert_eq!(status.drive_config_pointer_status, "valid");
+        assert_eq!(
+            status.drive_config_pointer_file_id.as_deref(),
+            Some("config-file-1")
+        );
         let serialized = serde_json::to_string(&status).unwrap();
         assert!(!serialized.contains("e2e-access-token"));
         assert!(!serialized.contains("e2e-refresh-token"));
+        assert!(!serialized.contains(config_yaml));
     }
 }
