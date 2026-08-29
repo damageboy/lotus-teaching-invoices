@@ -84,6 +84,7 @@ export class MemoryDriveApi implements DriveApi {
   private readonly maxPageSize: number;
   private readonly sharedDrives: SharedDrive[];
   private readonly operationLog: string[] = [];
+  private readonly listFileRequests: ListFilesRequest[] = [];
   private readonly updateRequests = new Map<string, UpdateDriveFileRequest>();
   private readonly patchRequests = new Map<string, PatchDriveMetadataRequest>();
   private generatedCounter = 0;
@@ -110,8 +111,30 @@ export class MemoryDriveApi implements DriveApi {
     return cloneFile(file);
   }
 
+  replaceFile(file: MemoryDriveFile): void {
+    if (!this.files.has(file.id)) {
+      throw driveError('notFound', 'Memory Drive file not found', 404, file.id);
+    }
+    this.files.set(file.id, cloneFile(file));
+  }
+
+  addFile(file: MemoryDriveFile): void {
+    if (this.files.has(file.id)) {
+      throw new TypeError(`Duplicate memory Drive file ID: ${file.id}`);
+    }
+    this.files.set(file.id, cloneFile(file));
+  }
+
   mutations(): string[] {
     return [...this.operationLog];
+  }
+
+  listRequests(): ListFilesRequest[] {
+    return this.listFileRequests.map((request) => ({ ...request }));
+  }
+
+  clearListRequests(): void {
+    this.listFileRequests.length = 0;
   }
 
   updateRequest(fileId: string): UpdateDriveFileRequest | null {
@@ -146,6 +169,7 @@ export class MemoryDriveApi implements DriveApi {
   }
 
   async listFiles(request: ListFilesRequest): Promise<DriveListPage<DriveFileRecord>> {
+    this.listFileRequests.push({ ...request });
     if (!Number.isSafeInteger(request.pageSize) || request.pageSize < 1) {
       throw driveError('invalidResponse', 'Invalid Drive file page size', 400);
     }

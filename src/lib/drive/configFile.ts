@@ -21,6 +21,10 @@ export interface LegacyControlSnapshot {
   sequenceByYear: Record<string, number>;
 }
 
+export type DriveConfigDiscoveryCandidate =
+  | { kind: 'configured'; file: DriveFileRecord }
+  | { kind: 'legacy'; file: DriveFileRecord };
+
 export type DriveConfigDiscovery =
   | { kind: 'unconfigured' }
   | { kind: 'configured'; snapshot: DriveConfigSnapshot }
@@ -146,8 +150,14 @@ function parseLegacySequence(bytes: Uint8Array, fileId: string): Record<string, 
   return result;
 }
 
-function queryFor(name: string): string {
-  return `name = '${name}' and trashed = false and properties has { key='lotusConfigSchema' and value='1' }`;
+function escapeQueryString(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+function queryFor(name: string, parentId?: string): string {
+  const directParent =
+    parentId === undefined ? '' : `'${escapeQueryString(parentId)}' in parents and `;
+  return `${directParent}name = '${name}' and trashed = false and properties has { key='lotusConfigSchema' and value='1' }`;
 }
 
 export function nextInvoiceConfig(
@@ -175,13 +185,17 @@ export function nextInvoiceConfig(
 export class DriveConfigRepository {
   constructor(private readonly api: DriveApi) {}
 
-  private async list(name: string, mimeType: string): Promise<DriveFileRecord[]> {
+  private async list(
+    name: string,
+    mimeType: string,
+    parentId?: string
+  ): Promise<DriveFileRecord[]> {
     const byId = new Map<string, DriveFileRecord>();
     const seen = new Set<string>();
     let pageToken: string | undefined;
     do {
       const page = await this.api.listFiles({
-        query: queryFor(name),
+        query: queryFor(name, parentId),
         corpora: 'user',
         ...(pageToken === undefined ? {} : { pageToken }),
         pageSize: PAGE_SIZE,
@@ -191,7 +205,9 @@ export class DriveConfigRepository {
       for (const file of page.items) {
         if (isCandidate(file, name, mimeType) && !byId.has(file.id)) byId.set(file.id, file);
       }
-      if (page.nextPageToken === null) return [...byId.values()];
+      if (page.nextPageToken === null) {
+        return [...byId.values()].sort((left, right) => left.id.localeCompare(right.id));
+      }
       if (!isNonEmptyString(page.nextPageToken) || seen.has(page.nextPageToken)) {
         throw invalidResponse('Drive returned an invalid configuration page token');
       }
@@ -219,7 +235,8 @@ export class DriveConfigRepository {
     return { file: cloneFile(media), bytes: new Uint8Array(downloaded.bytes) };
   }
 
-  private async loadConfig(fileId: string): Promise<DriveConfigSnapshot> {
+  async loadByFileId(fileId: string): Promise<DriveConfigSnapshot> {
+    if (!isNonEmptyString(fileId)) throw invalidResponse('Drive configuration file ID is invalid');
     const exact = await this.exactDownload(fileId, DRIVE_CONFIG_NAME, DRIVE_CONFIG_MIME_TYPE);
     try {
       return { file: exact.file, config: parseConfigYaml(decodeUtf8(exact.bytes, fileId)) };
@@ -232,32 +249,53 @@ export class DriveConfigRepository {
     }
   }
 
-  private async loadLegacy(fileId: string): Promise<LegacyControlSnapshot> {
+  async loadLegacyByFileId(fileId: string): Promise<LegacyControlSnapshot> {
+    if (!isNonEmptyString(fileId)) throw invalidResponse('Legacy Drive file ID is invalid');
     const exact = await this.exactDownload(fileId, LEGACY_CONTROL_NAME, LEGACY_CONTROL_MIME_TYPE);
     return { file: exact.file, sequenceByYear: parseLegacySequence(exact.bytes, fileId) };
   }
 
-  async discover(): Promise<DriveConfigDiscovery> {
+  async discoverCandidates(): Promise<DriveConfigDiscoveryCandidate[]> {
     const [configured, legacy] = await Promise.all([
       this.list(DRIVE_CONFIG_NAME, DRIVE_CONFIG_MIME_TYPE),
       this.list(LEGACY_CONTROL_NAME, LEGACY_CONTROL_MIME_TYPE),
     ]);
-    const candidates = [...configured, ...legacy];
+    return [
+      ...configured.map((file) => ({ kind: 'configured' as const, file: cloneFile(file) })),
+      ...legacy.map((file) => ({ kind: 'legacy' as const, file: cloneFile(file) })),
+    ];
+  }
+
+  async listDirectChildren(parentId: string): Promise<DriveConfigDiscoveryCandidate[]> {
+    if (!isNonEmptyString(parentId)) throw invalidResponse('Drive configuration parent is invalid');
+    const [configured, legacy] = await Promise.all([
+      this.list(DRIVE_CONFIG_NAME, DRIVE_CONFIG_MIME_TYPE, parentId),
+      this.list(LEGACY_CONTROL_NAME, LEGACY_CONTROL_MIME_TYPE, parentId),
+    ]);
+    return [
+      ...configured.map((file) => ({ kind: 'configured' as const, file: cloneFile(file) })),
+      ...legacy.map((file) => ({ kind: 'legacy' as const, file: cloneFile(file) })),
+    ];
+  }
+
+  async discover(): Promise<DriveConfigDiscovery> {
+    const candidates = await this.discoverCandidates();
     if (candidates.length === 0) return { kind: 'unconfigured' };
     if (candidates.length !== 1) {
-      return { kind: 'conflict', fileIds: candidates.map((file) => file.id).sort() };
+      return { kind: 'conflict', fileIds: candidates.map(({ file }) => file.id).sort() };
     }
-    if (configured.length === 1) {
-      return { kind: 'configured', snapshot: await this.loadConfig(configured[0].id) };
+    const candidate = candidates[0];
+    if (candidate.kind === 'configured') {
+      return { kind: 'configured', snapshot: await this.loadByFileId(candidate.file.id) };
     }
-    return { kind: 'legacy', snapshot: await this.loadLegacy(legacy[0].id) };
+    return { kind: 'legacy', snapshot: await this.loadLegacyByFileId(candidate.file.id) };
   }
 
   async create(parentId: string, config: AppConfig): Promise<DriveConfigSnapshot> {
     if (!isNonEmptyString(parentId)) throw invalidResponse('Drive configuration parent is invalid');
     const normalized = validateConfig(config);
-    const before = await this.discover();
-    if (before.kind !== 'unconfigured') {
+    const before = await this.listDirectChildren(parentId);
+    if (before.length !== 0) {
       throw conflict('A Drive configuration appeared during setup');
     }
     const ids = await this.api.generateFileIds(1);
@@ -274,11 +312,11 @@ export class DriveConfigRepository {
       bytes: Array.from(new TextEncoder().encode(serializeConfigYaml(normalized))),
       supportsAllDrives: true,
     });
-    const after = await this.discover();
-    if (after.kind !== 'configured' || after.snapshot.file.id !== fileId) {
+    const after = await this.listDirectChildren(parentId);
+    if (after.length !== 1 || after[0].kind !== 'configured' || after[0].file.id !== fileId) {
       throw conflict('Drive configuration creation raced with another setup', fileId);
     }
-    return after.snapshot;
+    return this.loadByFileId(fileId);
   }
 
   private async update(
@@ -298,7 +336,7 @@ export class DriveConfigRepository {
       supportsAllDrives: true,
       ifMatch: file.etag!,
     });
-    const verified = await this.loadConfig(file.id);
+    const verified = await this.loadByFileId(file.id);
     if (JSON.stringify(verified.config) !== JSON.stringify(normalized)) {
       throw corrupt('Drive configuration write did not preserve the requested content', file.id);
     }

@@ -112,6 +112,90 @@ function snapshot(configFile = file()): DriveConfigSnapshot {
 }
 
 describe('DriveConfigRepository', () => {
+  it('loads one exact configuration file by ID without Drive-wide discovery', async () => {
+    const api = new MemoryDriveApi([
+      folder(),
+      file(),
+      folder('other-root'),
+      file({ id: 'config-2', parents: ['other-root'], etag: '"config-2-v1"' }),
+    ]);
+
+    const result = await new DriveConfigRepository(api).loadByFileId(CONFIG_ID);
+
+    expect(result).toMatchObject({ file: { id: CONFIG_ID, parents: [ROOT_ID] }, config });
+    expect(api.listRequests()).toEqual([]);
+  });
+
+  it.each([
+    ['wrong name', { name: 'config.yaml' }, undefined, 'invalidResponse'],
+    ['wrong MIME type', { mimeType: 'text/yaml' }, undefined, 'invalidResponse'],
+    ['wrong marker', { properties: {} }, undefined, 'invalidResponse'],
+    ['trashed', { trashed: true }, undefined, 'notFound'],
+    ['missing ETag', { etag: null }, undefined, 'invalidResponse'],
+    ['no parent', { parents: [] }, undefined, 'corrupt'],
+    ['multiple parents', { parents: [ROOT_ID, 'other'] }, undefined, 'corrupt'],
+    ['invalid YAML', {}, 'not: [valid', 'corrupt'],
+  ] as const)('rejects direct lookup with %s', async (_label, overrides, body, code) => {
+    const api = new MemoryDriveApi([folder(), file(overrides, body)]);
+
+    await expect(new DriveConfigRepository(api).loadByFileId(CONFIG_ID)).rejects.toMatchObject({
+      code,
+      fileId: CONFIG_ID,
+    });
+    expect(api.listRequests()).toEqual([]);
+  });
+
+  it('rejects a Drive response for a different file ID', async () => {
+    const api = new MemoryDriveApi([folder(), file()]);
+    api.getFile = async () => file({ id: 'different', etag: '"different-v1"' });
+
+    await expect(new DriveConfigRepository(api).loadByFileId(CONFIG_ID)).rejects.toMatchObject({
+      code: 'invalidResponse',
+      fileId: CONFIG_ID,
+    });
+    expect(api.listRequests()).toEqual([]);
+  });
+
+  it('lists every current and legacy recovery candidate with stable deduplication', async () => {
+    const api = new MemoryDriveApi(
+      [
+        folder(),
+        file({ id: 'config-b', etag: '"config-b-v1"' }),
+        file({ id: 'config-a', etag: '"config-a-v1"' }),
+        legacyFile({ id: 'legacy-a', etag: '"legacy-a-v1"' }),
+      ],
+      { maxPageSize: 1 }
+    );
+
+    await expect(new DriveConfigRepository(api).discoverCandidates()).resolves.toMatchObject([
+      { kind: 'configured', file: { id: 'config-a' } },
+      { kind: 'configured', file: { id: 'config-b' } },
+      { kind: 'legacy', file: { id: 'legacy-a' } },
+    ]);
+    expect(api.listRequests()).toHaveLength(3);
+  });
+
+  it('limits selected-folder inspection to direct children', async () => {
+    const api = new MemoryDriveApi([
+      folder(),
+      folder('other-root'),
+      file({ id: 'selected-config', etag: '"selected-v1"' }),
+      file({ id: 'other-config', parents: ['other-root'], etag: '"other-v1"' }),
+      legacyFile({ id: 'selected-legacy', etag: '"legacy-v1"' }),
+    ]);
+
+    await expect(new DriveConfigRepository(api).listDirectChildren(ROOT_ID)).resolves.toMatchObject(
+      [
+        { kind: 'configured', file: { id: 'selected-config' } },
+        { kind: 'legacy', file: { id: 'selected-legacy' } },
+      ]
+    );
+    expect(api.listRequests()).toHaveLength(2);
+    expect(
+      api.listRequests().every((request) => request.query.includes(`'${ROOT_ID}' in parents`))
+    ).toBe(true);
+  });
+
   it('discovers and validates one exact unified YAML file', async () => {
     const result = await new DriveConfigRepository(
       new MemoryDriveApi([folder(), file()])

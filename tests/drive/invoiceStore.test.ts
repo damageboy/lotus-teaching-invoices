@@ -88,7 +88,7 @@ function config(sequence = 8): AppConfig {
   };
 }
 
-function configFile(value = config()): MemoryDriveFile {
+function configFile(value = config(), overrides: Partial<MemoryDriveFile> = {}): MemoryDriveFile {
   const bytes = new TextEncoder().encode(serializeConfigYaml(value));
   return {
     id: CONFIG_ID,
@@ -106,7 +106,31 @@ function configFile(value = config()): MemoryDriveFile {
     capabilities: capabilities(),
     etag: `"${CONFIG_ID}-v1"`,
     bytes,
+    ...overrides,
   };
+}
+
+function legacyFile(id = CONFIG_ID, parentId = ROOT_ID): MemoryDriveFile {
+  const bytes = new TextEncoder().encode(JSON.stringify({ sequenceByYear: { '2026': 17 } }));
+  return configFile(config(0), {
+    id,
+    name: '.lotus-teaching-invoices.json',
+    mimeType: 'application/json',
+    parents: [parentId],
+    etag: `"${id}-v1"`,
+    bytes,
+    size: String(bytes.byteLength),
+  });
+}
+
+function configDiscoveryRequests(api: MemoryDriveApi) {
+  return api
+    .listRequests()
+    .filter(
+      ({ query }) =>
+        query.includes("name = 'lotus-invoices-config.yaml'") ||
+        query.includes("name = '.lotus-teaching-invoices.json'")
+    );
 }
 
 function configuredDrive(extraFiles: readonly MemoryDriveFile[] = []): MemoryDriveFile[] {
@@ -203,6 +227,146 @@ function makeStore(
 }
 
 describe('DriveInvoiceStore cloud configuration', () => {
+  it('loads the pointed configuration and root without whole-Drive discovery', async () => {
+    const otherRoot = folder('other-root', 'Other', ['root']);
+    const otherFinal = folder('other-final', 'Final', [otherRoot.id]);
+    const api = new MemoryDriveApi([
+      ...configuredDrive(),
+      otherRoot,
+      otherFinal,
+      configFile(config(), {
+        id: 'other-config',
+        parents: [otherRoot.id],
+        etag: '"other-config-v1"',
+      }),
+    ]);
+
+    const snapshot = await makeStore(api).loadByFileId(CONFIG_ID, []);
+
+    expect(snapshot.config.file.id).toBe(CONFIG_ID);
+    expect(snapshot.stagedRoot.root.folderId).toBe(ROOT_ID);
+    expect(configDiscoveryRequests(api)).toEqual([]);
+  });
+
+  it('refreshes the selected file ID after an unrelated configuration appears', async () => {
+    const api = new MemoryDriveApi(configuredDrive());
+    const store = makeStore(api);
+    await store.loadByFileId(CONFIG_ID, []);
+    const duplicate = configFile(config(), {
+      id: 'other-config',
+      etag: '"other-config-v1"',
+    });
+    api.addFile(duplicate);
+    api.replaceFile(configFile(config(23)));
+
+    const refreshed = await store.refresh([]);
+
+    expect(refreshed.config.file.id).toBe(CONFIG_ID);
+    expect(refreshed.config.config.invoiceSequenceByYear).toEqual({ '2026': 23 });
+    expect(configDiscoveryRequests(api)).toEqual([]);
+  });
+
+  it('follows the pointed file when its parent changes and reflects the live folder name', async () => {
+    const api = new MemoryDriveApi(configuredDrive());
+    const store = makeStore(api);
+    await store.loadByFileId(CONFIG_ID, []);
+    const movedRoot = folder('moved-root', 'Renamed Invoices', ['root']);
+    const movedFinal = folder('moved-final', 'Final', [movedRoot.id]);
+    api.addFile(movedRoot);
+    api.addFile(movedFinal);
+    api.replaceFile(configFile(config(), { parents: [movedRoot.id] }));
+
+    const refreshed = await store.refresh([]);
+
+    expect(refreshed.config.file.id).toBe(CONFIG_ID);
+    expect(refreshed.stagedRoot.root.folderName).toBe('Renamed Invoices');
+    expect(configDiscoveryRequests(api)).toEqual([]);
+  });
+
+  it('discovers every validated recovery candidate without selecting one', async () => {
+    const secondRoot = folder('second-root', 'Alpha Invoices', ['root']);
+    const secondFinal = folder('second-final', 'Final', [secondRoot.id]);
+    const firstConfig = configFile({ ...config(), calendarName: 'Zulu Calendar' });
+    const secondConfig = configFile(
+      { ...config(), calendarName: 'Alpha Calendar' },
+      { id: 'second-config', parents: [secondRoot.id], etag: '"second-config-v1"' }
+    );
+    const api = new MemoryDriveApi([
+      stagedRoot().rootFile as MemoryDriveFile,
+      stagedRoot().finalFolder as MemoryDriveFile,
+      firstConfig,
+      secondRoot,
+      secondFinal,
+      secondConfig,
+    ]);
+    const store = makeStore(api);
+
+    const recovery = await store.discoverRecovery();
+
+    expect(recovery.issues).toEqual([]);
+    expect(recovery.candidates).toMatchObject([
+      {
+        fileId: 'second-config',
+        kind: 'configured',
+        root: { folderName: 'Alpha Invoices' },
+        calendarName: 'Alpha Calendar',
+      },
+      {
+        fileId: CONFIG_ID,
+        kind: 'configured',
+        root: { folderName: 'Lotus Invoices' },
+        calendarName: 'Zulu Calendar',
+      },
+    ]);
+    await expect(store.refresh([])).rejects.toMatchObject({ code: 'invalidState' });
+  });
+
+  it('reports invalid recovery candidates and adopts only the explicitly selected ID', async () => {
+    const badRoot = folder('bad-root', 'Bad', ['root']);
+    const badFinal = folder('bad-final', 'Final', [badRoot.id]);
+    const bad = configFile(config(), {
+      id: 'bad-config',
+      parents: [badRoot.id],
+      etag: '"bad-config-v1"',
+      bytes: new TextEncoder().encode('not: [valid'),
+    });
+    const api = new MemoryDriveApi([...configuredDrive(), badRoot, badFinal, bad]);
+    const store = makeStore(api);
+
+    const recovery = await store.discoverRecovery();
+    const adopted = await store.adoptRecoveryCandidate(CONFIG_ID, []);
+
+    expect(recovery.candidates.map(({ fileId }) => fileId)).toEqual([CONFIG_ID]);
+    expect(recovery.issues).toMatchObject([{ fileId: 'bad-config' }]);
+    expect(adopted.config.file.id).toBe(CONFIG_ID);
+    expect((await store.refresh([])).config.file.id).toBe(CONFIG_ID);
+  });
+
+  it('migrates only the explicitly selected legacy recovery candidate', async () => {
+    const secondRoot = folder('second-root', 'Second', ['root']);
+    const secondFinal = folder('second-final', 'Final', [secondRoot.id]);
+    const api = new MemoryDriveApi([
+      stagedRoot().rootFile as MemoryDriveFile,
+      stagedRoot().finalFolder as MemoryDriveFile,
+      configFile(),
+      secondRoot,
+      secondFinal,
+      legacyFile('legacy-config', secondRoot.id),
+    ]);
+    const store = makeStore(api);
+
+    const adopted = await store.adoptRecoveryCandidate(
+      'legacy-config',
+      [],
+      serializeConfigYaml(config(0))
+    );
+
+    expect(adopted.config.file.id).toBe('legacy-config');
+    expect(adopted.config.config.invoiceSequenceByYear).toEqual({ '2026': 17 });
+    expect(api.file(CONFIG_ID).name).toBe('lotus-invoices-config.yaml');
+    expect(configDiscoveryRequests(api)).toEqual([]);
+  });
+
   it('derives the root from the config parent', async () => {
     const store = makeStore(new MemoryDriveApi(configuredDrive()));
     const snapshot = await store.bootstrap([]);
@@ -233,6 +397,7 @@ describe('DriveInvoiceStore cloud configuration', () => {
     const api = new MemoryDriveApi([...configuredDrive(), secondRoot, secondFinal]);
     const store = makeStore(api);
     await store.bootstrap([]);
+    api.clearListRequests();
     const staged: StagedDriveRoot = {
       root: { folderId: secondRoot.id, driveId: null, folderName: secondRoot.name },
       rootFile: secondRoot,
@@ -244,6 +409,7 @@ describe('DriveInvoiceStore cloud configuration', () => {
     expect(moved.config.file.id).toBe(CONFIG_ID);
     expect(moved.config.file.parents).toEqual([secondRoot.id]);
     expect(moved.config.config).toEqual(config());
+    expect(configDiscoveryRequests(api)).toEqual([]);
   });
 
   it('migrates legacy JSON in place and returns exact local YAML as deletion receipt', async () => {

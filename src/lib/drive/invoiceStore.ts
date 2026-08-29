@@ -6,9 +6,15 @@ import type { DriveApi } from './api.js';
 import {
   DriveConfigRepository,
   nextInvoiceConfig,
+  type DriveConfigDiscoveryCandidate,
   type DriveConfigSnapshot,
 } from './configFile.js';
-import { DriveFolderError, DriveFolderService, type StagedDriveRoot } from './folders.js';
+import {
+  DriveFolderError,
+  DriveFolderService,
+  type DriveRoot,
+  type StagedDriveRoot,
+} from './folders.js';
 import {
   resolveCurrentInvoiceSource,
   scanFinalFolder,
@@ -50,6 +56,24 @@ export interface DriveStoreSnapshot {
   config: DriveConfigSnapshot;
   stagedRoot: StagedDriveRoot;
   scan: DriveInvoiceScan;
+}
+
+export interface DriveConfigCandidate {
+  fileId: string;
+  kind: 'configured' | 'legacy';
+  root: DriveRoot;
+  rootFile: DriveFileRecord;
+  calendarName: string | null;
+}
+
+export interface DriveRecoveryIssue {
+  fileId: string;
+  message: string;
+}
+
+export interface DriveRecoveryDiscovery {
+  candidates: DriveConfigCandidate[];
+  issues: DriveRecoveryIssue[];
 }
 
 export interface DriveMutationResult {
@@ -301,6 +325,7 @@ export class DriveInvoiceStore {
   private readonly createOperationId: () => string;
   private readonly generateFileId: () => Promise<string>;
   private currentSources: CurrentInvoiceSource[] = [];
+  private selectedConfigFileId: string | null = null;
 
   constructor(
     private readonly api: DriveApi,
@@ -329,6 +354,7 @@ export class DriveInvoiceStore {
       const discovery = await this.repository.discover();
       if (discovery.kind === 'unconfigured') {
         this.currentSources = exactSources;
+        this.selectedConfigFileId = null;
         return null;
       }
       if (discovery.kind === 'conflict') {
@@ -343,6 +369,68 @@ export class DriveInvoiceStore {
       const parsed = parseLegacyLocalConfigYaml(legacyLocalYaml);
       const migrated = await this.repository.migrate(discovery.snapshot, parsed.config);
       return await this.loadConfigured(migrated, exactSources);
+    } catch (error) {
+      throw mapLowerError(error);
+    }
+  }
+
+  async loadByFileId(
+    fileId: string,
+    sources: readonly CurrentInvoiceSource[]
+  ): Promise<DriveStoreSnapshot> {
+    const exactSources = snapshotSources(sources);
+    try {
+      return await this.loadConfigured(await this.repository.loadByFileId(fileId), exactSources);
+    } catch (error) {
+      throw mapLowerError(error);
+    }
+  }
+
+  async discoverRecovery(legacyLocalYaml?: string): Promise<DriveRecoveryDiscovery> {
+    try {
+      return await this.validateRecoveryCandidates(
+        await this.repository.discoverCandidates(),
+        legacyLocalYaml
+      );
+    } catch (error) {
+      throw mapLowerError(error);
+    }
+  }
+
+  async inspectRecoveryFolder(
+    parentId: string,
+    legacyLocalYaml?: string
+  ): Promise<DriveRecoveryDiscovery> {
+    try {
+      return await this.validateRecoveryCandidates(
+        await this.repository.listDirectChildren(parentId),
+        legacyLocalYaml
+      );
+    } catch (error) {
+      throw mapLowerError(error);
+    }
+  }
+
+  async adoptRecoveryCandidate(
+    fileId: string,
+    sources: readonly CurrentInvoiceSource[],
+    legacyLocalYaml?: string
+  ): Promise<DriveStoreSnapshot> {
+    const exactSources = snapshotSources(sources);
+    try {
+      let configured: DriveConfigSnapshot;
+      try {
+        configured = await this.repository.loadByFileId(fileId);
+      } catch (error) {
+        if (!(error instanceof DriveError) || error.code !== 'invalidResponse') throw error;
+        if (legacyLocalYaml === undefined) {
+          throw invalidState('The legacy local config.yaml is required for Drive migration');
+        }
+        const legacy = await this.repository.loadLegacyByFileId(fileId);
+        const parsed = parseLegacyLocalConfigYaml(legacyLocalYaml);
+        configured = await this.repository.migrate(legacy, parsed.config);
+      }
+      return await this.loadConfigured(configured, exactSources);
     } catch (error) {
       throw mapLowerError(error);
     }
@@ -382,14 +470,7 @@ export class DriveInvoiceStore {
     try {
       const scan = await scanFinalFolder(this.api, exactStaged, exactSources);
       this.requireScanCanActivate(scan);
-      const discovery = await this.repository.discover();
-      if (discovery.kind === 'conflict') {
-        throw new DriveStoreError('duplicate', 'Multiple Drive configuration files exist', false);
-      }
-      if (discovery.kind === 'legacy') {
-        throw invalidState('The legacy Drive configuration must be migrated before changing root');
-      }
-      if (discovery.kind === 'unconfigured') {
+      if (this.selectedConfigFileId === null) {
         if (initialConfig === undefined) {
           throw invalidState('Initial configuration is required for Drive setup');
         }
@@ -404,21 +485,21 @@ export class DriveInvoiceStore {
         return await this.loadConfigured(created, exactSources);
       }
 
+      const current = await this.repository.loadByFileId(this.selectedConfigFileId);
       let moved: DriveConfigSnapshot;
       try {
-        moved = await this.repository.move(discovery.snapshot, exactStaged.root.folderId);
+        moved = await this.repository.move(current, exactStaged.root.folderId);
       } catch (error) {
         if (!isAmbiguousMoveFailure(error)) throw error;
-        const reconciled = await this.repository.discover();
+        const reconciled = await this.repository.loadByFileId(this.selectedConfigFileId);
         if (
-          reconciled.kind !== 'configured' ||
-          reconciled.snapshot.file.id !== discovery.snapshot.file.id ||
-          reconciled.snapshot.file.parents.length !== 1 ||
-          reconciled.snapshot.file.parents[0] !== exactStaged.root.folderId
+          reconciled.file.id !== current.file.id ||
+          reconciled.file.parents.length !== 1 ||
+          reconciled.file.parents[0] !== exactStaged.root.folderId
         ) {
           throw error;
         }
-        moved = reconciled.snapshot;
+        moved = reconciled;
       }
       return await this.loadConfigured(moved, exactSources);
     } catch (error) {
@@ -644,17 +725,13 @@ export class DriveInvoiceStore {
   private async refreshInternal(
     sources: readonly CurrentInvoiceSource[]
   ): Promise<DriveStoreSnapshot> {
-    const discovery = await this.repository.discover();
-    if (discovery.kind === 'unconfigured') {
-      throw new DriveStoreError('unconfigured', 'Drive invoice storage is not configured', false);
+    if (this.selectedConfigFileId === null) {
+      throw invalidState('No Drive configuration file is selected');
     }
-    if (discovery.kind === 'legacy') {
-      throw invalidState('The legacy Drive configuration has not been migrated');
-    }
-    if (discovery.kind === 'conflict') {
-      throw new DriveStoreError('duplicate', 'Multiple Drive configuration files exist', false);
-    }
-    return this.loadConfigured(discovery.snapshot, sources);
+    return this.loadConfigured(
+      await this.repository.loadByFileId(this.selectedConfigFileId),
+      sources
+    );
   }
 
   private async loadConfigured(
@@ -668,7 +745,61 @@ export class DriveInvoiceStore {
     const scan = await scanFinalFolder(this.api, stagedRoot, sources);
     const snapshot = { config, stagedRoot, scan };
     this.currentSources = snapshotSources(sources);
+    this.selectedConfigFileId = config.file.id;
     return snapshot;
+  }
+
+  private async validateRecoveryCandidates(
+    discoveries: readonly DriveConfigDiscoveryCandidate[],
+    legacyLocalYaml?: string
+  ): Promise<DriveRecoveryDiscovery> {
+    const candidates: DriveConfigCandidate[] = [];
+    const issues: DriveRecoveryIssue[] = [];
+    for (const discovery of discoveries) {
+      try {
+        if (discovery.kind === 'configured') {
+          const snapshot = await this.repository.loadByFileId(discovery.file.id);
+          const staged = await this.folderService.resolveRootFromConfigParent(
+            snapshot.file.parents[0]
+          );
+          candidates.push({
+            fileId: snapshot.file.id,
+            kind: 'configured',
+            root: { ...staged.root },
+            rootFile: snapshotValue(staged.rootFile, 'Drive root could not be snapshotted'),
+            calendarName: snapshot.config.calendarName ?? null,
+          });
+          continue;
+        }
+        const snapshot = await this.repository.loadLegacyByFileId(discovery.file.id);
+        const staged = await this.folderService.resolveRootFromConfigParent(
+          snapshot.file.parents[0]
+        );
+        let calendarName: string | null = null;
+        if (legacyLocalYaml !== undefined) {
+          calendarName = parseLegacyLocalConfigYaml(legacyLocalYaml).config.calendarName ?? null;
+        }
+        candidates.push({
+          fileId: snapshot.file.id,
+          kind: 'legacy',
+          root: { ...staged.root },
+          rootFile: snapshotValue(staged.rootFile, 'Drive root could not be snapshotted'),
+          calendarName,
+        });
+      } catch (error) {
+        issues.push({
+          fileId: discovery.file.id,
+          message: error instanceof Error ? error.message : 'Drive configuration is invalid',
+        });
+      }
+    }
+    candidates.sort(
+      (left, right) =>
+        left.root.folderName.localeCompare(right.root.folderName) ||
+        left.fileId.localeCompare(right.fileId)
+    );
+    issues.sort((left, right) => left.fileId.localeCompare(right.fileId));
+    return { candidates, issues };
   }
 
   private throwCatalogConflicts(conflicts: readonly DriveInvoiceConflict[]): void {
