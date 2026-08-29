@@ -7,8 +7,8 @@
 
 Make the application's two required external connections explicit:
 
-1. the Google Calendar containing lessons; and
-2. the Google Drive root containing finalized invoices.
+1. the Google Drive root containing the authoritative configuration and finalized invoices; and
+2. the Google Calendar containing lessons.
 
 When either connection is missing, Lotus opens a two-step Welcome wizard. If the user dismisses it, Rates & Config remains usable while Calendar, Invoices, and Income remain visibly disabled. The application unlocks only after both requirements are satisfied.
 
@@ -41,7 +41,7 @@ The wizard surface, stepper, icons, spacing, and hierarchy are authoritative. Th
 - Changes to Google Drive's remote authority, control-file format, or invoice-number sequencing.
 - Changes to Calendar synchronization or invoice calculation after setup is complete.
 - Compression or redesign of legitimate invoice-source errors after setup.
-- Persistent local caching of the selected Drive root or Drive invoice state.
+- Persistent local caching of Drive root metadata, Drive invoice state, config contents, or onboarding completion. The config file-ID pointer is explicitly allowed.
 - A third onboarding step for teacher, bank, studio, or rate details.
 - A permanently persisted "do this later" preference.
 
@@ -51,7 +51,7 @@ Readiness is derived, not stored as a second configuration authority.
 
 ### Calendar requirement
 
-Calendar is configured when `config.calendarId` exists after trimming. Calendar loading, refresh, and optional write permission do not change this requirement.
+Calendar is configured only when the selected Drive YAML contains a `calendarId` that is accessible to the current Google authorization. A stale/deleted Calendar ID returns setup to Calendar.
 
 ### Drive requirement
 
@@ -60,20 +60,20 @@ Drive is configured when both conditions hold:
 - current Google authorization includes Drive access; and
 - `useDriveInvoices` has a non-null remote `DriveStoreSnapshot` for the current authorization incarnation.
 
-The remote control file remains the only authority for the selected Drive root. A local onboarding-complete flag must not be added.
+The remote config file remains the only configuration/root authority. The local file-ID pointer selects which remote file to validate; it contains no root or Calendar data. A local onboarding-complete flag must not be added.
 
 ### Aggregate state
 
 The application derives one of these states:
 
-- `checking`: configuration or Drive discovery has not resolved;
+- `checking`: local pointer loading, exact Drive lookup/recovery, or Calendar validation has not resolved;
 - `incomplete`: Calendar, Drive authorization, or the remote Drive root is missing;
 - `ready`: both requirements are satisfied;
 - `unavailable`: the initial Drive check failed before a configured snapshot could be confirmed.
 
 `checking` shows the existing centered loading presentation and does not flash the normal app or Welcome wizard.
 
-`unavailable` remains setup-blocking on a cold launch because the app has no local Drive-root authority to trust. The Drive step shows the specific authorization, network, permission, conflict, or corruption error with Retry. If an already loaded non-null snapshot later encounters a transient offline error, the connection remains configured for navigation-gating purposes; the existing Drive error behavior continues inside the ready application.
+`unavailable` remains setup-blocking on a cold launch because the pointer is identity only, not cached authority. Retryable failures preserve it. The Drive step shows the specific authorization, network, permission, conflict, or corruption error with Retry. If an already loaded non-null snapshot later encounters a transient offline error, the connection remains configured for navigation-gating purposes; the existing Drive error behavior continues inside the ready application.
 
 ## Welcome Wizard
 
@@ -81,41 +81,38 @@ The application derives one of these states:
 
 After configuration and the initial Drive check resolve, the wizard opens when readiness is `incomplete` or `unavailable`.
 
-The app selects Rates & Config before showing the wizard. The background is dimmed and inert. The wizard opens at the first incomplete step:
-
-- Calendar first when `calendarId` is missing;
-- Drive first when Calendar is configured but Drive is not.
+The app selects Rates & Config before showing the wizard. The background is dimmed and inert. Drive is always step 1. After a config is selected or an empty folder is staged, Calendar is step 2 only when the recovered/current Calendar is missing or inaccessible.
 
 The wizard reappears on every later launch until setup is complete. Dismissal is held only in React state for the current app session.
 
-### Step 1: Calendar
+### Step 1: Drive
 
 Copy:
 
 - Title: `Welcome to Lotus`
-- Step heading: `Choose your teaching calendar`
-- Body: `Lotus uses this calendar to find lessons and prepare invoices.`
-- Primary action: `Pick calendar…`
-- Secondary action: `Set up later`
-- Footer: `Next: choose where finalized invoices are stored.`
-
-The existing interactive Google Calendar listing and durable config save remain the selection mechanism. A successful selection advances to Drive unless Drive is already configured, in which case setup completes.
-
-Cancelling or failing authorization leaves the wizard on Calendar and shows a concise error beside the action. It does not open the optional Calendar-editing permission prompt.
-
-### Step 2: Drive
-
-Copy follows the same structure:
-
 - Step heading: `Choose your invoice folder`
 - Body: `Lotus stores finalized invoices in this Google Drive folder.`
 - Primary action: `Pick Drive folder…`
 - Secondary action: `Set up later`
+- Footer: `Next: choose your teaching calendar if needed.`
+
+With a valid local pointer, startup loads that exact Drive file and skips discovery. Without one, discovery shows `Found existing configuration in “<folder>”` and requires confirmation even for one candidate; multiple candidates each have a direct selection action. A selected folder containing a valid config uses the same confirmation flow. An empty selected folder is staged only in memory and advances to Calendar without creating a config.
+
+Cancelling the folder browser returns to Drive. Authorization/discovery errors remain on Drive and provide Retry; retryable errors never clear the pointer.
+
+### Step 2: Calendar
+
+Copy follows the same structure:
+
+- Step heading: `Choose your teaching calendar`
+- Body: `Lotus uses this calendar to find lessons and prepare invoices.`
+- Primary action: `Pick calendar…`
+- Secondary action: `Set up later`
 - Footer: `You can change this later in Rates & Config.`
 
-If Drive scope is missing, the primary action requests it and then opens the existing folder browser. The folder browser retains its staged browse, scan, and confirm flow. Successful activation completes setup and opens Calendar.
+The existing interactive Calendar listing remains the selection mechanism. For an existing Drive config, selection updates that same file ID. For a staged empty folder, successful Calendar selection creates exactly one config, verifies it, and only then installs its file-ID pointer.
 
-Cancelling the folder browser returns to the Drive step. Authorization or discovery errors remain in the Drive step and provide Retry; they are not rendered as invoice errors.
+Cancelling or failing Calendar authorization leaves the wizard on Calendar and shows a concise error beside the action. It does not open the optional Calendar-editing permission prompt.
 
 ### Dismissal and completion
 
@@ -176,7 +173,7 @@ Invoice-source construction does not run while aggregate setup is incomplete. Th
 App owns one prerequisite controller and the shared picker entry points. Presenters receive typed readiness and actions.
 
 ```text
-config + Google authorization + Drive bootstrap
+local file-ID pointer + Google authorization + exact Drive lookup/recovery
                     |
              setup readiness
           /          |           \
@@ -202,7 +199,7 @@ This keeps readiness decisions out of individual tabs and prevents desktop/mobil
 - Calendar picker controller: owns interactive list loading, selection, saving, and surface-local errors for both wizard and settings entry points.
 - Drive folder controller: owns authorization-before-open, dialog visibility, candidate scan, activation, and errors for both entry points.
 - `DriveFolderDialog`: remains the existing staged folder browser but moves out of the Invoices feature boundary.
-- `useDriveInvoices`: performs one authorized bootstrap outside Invoices while keeping focus/visibility refresh tied to the active Invoices tab.
+- `useDriveInvoices`: performs exact-file startup or confirmed recovery outside Invoices while keeping focus/visibility refresh tied to the active Invoices tab.
 
 The Drive bootstrap uses an empty source list until current invoice sources are ready. Candidate folder scanning likewise uses the current sources when available and an empty list otherwise. Activation still scans the chosen `Final` folder, detects blocking conflicts, and initializes remote invoice sequences from recognized filenames. Once setup becomes ready, entering Invoices refreshes the same store with full current sources.
 
@@ -212,16 +209,17 @@ The Drive bootstrap uses an empty source list until current invoice sources are 
 - Drive authorization incarnation changes invalidate outstanding discovery and folder operations.
 - Calendar A to B to A and Drive authorization A to B to A changes remain distinguishable through monotonic incarnations.
 - Closing and reopening Welcome or either picker cannot allow an older completion to close, advance, or error the new session.
-- Drive activation remains the only point that switches the remote root.
-- No local Drive snapshot, selected-root pointer, or onboarding-complete authority is persisted.
+- Confirmed recovery or Drive activation is the only point that switches config identity/root.
+- Only the strict config file-ID pointer is persisted locally; no Drive snapshot, config contents, root metadata, Calendar data, or onboarding-complete authority is persisted.
 
 ## Error Handling
 
 - Calendar authorization/list failure: remain on Calendar; show one concise row/action error.
 - Drive scope missing: primary Drive action requests scope explicitly.
 - Drive discovery offline: show `Google Drive is temporarily unavailable` and Retry; do not claim the folder is unconfigured.
-- No remote control file: show `Not configured` and folder selection.
-- Duplicate/corrupt/permission state: show the existing specific blocking Drive message and Retry or folder selection when safe.
+- No remote config candidate: show `Not configured` and folder selection.
+- Multiple candidates: show all valid choices and require explicit selection.
+- Corrupt/permission state: show the specific blocking Drive message and Retry or folder selection when safe.
 - Folder scan conflict: keep the existing dialog conflict details and prevent confirmation.
 - Config save failure after Calendar selection: do not mark Calendar complete or advance.
 - Config cleanup failure after Drive activation: preserve the successful remote activation, report the save failure, and retry cleanup without creating a second remote root.

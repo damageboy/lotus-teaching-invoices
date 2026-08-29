@@ -2,7 +2,7 @@
 
 ## Goal
 
-Use one Google Drive YAML file as the durable authority for desktop and Android application configuration and invoice numbering. Keep only Google authorization credentials and disposable operational data locally.
+Use one Google Drive YAML file as the durable authority for desktop and Android application configuration and invoice numbering. Keep only Google authorization credentials, the selected Drive config file ID, and disposable operational data locally.
 
 ## Scope
 
@@ -22,7 +22,7 @@ The standalone CLI may still accept an explicit local `--config` input. That inp
 lotusConfigSchema=1
 ```
 
-Discovery requires the exact filename, the metadata property, a non-trashed file, download permission, and edit permission. Exactly one matching file may exist for the signed-in Google account.
+Discovery requires the exact filename, the metadata property, a non-trashed file, download permission, and edit permission. Discovery is used only when no valid local file-ID pointer exists or that pointer is definitively dead. Every discovered candidate requires user confirmation, including a single candidate; multiple valid candidates are directly selectable.
 
 The file's actual Google Drive parent is the invoice root. No root folder ID, Drive ID, folder name, or `Final` folder ID is stored in YAML. The application fetches the parent folder metadata and finds its single `Final` child by name.
 
@@ -71,7 +71,7 @@ Google Drive is the only durable configuration authority after migration. The ap
 
 Every configuration save uses `If-Match` with that ETag. A successful save replaces the in-memory configuration and ETag. An ETag conflict does not merge or overwrite fields: the application reloads the remote file, reports that the configuration changed elsewhere, and requires the user to repeat the edit.
 
-No durable local configuration copy or selected-root pointer is written. Calendar databases, logs, prompt preferences, temporary PDFs, and other disposable operational files may remain local.
+No durable local configuration copy, root metadata, folder name, Calendar field, or onboarding-complete flag is written. A strict local file contains only `{version: 1, configFileId}`. It is an identity pointer, not configuration authority: the app must download and validate the pointed Drive YAML on every startup. Calendar databases, logs, prompt preferences, temporary PDFs, and other disposable operational files may remain local.
 
 ## Invoice Number Allocation
 
@@ -91,15 +91,15 @@ If rendering, upload, verification, or the process fails after step 4, the numbe
 
 Changing the invoice root moves the same `lotus-invoices-config.yaml` Drive file to the confirmed new root using its current ETag. It does not create a second configuration file or store a folder pointer inside YAML.
 
-After the move, the application reloads the file metadata, verifies that it has exactly one parent, finds that parent's `Final` child, and then treats the new parent as authoritative. If the move response is uncertain, discovery by filename and metadata determines the file's actual location before any retry.
+After the move, the application reloads the same file ID, verifies that it has exactly one parent, finds that parent's `Final` child, and then treats the new parent as authoritative. The local file-ID pointer does not change.
 
 ## Startup
 
-1. Load Google authorization locally.
+1. Load Google authorization and the config file-ID pointer locally.
 2. Obtain Drive authorization when required.
-3. Discover and download `lotus-invoices-config.yaml`.
-4. Validate the YAML before exposing normal application screens.
-5. Derive the invoice root from the file's parent and find `Final` by name.
+3. If the pointer is valid, fetch that exact file ID; do not run account-wide config discovery.
+4. If the pointer is absent, invalid, or definitively dead, discover candidates and require confirmation before installing a replacement pointer.
+5. Download and validate the YAML, derive the invoice root from its sole parent, and find `Final` by name before exposing normal application screens.
 
 A fresh desktop or Android installation therefore receives the same teacher, Calendar, studio, rate, email, color, and invoice-sequence configuration after Google authorization. It does not need a local `config.yaml`.
 
@@ -150,7 +150,8 @@ After the upgraded application changes configuration or allocates an invoice num
 ## Error Handling
 
 - Missing unified file with no legacy inputs: show setup rather than creating behavior-defining defaults silently.
-- Multiple matching unified files: block and identify a duplicate configuration conflict.
+- Multiple matching unified files during recovery: present every valid candidate for explicit selection; they do not affect a device whose valid pointer resolves.
+- Retryable Drive failure: preserve the pointer and show Retry; do not classify it as dead or overwrite it.
 - Invalid YAML or invalid configuration: block without replacing the remote file.
 - Missing, duplicate, or unusable `Final` folder: block invoice actions until corrected.
 - ETag conflict: reload and require retry; never merge automatically.
@@ -170,7 +171,9 @@ Unit and integration coverage must prove:
 - Two devices allocating concurrently cannot receive the same invoice number.
 - A post-allocation upload failure leaves a deliberate sequence gap and requires no recovery state.
 - Re-finalization preserves the existing number.
-- Root changes move the same file ID and remain discoverable after an uncertain response.
+- Valid-pointer startup performs exact file lookup without global config discovery.
+- Missing/dead-pointer recovery requires confirmation and safely handles multiple candidates.
+- Root changes move the same file ID and keep the local pointer unchanged.
 - Migration preserves configuration and sequences, refuses stale ETags, verifies before local deletion, and never creates a second remote file.
 - Desktop token rename preserves bytes and rejects dual-file conflicts.
 - A fresh desktop and Android installation load identical cloud configuration.
