@@ -27,9 +27,11 @@ function calendarController(
     saving: false,
     error: null,
     selectedName: 'Not configured',
+    connectionStatus: 'missing',
     openList: vi.fn(async () => undefined),
     select: vi.fn(async () => undefined),
     closeList: vi.fn(),
+    retryValidation: vi.fn(async () => undefined),
     ...overrides,
   };
 }
@@ -40,6 +42,7 @@ function driveController(overrides: Partial<DriveFolderController> = {}): DriveF
     opening: false,
     cleanupPending: false,
     error: null,
+    pendingNewRoot: null,
     openDialog: vi.fn(async () => undefined),
     closeDialog: vi.fn(),
     scanCandidate: vi.fn(async () => ({
@@ -49,6 +52,8 @@ function driveController(overrides: Partial<DriveFolderController> = {}): DriveF
       maxSequenceByYear: {},
     })),
     confirmRoot: vi.fn(async () => undefined),
+    completePendingNewRoot: vi.fn(async () => undefined),
+    clearPendingNewRoot: vi.fn(),
     retry: vi.fn(async () => undefined),
     ...overrides,
   };
@@ -60,7 +65,13 @@ function props(overrides: Partial<SetupWizardProps> = {}): SetupWizardProps {
     layout: 'desktop',
     step: 'calendar',
     calendarPicker: calendarController(),
-    drive: { status: 'unconfigured', error: null },
+    drive: {
+      status: 'unconfigured',
+      error: null,
+      operationKey: null,
+      recovery: null,
+      confirmRecoveryCandidate: vi.fn(async () => ({}) as never),
+    },
     driveFolder: driveController(),
     driveAcknowledgementRequired: false,
     detectedDriveFolderName: null,
@@ -74,18 +85,18 @@ describe('SetupWizard', () => {
   it('renders the approved Calendar step with icon and text progress', () => {
     render(<SetupWizard {...props({ layout: 'desktop', step: 'calendar' })} />);
     expect(screen.getByRole('dialog', { name: 'Welcome to Lotus' })).toBeTruthy();
-    expect(screen.getByText('Step 1 of 2')).toBeTruthy();
+    expect(screen.getByText('Step 2 of 2')).toBeTruthy();
     expect(screen.getByText('Choose your teaching calendar')).toBeTruthy();
     expect(
       screen.getByText('Lotus uses this calendar to find lessons and prepare invoices.')
     ).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Pick calendar…' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Set up later' })).toBeTruthy();
-    expect(screen.getByText('Next: choose where finalized invoices are stored.')).toBeTruthy();
+    expect(screen.getByText('You can change this later in Rates & Config.')).toBeTruthy();
     expect(screen.getByTestId('setup-step-calendar').querySelector('svg')).toBeTruthy();
     expect(screen.getByTestId('setup-step-drive').querySelector('svg')).toBeTruthy();
     expect(screen.getByTestId('setup-step-calendar').className).toContain('ring-2');
-    expect(screen.getByTestId('setup-step-drive').className).toContain('border-dashed');
+    expect(screen.getByTestId('setup-step-drive').className).toContain('border-solid');
   });
 
   it('renders the approved Drive step and routes the primary action', () => {
@@ -93,15 +104,15 @@ describe('SetupWizard', () => {
     render(
       <SetupWizard {...props({ step: 'drive', driveFolder: driveController({ openDialog }) })} />
     );
-    expect(screen.getByText('Step 2 of 2')).toBeTruthy();
+    expect(screen.getByText('Step 1 of 2')).toBeTruthy();
     expect(screen.getByText('Choose your invoice folder')).toBeTruthy();
     expect(
       screen.getByText('Lotus stores finalized invoices in this Google Drive folder.')
     ).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Pick Drive folder…' }));
     expect(openDialog).toHaveBeenCalledOnce();
-    expect(screen.getByText('You can change this later in Rates & Config.')).toBeTruthy();
-    expect(screen.getByLabelText('Calendar complete')).toBeTruthy();
+    expect(screen.getByText('Next: choose your teaching calendar if needed.')).toBeTruthy();
+    expect(screen.queryByLabelText('Drive complete')).toBeNull();
     expect(screen.getByTestId('setup-step-drive').className).toContain('ring-2');
   });
 
@@ -126,6 +137,85 @@ describe('SetupWizard', () => {
     expect(acknowledgeDrive).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByRole('button', { name: 'Choose another folder…' }));
     expect(openDialog).toHaveBeenCalledOnce();
+  });
+
+  it('requires confirmation for one discovered configuration', () => {
+    const confirmRecoveryCandidate = vi.fn(async () => ({}) as never);
+    render(
+      <SetupWizard
+        {...props({
+          step: 'drive',
+          drive: {
+            status: 'confirmationRequired',
+            error: null,
+            operationKey: null,
+            recovery: {
+              candidates: [
+                {
+                  fileId: 'config-1',
+                  kind: 'configured',
+                  root: { folderId: 'folder-1', driveId: null, folderName: 'LotusInvoices' },
+                  rootFile: {} as never,
+                  calendarName: 'Teaching',
+                },
+              ],
+              issues: [],
+              previousPointerRaw: null,
+            },
+            confirmRecoveryCandidate,
+          },
+        })}
+      />
+    );
+
+    expect(screen.getByText('Found existing configuration in “LotusInvoices”')).toBeTruthy();
+    expect(screen.getByText('Calendar: Teaching')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Use this configuration' }));
+    expect(confirmRecoveryCandidate).toHaveBeenCalledWith('config-1');
+  });
+
+  it('shows every discovered configuration and another-folder action', () => {
+    const recovery = {
+      candidates: [
+        {
+          fileId: 'config-a',
+          kind: 'configured' as const,
+          root: { folderId: 'a', driveId: null, folderName: 'Alpha' },
+          rootFile: {} as never,
+          calendarName: 'Calendar A',
+        },
+        {
+          fileId: 'config-b',
+          kind: 'configured' as const,
+          root: { folderId: 'b', driveId: null, folderName: 'Beta' },
+          rootFile: {} as never,
+          calendarName: 'Calendar B',
+        },
+      ],
+      issues: [],
+      previousPointerRaw: null,
+    };
+    render(
+      <SetupWizard
+        {...props({
+          step: 'drive',
+          drive: {
+            status: 'confirmationRequired',
+            error: null,
+            operationKey: null,
+            recovery,
+            confirmRecoveryCandidate: vi.fn(async () => ({}) as never),
+          },
+        })}
+      />
+    );
+
+    expect(screen.getByText('Alpha')).toBeTruthy();
+    expect(screen.getByText('Beta')).toBeTruthy();
+    expect(screen.getByText('Calendar: Calendar A')).toBeTruthy();
+    expect(screen.getByText('Calendar: Calendar B')).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: 'Use this configuration' })).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Choose another folder…' })).toBeTruthy();
   });
 
   it('routes the Calendar action and renders the same selectable list states as Connections', () => {
@@ -174,6 +264,9 @@ describe('SetupWizard', () => {
           drive: {
             status: 'offline',
             error: new DriveStoreError('offline', 'Drive unavailable', true),
+            operationKey: null,
+            recovery: null,
+            confirmRecoveryCandidate: vi.fn(async () => ({}) as never),
           },
           driveFolder: driveController({ cleanupPending: true }),
         })}

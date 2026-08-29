@@ -11,7 +11,10 @@ export interface SetupWizardProps {
   layout: AppLayout;
   step: SetupStep;
   calendarPicker: CalendarPickerController;
-  drive: Pick<DriveInvoicesState, 'status' | 'error'>;
+  drive: Pick<
+    DriveInvoicesState,
+    'status' | 'error' | 'operationKey' | 'recovery' | 'confirmRecoveryCandidate'
+  >;
   driveFolder: DriveFolderController;
   driveAcknowledgementRequired: boolean;
   detectedDriveFolderName: string | null;
@@ -49,8 +52,8 @@ interface ProgressStepProps {
 
 function ProgressStep({ id, activeStep, label }: ProgressStepProps) {
   const active = id === activeStep;
-  const complete = id === 'calendar' && activeStep === 'drive';
-  const pending = id === 'drive' && activeStep === 'calendar';
+  const complete = id === 'drive' && activeStep === 'calendar';
+  const pending = id === 'calendar' && activeStep === 'drive';
   const Icon = id === 'calendar' ? CalendarBlank : GoogleDriveLogo;
 
   return (
@@ -68,7 +71,7 @@ function ProgressStep({ id, activeStep, label }: ProgressStepProps) {
         <Icon size={32} weight={active ? 'fill' : 'regular'} aria-hidden="true" />
         {complete && (
           <span
-            aria-label="Calendar complete"
+            aria-label="Drive complete"
             className="absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-600 text-white"
           >
             <Check size={14} weight="bold" aria-hidden="true" />
@@ -123,6 +126,7 @@ export function SetupWizard({
     }
     if (historyEntry !== null) historyEntry.consumed = true;
     mobileHistoryRef.current = null;
+    current.driveFolder.clearPendingNewRoot();
     current.onDismiss();
   }, []);
 
@@ -240,6 +244,7 @@ export function SetupWizard({
 
       activeHistoryEntry.consumed = true;
       mobileHistoryRef.current = null;
+      current.driveFolder.clearPendingNewRoot();
       current.onDismiss();
     }
 
@@ -253,6 +258,8 @@ export function SetupWizard({
     step === 'drive' && driveAcknowledgementRequired && detectedDriveFolderName !== null
       ? detectedDriveFolderName
       : null;
+  const recoveryCandidates = step === 'drive' ? (drive.recovery?.candidates ?? []) : [];
+  const recoveryBusy = drive.operationKey?.startsWith('confirmRecovery:') ?? false;
   const primaryAction =
     step === 'calendar'
       ? calendarPicker.openList
@@ -282,12 +289,12 @@ export function SetupWizard({
       >
         <div className="mx-auto w-full max-w-lg">
           <p className="text-center text-sm font-medium text-indigo-700">
-            Step {step === 'calendar' ? '1' : '2'} of 2
+            Step {step === 'drive' ? '1' : '2'} of 2
           </p>
           <div className="mt-3 flex items-center justify-center" aria-label="Setup progress">
-            <ProgressStep id="calendar" activeStep={step} label="Calendar" />
-            <div aria-hidden="true" className="h-px w-16 bg-gray-300 sm:w-28" />
             <ProgressStep id="drive" activeStep={step} label="Drive" />
+            <div aria-hidden="true" className="h-px w-16 bg-gray-300 sm:w-28" />
+            <ProgressStep id="calendar" activeStep={step} label="Calendar" />
           </div>
         </div>
 
@@ -318,21 +325,72 @@ export function SetupWizard({
             </div>
           )}
 
-          <div className={`${mobile ? 'mt-auto pt-10' : 'mt-8'} flex flex-col gap-3`}>
-            <button
-              type="button"
-              onClick={() => void primaryAction()}
-              disabled={primaryBusy}
-              className="min-h-12 min-w-12 w-full rounded-lg bg-indigo-600 px-5 py-3 text-base font-semibold text-white shadow-sm transition hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none"
-            >
-              {step === 'calendar'
-                ? 'Pick calendar…'
-                : detectedDriveFolder === null
-                  ? 'Pick Drive folder…'
-                  : `Continue with ${detectedDriveFolder}`}
-            </button>
+          {recoveryCandidates.length === 1 && (
+            <div className="mt-8 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-left">
+              <p className="text-sm font-semibold text-emerald-900">
+                Found existing configuration in “{recoveryCandidates[0].root.folderName}”
+              </p>
+              {recoveryCandidates[0].calendarName && (
+                <p className="mt-2 text-sm text-gray-600">
+                  Calendar: {recoveryCandidates[0].calendarName}
+                </p>
+              )}
+            </div>
+          )}
 
-            {detectedDriveFolder !== null && (
+          {recoveryCandidates.length > 1 && (
+            <div className="mt-8 flex flex-col gap-3 text-left">
+              {recoveryCandidates.map((candidate) => (
+                <div key={candidate.fileId} className="rounded-lg border border-gray-200 p-4">
+                  <p className="font-semibold text-gray-950">{candidate.root.folderName}</p>
+                  {candidate.calendarName && (
+                    <p className="mt-1 text-sm text-gray-600">Calendar: {candidate.calendarName}</p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void drive.confirmRecoveryCandidate(candidate.fileId).catch(() => undefined)
+                    }
+                    disabled={recoveryBusy}
+                    className="mt-3 min-h-12 rounded-lg bg-indigo-600 px-4 py-2 font-semibold text-white disabled:opacity-40"
+                  >
+                    Use this configuration
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className={`${mobile ? 'mt-auto pt-10' : 'mt-8'} flex flex-col gap-3`}>
+            {recoveryCandidates.length === 0 ? (
+              <button
+                type="button"
+                onClick={() => void primaryAction()}
+                disabled={primaryBusy}
+                className="min-h-12 min-w-12 w-full rounded-lg bg-indigo-600 px-5 py-3 text-base font-semibold text-white shadow-sm transition hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none"
+              >
+                {step === 'calendar'
+                  ? 'Pick calendar…'
+                  : detectedDriveFolder === null
+                    ? 'Pick Drive folder…'
+                    : `Continue with ${detectedDriveFolder}`}
+              </button>
+            ) : recoveryCandidates.length === 1 ? (
+              <button
+                type="button"
+                onClick={() =>
+                  void drive
+                    .confirmRecoveryCandidate(recoveryCandidates[0].fileId)
+                    .catch(() => undefined)
+                }
+                disabled={recoveryBusy}
+                className="min-h-12 min-w-12 w-full rounded-lg bg-indigo-600 px-5 py-3 text-base font-semibold text-white disabled:opacity-40"
+              >
+                Use this configuration
+              </button>
+            ) : null}
+
+            {(detectedDriveFolder !== null || recoveryCandidates.length > 0) && (
               <button
                 type="button"
                 onClick={() => void driveFolder.openDialog()}
@@ -370,6 +428,17 @@ export function SetupWizard({
               </div>
             )}
 
+            {step === 'calendar' && calendarPicker.connectionStatus === 'unavailable' && (
+              <button
+                type="button"
+                onClick={() => void calendarPicker.retryValidation().catch(() => undefined)}
+                disabled={calendarBusy}
+                className="min-h-12 min-w-12 self-center px-3 text-base font-medium text-indigo-600 disabled:opacity-40"
+              >
+                Retry Google Calendar
+              </button>
+            )}
+
             {step === 'drive' && driveError && (
               <button
                 type="button"
@@ -392,8 +461,8 @@ export function SetupWizard({
 
           <p className="mt-8 text-base text-gray-600">
             {step === 'calendar'
-              ? 'Next: choose where finalized invoices are stored.'
-              : 'You can change this later in Rates & Config.'}
+              ? 'You can change this later in Rates & Config.'
+              : 'Next: choose your teaching calendar if needed.'}
           </p>
         </div>
       </div>

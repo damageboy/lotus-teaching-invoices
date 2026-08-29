@@ -74,8 +74,15 @@ const readyDriveState: DriveInvoicesState = {
   } as DriveStoreSnapshot,
   error: null,
   operationKey: null,
+  recovery: null,
   refresh: vi.fn(async () => undefined),
   activateRoot: vi.fn(async () => readyDriveState.snapshot as DriveStoreSnapshot),
+  resolveRoot: vi.fn(async () => ({
+    kind: 'activated',
+    snapshot: readyDriveState.snapshot as DriveStoreSnapshot,
+  })),
+  completeNewRoot: vi.fn(async () => readyDriveState.snapshot as DriveStoreSnapshot),
+  confirmRecoveryCandidate: vi.fn(async () => readyDriveState.snapshot as DriveStoreSnapshot),
   saveConfig: vi.fn(async () => ({}) as never),
   finalize: vi.fn(async () => {
     throw new Error('finalize is not used by setup tests');
@@ -399,6 +406,10 @@ describe('App required Google setup', () => {
       status: 'unconfigured',
       snapshot: null,
       activateRoot,
+      resolveRoot: vi.fn(async () => ({
+        kind: 'activated',
+        snapshot: await activateRoot(),
+      })),
     };
     const historyBack = vi.spyOn(window.history, 'back').mockImplementation(() => undefined);
     const view = renderApp({ compact: true });
@@ -432,7 +443,14 @@ describe('App required Google setup', () => {
     expect(screen.getByRole('dialog', { name: 'Choose Drive invoice folder' })).toBeTruthy();
     expect(window.history.state).toBe(wizardHistoryState);
 
-    driveState = { ...readyDriveState, activateRoot };
+    driveState = {
+      ...readyDriveState,
+      activateRoot,
+      resolveRoot: vi.fn(async () => ({
+        kind: 'activated',
+        snapshot: await activateRoot(),
+      })),
+    };
     view.rerender();
     await act(async () => {
       activation.resolve({
@@ -477,7 +495,7 @@ describe('App required Google setup', () => {
   it('starts on Drive when Calendar is already configured', () => {
     renderDriveStepApp();
     expect(screen.getByRole('heading', { name: 'Choose your invoice folder' })).toBeTruthy();
-    expect(document.body.textContent).toContain('Step 2 of 2');
+    expect(document.body.textContent).toContain('Step 1 of 2');
   });
 
   it('discovers the real authorization requirement without an existing grant', async () => {
@@ -527,7 +545,7 @@ describe('App required Google setup', () => {
     driveState = readyDriveState;
     renderApp();
     expect(screen.getByRole('heading', { name: 'Choose your teaching calendar' })).toBeTruthy();
-    expect(document.body.textContent).toContain('Step 1 of 2');
+    expect(document.body.textContent).toContain('Step 2 of 2');
   });
 
   it('shows the unavailable Drive error and its Retry action', () => {

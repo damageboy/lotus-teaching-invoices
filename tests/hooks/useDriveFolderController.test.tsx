@@ -86,6 +86,8 @@ function drive(
     operationKey: null,
     refresh: vi.fn(async () => undefined),
     activateRoot,
+    resolveRoot: vi.fn(async () => ({ kind: 'calendarRequired' as const, stagedRoot })),
+    completeNewRoot: vi.fn(async () => configuredSnapshot()),
   };
 }
 
@@ -182,21 +184,65 @@ describe('useDriveFolderController', () => {
     expect(view.result.current.dialogOpen).toBe(true);
   });
 
-  it('passes the in-memory config only for initial setup', async () => {
-    const activateRoot = vi.fn(async () => configuredSnapshot());
-    const { result } = renderHook(() =>
-      useDriveFolderController(options({ drive: drive('unconfigured', activateRoot) }))
-    );
+  it('stages an empty selected folder only in controller memory', async () => {
+    const driveState = drive();
+    const { result } = renderHook(() => useDriveFolderController(options({ drive: driveState })));
 
     await act(() => result.current.confirmRoot(stagedRoot));
 
-    expect(activateRoot).toHaveBeenCalledWith(stagedRoot, DEFAULT_CONFIG);
+    expect(driveState.resolveRoot).toHaveBeenCalledWith(stagedRoot, DEFAULT_CONFIG);
+    expect(result.current.pendingNewRoot).toEqual(stagedRoot);
+    expect(driveState.completeNewRoot).not.toHaveBeenCalled();
     expect(result.current.cleanupPending).toBe(false);
+  });
+
+  it('creates a staged empty-root config only when Calendar configuration is complete', async () => {
+    const driveState = drive();
+    const { result } = renderHook(() => useDriveFolderController(options({ drive: driveState })));
+    await act(() => result.current.confirmRoot(stagedRoot));
+
+    await act(() => result.current.completePendingNewRoot(DEFAULT_CONFIG));
+
+    expect(driveState.completeNewRoot).toHaveBeenCalledWith(stagedRoot, DEFAULT_CONFIG);
+    expect(result.current.pendingNewRoot).toBeNull();
+  });
+
+  it('publishes selected-folder candidates without staging or creating', async () => {
+    const driveState = drive();
+    driveState.resolveRoot.mockResolvedValueOnce({
+      kind: 'confirmationRequired',
+      recovery: {
+        candidates: [],
+        issues: [],
+        previousPointerRaw: null,
+      },
+    });
+    const { result } = renderHook(() => useDriveFolderController(options({ drive: driveState })));
+
+    await act(() => result.current.confirmRoot(stagedRoot));
+
+    expect(result.current.pendingNewRoot).toBeNull();
+    expect(driveState.completeNewRoot).not.toHaveBeenCalled();
+  });
+
+  it('discards an empty-folder stage explicitly without remote mutation', async () => {
+    const driveState = drive();
+    const { result } = renderHook(() => useDriveFolderController(options({ drive: driveState })));
+    await act(() => result.current.confirmRoot(stagedRoot));
+
+    act(() => result.current.clearPendingNewRoot());
+
+    expect(result.current.pendingNewRoot).toBeNull();
+    expect(driveState.completeNewRoot).not.toHaveBeenCalled();
   });
 
   it('accepts an exact committed root after multiple invoice-source transitions', async () => {
     const activation = deferred<DriveStoreSnapshot>();
-    const activateRoot = vi.fn(() => activation.promise);
+    const driveState = drive();
+    driveState.resolveRoot.mockImplementationOnce(async () => ({
+      kind: 'activated',
+      snapshot: await activation.promise,
+    }));
     const view = renderHook(
       ({ sourceContextKey, sources, driveState }) =>
         useDriveFolderController(options({ sourceContextKey, sources, drive: driveState })),
@@ -204,7 +250,7 @@ describe('useDriveFolderController', () => {
         initialProps: {
           sourceContextKey: 'setup-discovery',
           sources: [] as CurrentInvoiceSource[],
-          driveState: drive('unconfigured', activateRoot),
+          driveState,
         },
       }
     );
@@ -217,7 +263,8 @@ describe('useDriveFolderController', () => {
       sourceContextKey: 'empty-calendar',
       sources: [],
       driveState: {
-        ...drive('ready', activateRoot),
+        ...driveState,
+        status: 'ready' as const,
         snapshot: configuredSnapshot(),
       },
     });
@@ -225,7 +272,8 @@ describe('useDriveFolderController', () => {
       sourceContextKey: 'setup-discovery',
       sources: [],
       driveState: {
-        ...drive('loading', activateRoot),
+        ...driveState,
+        status: 'loading' as const,
         snapshot: configuredSnapshot(),
       },
     });
@@ -233,7 +281,8 @@ describe('useDriveFolderController', () => {
       sourceContextKey: 'synced-calendar',
       sources: [source('synced')],
       driveState: {
-        ...drive('ready', activateRoot),
+        ...driveState,
+        status: 'ready' as const,
         snapshot: configuredSnapshot(),
       },
     });
@@ -256,10 +305,12 @@ describe('useDriveFolderController', () => {
         parents: ['other-root'],
       },
     };
-    const activateRoot = vi.fn(async () => configuredSnapshot(otherRoot));
-    const { result } = renderHook(() =>
-      useDriveFolderController(options({ drive: drive('unconfigured', activateRoot) }))
-    );
+    const driveState = drive();
+    driveState.resolveRoot.mockResolvedValueOnce({
+      kind: 'activated',
+      snapshot: configuredSnapshot(otherRoot),
+    });
+    const { result } = renderHook(() => useDriveFolderController(options({ drive: driveState })));
 
     await act(async () => {
       await expect(result.current.confirmRoot(stagedRoot)).rejects.toThrow(
@@ -270,13 +321,17 @@ describe('useDriveFolderController', () => {
 
   it('rejects a committed activation after authorization changes', async () => {
     const activation = deferred<DriveStoreSnapshot>();
-    const activateRoot = vi.fn(() => activation.promise);
+    const driveState = drive();
+    driveState.resolveRoot.mockImplementationOnce(async () => ({
+      kind: 'activated',
+      snapshot: await activation.promise,
+    }));
     const view = renderHook(
       ({ authorizationIncarnation }) =>
         useDriveFolderController(
           options({
             authorizationIncarnation,
-            drive: drive('unconfigured', activateRoot),
+            drive: driveState,
           })
         ),
       { initialProps: { authorizationIncarnation: 1 } }
@@ -296,10 +351,12 @@ describe('useDriveFolderController', () => {
 
   it('rejects a committed activation after the dialog session changes', async () => {
     const activation = deferred<DriveStoreSnapshot>();
-    const activateRoot = vi.fn(() => activation.promise);
-    const { result } = renderHook(() =>
-      useDriveFolderController(options({ drive: drive('unconfigured', activateRoot) }))
-    );
+    const driveState = drive();
+    driveState.resolveRoot.mockImplementationOnce(async () => ({
+      kind: 'activated',
+      snapshot: await activation.promise,
+    }));
+    const { result } = renderHook(() => useDriveFolderController(options({ drive: driveState })));
     const confirmation = result.current.confirmRoot(stagedRoot);
 
     await act(async () => {
@@ -312,14 +369,16 @@ describe('useDriveFolderController', () => {
   });
 
   it('moves an existing config without rewriting configuration', async () => {
-    const activateRoot = vi.fn(async () => configuredSnapshot());
-    const { result } = renderHook(() =>
-      useDriveFolderController(options({ drive: drive('ready', activateRoot) }))
-    );
+    const driveState = drive('ready');
+    driveState.resolveRoot.mockResolvedValueOnce({
+      kind: 'activated',
+      snapshot: configuredSnapshot(),
+    });
+    const { result } = renderHook(() => useDriveFolderController(options({ drive: driveState })));
 
     await act(() => result.current.confirmRoot(stagedRoot));
 
-    expect(activateRoot).toHaveBeenCalledWith(stagedRoot, undefined);
+    expect(driveState.resolveRoot).toHaveBeenCalledWith(stagedRoot, DEFAULT_CONFIG);
   });
 
   it('scans with the current source snapshot', async () => {

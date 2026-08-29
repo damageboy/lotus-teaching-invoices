@@ -9,10 +9,13 @@ export interface DriveFolderController {
   opening: boolean;
   cleanupPending: boolean;
   error: string | null;
+  pendingNewRoot: StagedDriveRoot | null;
   openDialog(): Promise<void>;
   closeDialog(): void;
   scanCandidate(stagedRoot: StagedDriveRoot): Promise<DriveInvoiceScan>;
   confirmRoot(stagedRoot: StagedDriveRoot): Promise<void>;
+  completePendingNewRoot(config: AppConfig): Promise<void>;
+  clearPendingNewRoot(): void;
   retry(): Promise<void>;
 }
 
@@ -22,7 +25,7 @@ export interface UseDriveFolderControllerOptions {
   authorizeDrive(): Promise<void>;
   drive: Pick<
     DriveInvoicesState,
-    'status' | 'snapshot' | 'error' | 'operationKey' | 'refresh' | 'activateRoot'
+    'status' | 'snapshot' | 'error' | 'operationKey' | 'refresh' | 'resolveRoot' | 'completeNewRoot'
   >;
   config: AppConfig;
   sources: readonly CurrentInvoiceSource[];
@@ -44,7 +47,7 @@ interface OperationContext {
   session: number;
 }
 
-type OperationName = 'opening' | 'scan' | 'confirmation' | 'retry';
+type OperationName = 'opening' | 'scan' | 'confirmation' | 'completion' | 'retry';
 
 function sourceSignature(
   sourceContextKey: string,
@@ -80,6 +83,8 @@ function operationLabel(operation: OperationName): string {
       return 'scan completed';
     case 'confirmation':
       return 'confirmation completed';
+    case 'completion':
+      return 'completion completed';
     case 'retry':
       return 'retry completed';
   }
@@ -105,6 +110,7 @@ export function useDriveFolderController(
   const [dialogOpen, setDialogOpen] = useState(false);
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingNewRoot, setPendingNewRoot] = useState<StagedDriveRoot | null>(null);
 
   useLayoutEffect(() => {
     const previous = committedIdentityRef.current;
@@ -116,6 +122,7 @@ export function useDriveFolderController(
       if (sourcesChanged) sourceIncarnationRef.current += 1;
       setOpening(false);
       setError(null);
+      if (authorizationChanged) setPendingNewRoot(null);
     }
     committedIdentityRef.current = {
       authorizationIncarnation: options.authorizationIncarnation,
@@ -311,13 +318,17 @@ export function useDriveFolderController(
       const current = committedOptionsRef.current;
       setError(null);
       try {
-        const activated = await current.drive.activateRoot(
-          stagedRoot,
-          current.drive.status === 'unconfigured' ? current.config : undefined
-        );
+        const resolution = await current.drive.resolveRoot(stagedRoot, current.config);
         if (!operationIdentityIsCurrent(context)) {
           throw identityObsoleteError(context, 'confirmation');
         }
+        if (resolution.kind === 'calendarRequired') {
+          setPendingNewRoot(resolution.stagedRoot);
+          return;
+        }
+        setPendingNewRoot(null);
+        if (resolution.kind === 'confirmationRequired') return;
+        const activated = resolution.snapshot;
         if (
           activated.stagedRoot.root.folderId !== stagedRoot.root.folderId ||
           activated.stagedRoot.root.driveId !== stagedRoot.root.driveId ||
@@ -337,6 +348,35 @@ export function useDriveFolderController(
     },
     [captureContext, identityObsoleteError, operationIdentityIsCurrent]
   );
+
+  const completePendingNewRoot = useCallback(
+    async (config: AppConfig): Promise<void> => {
+      const staged = pendingNewRoot;
+      if (staged === null) throw new Error('No new Drive root is pending Calendar setup');
+      const context = captureContext();
+      setError(null);
+      try {
+        const activated = await committedOptionsRef.current.drive.completeNewRoot(staged, config);
+        requireCurrent(context, 'completion');
+        if (
+          activated.config.file.parents.length !== 1 ||
+          activated.config.file.parents[0] !== staged.root.folderId
+        ) {
+          throw new Error('Drive created configuration outside the selected folder');
+        }
+        setPendingNewRoot(null);
+      } catch (cause) {
+        if (!contextIsCurrent(context)) throw obsoleteError(context, 'completion');
+        setError(errorMessage(cause));
+        throw cause;
+      }
+    },
+    [captureContext, contextIsCurrent, obsoleteError, pendingNewRoot, requireCurrent]
+  );
+
+  const clearPendingNewRoot = useCallback((): void => {
+    setPendingNewRoot(null);
+  }, []);
 
   const retry = useCallback(async (): Promise<void> => {
     const generation = ++retryGenerationRef.current;
@@ -358,10 +398,13 @@ export function useDriveFolderController(
     opening,
     cleanupPending: false,
     error,
+    pendingNewRoot,
     openDialog,
     closeDialog,
     scanCandidate,
     confirmRoot,
+    completePendingNewRoot,
+    clearPendingNewRoot,
     retry,
   };
 }

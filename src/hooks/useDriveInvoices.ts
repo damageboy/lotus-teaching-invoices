@@ -30,12 +30,19 @@ export interface DriveInvoicesState {
   recovery: DriveRecoveryState | null;
   refresh(): Promise<void>;
   activateRoot(staged: StagedDriveRoot, initialConfig?: AppConfig): Promise<DriveStoreSnapshot>;
+  resolveRoot(staged: StagedDriveRoot, initialConfig?: AppConfig): Promise<DriveRootResolution>;
+  completeNewRoot(staged: StagedDriveRoot, config: AppConfig): Promise<DriveStoreSnapshot>;
   confirmRecoveryCandidate(fileId: string): Promise<DriveStoreSnapshot>;
   saveConfig(next: AppConfig): Promise<DriveConfigSnapshot>;
   finalize(input: FinalizationInput): Promise<DriveInvoiceEntry>;
   refinalize(input: FinalizationInput, entry: DriveInvoiceEntry): Promise<DriveInvoiceEntry>;
   downloadVerified(entry: DriveInvoiceEntry): Promise<Uint8Array>;
 }
+
+export type DriveRootResolution =
+  | { kind: 'activated'; snapshot: DriveStoreSnapshot }
+  | { kind: 'confirmationRequired'; recovery: DriveRecoveryState }
+  | { kind: 'calendarRequired'; stagedRoot: StagedDriveRoot };
 
 export interface DriveRecoveryState {
   candidates: readonly DriveConfigCandidate[];
@@ -743,6 +750,85 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
     [enqueueMutation]
   );
 
+  const resolveRoot = useCallback(
+    (staged: StagedDriveRoot, initialConfig?: AppConfig): Promise<DriveRootResolution> => {
+      const driveKey = staged.root.driveId ?? 'my-drive';
+      return enqueueMutation(
+        `resolveRoot:${driveKey}:${staged.root.folderId}`,
+        async (store, requireOperationContext) => {
+          const current = committedOptionsRef.current;
+          if (current.pointer === undefined || machineRef.current.snapshot !== null) {
+            const activated = await store.activateRoot(
+              staged,
+              current.sources,
+              machineRef.current.snapshot === null ? initialConfig : undefined
+            );
+            requireOperationContext();
+            updateMachine((state) => ({
+              ...state,
+              status: 'ready',
+              snapshot: activated,
+              recovery: null,
+              error: null,
+            }));
+            return { kind: 'activated', snapshot: activated };
+          }
+          const discovered = await store.inspectRecoveryFolder(
+            staged.root.folderId,
+            current.legacyLocalYaml
+          );
+          requireOperationContext();
+          if (discovered.candidates.length > 0) {
+            const recovery: DriveRecoveryState = {
+              candidates: discovered.candidates,
+              issues: discovered.issues,
+              previousPointerRaw: current.pointer.raw,
+            };
+            updateMachine((state) => ({
+              ...state,
+              status: 'confirmationRequired',
+              snapshot: null,
+              recovery,
+              error: null,
+            }));
+            return { kind: 'confirmationRequired', recovery };
+          }
+          return { kind: 'calendarRequired', stagedRoot: staged };
+        },
+        { refreshBefore: false, refreshAfter: false, tolerateSourceChanges: true }
+      );
+    },
+    [enqueueMutation, updateMachine]
+  );
+
+  const completeNewRoot = useCallback(
+    (staged: StagedDriveRoot, config: AppConfig): Promise<DriveStoreSnapshot> => {
+      const driveKey = staged.root.driveId ?? 'my-drive';
+      return enqueueMutation(
+        `completeNewRoot:${driveKey}:${staged.root.folderId}`,
+        async (store, requireOperationContext) => {
+          const current = committedOptionsRef.current;
+          const activated = await store.activateRoot(staged, current.sources, config);
+          requireOperationContext();
+          if (current.installPointer !== undefined && current.pointer !== undefined) {
+            await current.installPointer(activated.config.file.id, current.pointer.raw);
+            requireOperationContext();
+          }
+          updateMachine((state) => ({
+            ...state,
+            status: 'ready',
+            snapshot: activated,
+            recovery: null,
+            error: null,
+          }));
+          return activated;
+        },
+        { refreshBefore: false, refreshAfter: false, tolerateSourceChanges: true }
+      );
+    },
+    [enqueueMutation, updateMachine]
+  );
+
   const saveConfig = useCallback(
     (next: AppConfig): Promise<DriveConfigSnapshot> => {
       const snapshot = machineRef.current.snapshot;
@@ -903,6 +989,8 @@ export function useDriveInvoices(options: UseDriveInvoicesOptions): DriveInvoice
     recovery: visibleMachine.recovery,
     refresh,
     activateRoot,
+    resolveRoot,
+    completeNewRoot,
     confirmRecoveryCandidate,
     saveConfig,
     finalize,
