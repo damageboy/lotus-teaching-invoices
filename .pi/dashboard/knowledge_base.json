@@ -1,0 +1,12 @@
+{
+  "sources": [
+    {
+      "kind": "filesystem",
+      "ref": "."
+    }
+  ],
+  "indexAgentsFiles": true,
+  "directoryLevelAgents": {
+    "enabled": true
+  }
+}
