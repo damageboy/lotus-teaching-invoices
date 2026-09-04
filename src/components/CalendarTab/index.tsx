@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ParsedClass, StudioConfig } from '../../lib/types';
+import type { ParsedClass, StudioConfig } from '../../lib/types';
 import { CalendarGrid } from './CalendarGrid';
 import { studioColor } from '../../lib/studioColors';
-import { computeStudioStats, StudioMonthStats } from '../../lib/invoice/calculator';
+import { computeStudioStats, type StudioMonthStats } from '../../lib/invoice/calculator';
 import { EventDetailsCard } from './EventDetailsCard';
 import { MobileCalendar } from './MobileCalendar';
 import type {
@@ -11,6 +11,7 @@ import type {
   SeriesStudioEditPreflight,
 } from '../../lib/calendar/calendar-update';
 import type { AppLayout } from '../../hooks/useCompactLayout';
+import { MONTH_NAMES } from './mobile-calendar';
 import { useMobileCalendarNavigation } from './useMobileCalendarNavigation';
 
 interface Props {
@@ -40,21 +41,6 @@ interface SelectedLesson {
   lesson: ParsedClass;
   anchor: HTMLButtonElement;
 }
-
-const MONTH_NAMES = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-];
 
 export function CalendarTab({
   layout = 'desktop',

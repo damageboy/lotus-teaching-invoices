@@ -23,7 +23,7 @@ import { CalendarPermissionPrompt } from './components/CalendarPermissionPrompt'
 import { DriveFolderDialog } from './components/setup/DriveFolderDialog';
 import { SetupWizard } from './components/setup/SetupWizard';
 import { MobileAppShell } from './components/mobile/MobileAppShell';
-import type { AppTab } from './components/mobile/MobileNavigation';
+import { APP_TABS, type AppTab } from './components/mobile/MobileNavigation';
 import { initialMobileTabState, selectMobileTab } from './components/mobile/mobile-tab-state';
 import { initRustLogListener, logInfo } from './lib/logger';
 import { nextUnusedColor } from './lib/studioColors';
@@ -436,13 +436,6 @@ export default function App() {
     );
   }
 
-  const tabs: { id: AppTab; label: string }[] = [
-    { id: 'calendar', label: 'Calendar' },
-    { id: 'invoices', label: 'Invoices' },
-    { id: 'income', label: 'Income' },
-    { id: 'rates', label: 'Rates & Config' },
-  ];
-
   const tabContent = (
     <>
       {/* Tab content */}
@@ -508,7 +501,7 @@ export default function App() {
         <>
           {/* Tab bar */}
           <div data-layout="desktop" className="flex border-b border-gray-200 bg-gray-50">
-            {tabs.map((tab) => (
+            {APP_TABS.map((tab) => (
               <button
                 key={tab.id}
                 disabled={disabledTabs.includes(tab.id)}
@@ -521,7 +514,7 @@ export default function App() {
                       : 'text-gray-600 hover:text-gray-900'
                 }`}
               >
-                {tab.label}
+                {tab.desktopLabel}
                 {disabledTabs.includes(tab.id) && (
                   <LockSimple data-lock className="ml-1 inline" size={12} aria-hidden="true" />
                 )}

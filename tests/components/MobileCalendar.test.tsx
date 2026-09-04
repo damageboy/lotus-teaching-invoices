@@ -5,6 +5,7 @@ import { installReactTestEnvironment } from '../helpers/react-test-env.js';
 import { parsedClass } from '../helpers/calendar-fixtures.js';
 import type { ParsedClass, StudioConfig } from '../../src/lib/types.js';
 import {
+  buildMonthGrid,
   initialMobileDate,
   lessonExpectedAmount,
 } from '../../src/components/CalendarTab/mobile-calendar.js';
@@ -131,6 +132,41 @@ describe('mobile calendar derivations', () => {
     expect(initialMobileDate(2026, 7, [], new Date('2026-09-01T12:00:00+02:00'))).toBe(
       '2026-08-01'
     );
+  });
+
+  it('builds one Monday-first month model for both calendar presenters', () => {
+    const configuredLesson = parsedClass({
+      date: '2024-02-01',
+      studioName: 'Configured',
+      unconfigured: false,
+    });
+    const incompleteLesson = parsedClass({
+      date: '2024-02-29',
+      studioName: 'Missing',
+      unconfigured: true,
+    });
+
+    const cells = buildMonthGrid(2024, 1, [configuredLesson, incompleteLesson], {
+      Configured: studioWithRate(55),
+    });
+
+    expect(cells).toHaveLength(35);
+    expect(cells.slice(0, 3)).toEqual([null, null, null]);
+    expect(cells[3]).toEqual({
+      day: 1,
+      date: '2024-02-01',
+      lessons: [configuredLesson],
+      configuredLessons: [configuredLesson],
+      incompleteCount: 0,
+    });
+    expect(cells[31]).toEqual({
+      day: 29,
+      date: '2024-02-29',
+      lessons: [incompleteLesson],
+      configuredLessons: [],
+      incompleteCount: 1,
+    });
+    expect(cells.slice(32)).toEqual([null, null, null]);
   });
 
   it('uses overrides and matching tiers, and leaves unavailable amounts blank', () => {

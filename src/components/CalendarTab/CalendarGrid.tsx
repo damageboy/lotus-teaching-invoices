@@ -1,7 +1,6 @@
 import type { ParsedClass, StudioConfig } from '../../lib/types';
 import { EventChip } from './EventChip';
-import { lessonNeedsConfiguration } from './lesson-value.js';
-import { localDateString } from './mobile-calendar.js';
+import { buildMonthGrid, localDateString, WEEKDAYS } from './mobile-calendar.js';
 import { UnconfiguredMarker } from './UnconfiguredMarker.js';
 
 interface Props {
@@ -13,16 +12,6 @@ interface Props {
   onSelectLesson?: (lesson: ParsedClass, anchor: HTMLButtonElement) => void;
 }
 
-function getDaysInMonth(year: number, month: number) {
-  return new Date(year, month + 1, 0).getDate();
-}
-
-function getFirstDayOfWeek(year: number, month: number) {
-  // Returns 0=Mon … 6=Sun
-  const day = new Date(year, month, 1).getDay();
-  return (day + 6) % 7;
-}
-
 export function CalendarGrid({
   year,
   month,
@@ -31,60 +20,34 @@ export function CalendarGrid({
   colorMap = {},
   onSelectLesson,
 }: Props) {
-  const daysInMonth = getDaysInMonth(year, month);
-  const firstDow = getFirstDayOfWeek(year, month);
-
-  // Build a map: "YYYY-MM-DD" -> ParsedClass[]
-  const byDate = new Map<string, ParsedClass[]>();
-  for (const cls of classes) {
-    const list = byDate.get(cls.date) ?? [];
-    list.push(cls);
-    byDate.set(cls.date, list);
-  }
-
-  const cells: (number | null)[] = [
-    ...Array(firstDow).fill(null),
-    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
-  ];
-
-  // Pad to full weeks
-  while (cells.length % 7 !== 0) cells.push(null);
-
+  const cells = buildMonthGrid(year, month, classes, studios);
   const today = new Date();
   const todayDate = localDateString(today.getFullYear(), today.getMonth(), today.getDate());
-  const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
   return (
     <div className="grid grid-cols-7 gap-px bg-gray-200 border border-gray-200 rounded">
-      {DAY_LABELS.map((d) => (
+      {WEEKDAYS.map((d) => (
         <div key={d} className="bg-gray-50 text-center text-xs font-medium text-gray-500 py-1">
           {d}
         </div>
       ))}
-      {cells.map((day, i) => {
-        if (day === null) {
+      {cells.map((cell, i) => {
+        if (cell === null) {
           return <div key={`empty-${i}`} className="bg-gray-50 min-h-[240px]" />;
         }
-        const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-        const dayClasses = (byDate.get(dateStr) ?? []).sort((a, b) =>
-          a.startTime.localeCompare(b.startTime)
-        );
-        const isToday =
-          today.getFullYear() === year && today.getMonth() === month && today.getDate() === day;
-        const needsConfiguration = dayClasses.some((lesson) =>
-          lessonNeedsConfiguration(lesson, studios[lesson.studioName])
-        );
+        const dayClasses = [...cell.lessons].sort((a, b) => a.startTime.localeCompare(b.startTime));
+        const isToday = cell.date === todayDate;
 
         return (
-          <div key={dateStr} className="relative bg-white min-h-[240px] p-1">
+          <div key={cell.date} className="relative bg-white min-h-[240px] p-1">
             <div
               className={`text-xs font-medium mb-1 w-5 h-5 flex items-center justify-center rounded-full ${
                 isToday ? 'bg-indigo-600 text-white' : 'text-gray-700'
               }`}
             >
-              {day}
+              {cell.day}
             </div>
-            {needsConfiguration && dateStr < todayDate && (
+            {cell.incompleteCount > 0 && cell.date < todayDate && (
               <UnconfiguredMarker dateMarker className="absolute right-1 top-1 h-3 w-3" />
             )}
             {dayClasses.map((cls) => (

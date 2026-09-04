@@ -3,7 +3,7 @@ import type { StudioMonthStats } from '../../lib/invoice/calculator.js';
 import { studioColor } from '../../lib/studioColors.js';
 import { MobileAgenda } from './MobileAgenda.js';
 import { MobileMonthGrid } from './MobileMonthGrid.js';
-import { localDateString } from './mobile-calendar.js';
+import { localDateString, MONTH_NAMES } from './mobile-calendar.js';
 import { UnconfiguredMarker } from './UnconfiguredMarker.js';
 
 interface Props {
@@ -23,21 +23,6 @@ interface Props {
   onSelectAgendaDate: (date: string) => void;
   onSelectLesson: (lesson: ParsedClass, anchor: HTMLButtonElement) => void;
 }
-
-const MONTH_NAMES = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-];
 
 function dateStrip(year: number, month: number, selectedDate: string): Date[] {
   const selectedDay = Math.min(

@@ -1,8 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { ParsedClass, StudioConfig } from '../../lib/types.js';
 import { studioColor } from '../../lib/studioColors.js';
-import { lessonNeedsConfiguration } from './lesson-value.js';
-import { localDateString } from './mobile-calendar.js';
+import { buildMonthGrid, localDateString, WEEKDAYS } from './mobile-calendar.js';
 import { UnconfiguredMarker } from './UnconfiguredMarker.js';
 
 interface Props {
@@ -15,8 +14,6 @@ interface Props {
   onSelectDate: (date: string, anchor: HTMLButtonElement) => void;
   focusRequest: number;
 }
-
-const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 function dateLabel(year: number, month: number, day: number): string {
   return new Date(year, month, day).toLocaleDateString('en-US', {
@@ -38,20 +35,7 @@ export function MobileMonthGrid({
 }: Props) {
   const selectedDayRef = useRef<HTMLButtonElement>(null);
   const previousFocusRequest = useRef(0);
-  const byDate = new Map<string, ParsedClass[]>();
-  for (const lesson of classes) {
-    const lessons = byDate.get(lesson.date) ?? [];
-    lessons.push(lesson);
-    byDate.set(lesson.date, lessons);
-  }
-
-  const firstDay = (new Date(year, month, 1).getDay() + 6) % 7;
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const cells: Array<number | null> = [
-    ...Array<number | null>(firstDay).fill(null),
-    ...Array.from({ length: daysInMonth }, (_, index) => index + 1),
-  ];
-  while (cells.length % 7 !== 0) cells.push(null);
+  const cells = buildMonthGrid(year, month, classes, studios);
   const today = new Date();
   const todayDate = localDateString(today.getFullYear(), today.getMonth(), today.getDate());
 
@@ -72,8 +56,8 @@ export function MobileMonthGrid({
             {weekday}
           </span>
         ))}
-        {cells.map((day, index) => {
-          if (day === null) {
+        {cells.map((cell, index) => {
+          if (cell === null) {
             return (
               <span
                 key={`empty-${index}`}
@@ -81,44 +65,36 @@ export function MobileMonthGrid({
               />
             );
           }
-          const date = localDateString(year, month, day);
-          const lessons = byDate.get(date) ?? [];
-          const configuredLessons = lessons.filter((lesson) => !lesson.unconfigured);
-          const incompleteCount = lessons.filter((lesson) =>
-            lessonNeedsConfiguration(lesson, studios[lesson.studioName])
-          ).length;
           const accessibleLabel =
-            incompleteCount === 0
-              ? dateLabel(year, month, day)
-              : `${dateLabel(year, month, day)}, ${incompleteCount} incomplete ${
-                  incompleteCount === 1 ? 'class' : 'classes'
+            cell.incompleteCount === 0
+              ? dateLabel(year, month, cell.day)
+              : `${dateLabel(year, month, cell.day)}, ${cell.incompleteCount} incomplete ${
+                  cell.incompleteCount === 1 ? 'class' : 'classes'
                 }`;
-          const isToday =
-            today.getFullYear() === year && today.getMonth() === month && today.getDate() === day;
-          const isSelected = selectedDate === date;
+          const isToday = cell.date === todayDate;
+          const isSelected = selectedDate === cell.date;
+          let stateClasses = 'bg-white text-slate-800';
+          if (isToday) stateClasses = 'bg-indigo-50 text-indigo-800';
+          if (isSelected) {
+            stateClasses = 'bg-indigo-600 text-white ring-2 ring-inset ring-slate-900';
+          }
           return (
             <button
-              key={date}
+              key={cell.date}
               ref={isSelected ? selectedDayRef : undefined}
               type="button"
               aria-label={accessibleLabel}
               aria-current={isToday ? 'date' : undefined}
               aria-pressed={isSelected}
-              onClick={(event) => onSelectDate(date, event.currentTarget)}
-              className={`relative min-h-12 min-w-12 border-b border-r border-slate-200 p-1 text-center text-sm font-medium focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-600 ${
-                isSelected
-                  ? 'bg-indigo-600 text-white ring-2 ring-inset ring-slate-900'
-                  : isToday
-                    ? 'bg-indigo-50 text-indigo-800'
-                    : 'bg-white text-slate-800'
-              } ${isToday ? 'font-extrabold underline decoration-2 underline-offset-4' : ''}`}
+              onClick={(event) => onSelectDate(cell.date, event.currentTarget)}
+              className={`relative min-h-12 min-w-12 border-b border-r border-slate-200 p-1 text-center text-sm font-medium focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-600 ${stateClasses} ${isToday ? 'font-extrabold underline decoration-2 underline-offset-4' : ''}`}
             >
-              {incompleteCount > 0 && date < todayDate && (
+              {cell.incompleteCount > 0 && cell.date < todayDate && (
                 <UnconfiguredMarker dateMarker className="absolute right-[3px] top-[3px] h-3 w-3" />
               )}
-              <span>{day}</span>
+              <span>{cell.day}</span>
               <span className="mt-1 flex min-h-1 justify-center gap-0.5" aria-hidden="true">
-                {configuredLessons.slice(0, 3).map((lesson) => {
+                {cell.configuredLessons.slice(0, 3).map((lesson) => {
                   const color = studioColor(lesson.studioName, colorMap[lesson.studioName]);
                   return (
                     <span

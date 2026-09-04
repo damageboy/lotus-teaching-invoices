@@ -1,6 +1,13 @@
 import { CalendarBlank, ChartBar, FileText, Gear, LockSimple } from '@phosphor-icons/react';
 
-export type AppTab = 'calendar' | 'invoices' | 'income' | 'rates';
+export const APP_TABS = [
+  { id: 'calendar', desktopLabel: 'Calendar', mobileLabel: 'Calendar', Icon: CalendarBlank },
+  { id: 'invoices', desktopLabel: 'Invoices', mobileLabel: 'Invoices', Icon: FileText },
+  { id: 'income', desktopLabel: 'Income', mobileLabel: 'Income', Icon: ChartBar },
+  { id: 'rates', desktopLabel: 'Rates & Config', mobileLabel: 'Settings', Icon: Gear },
+] as const;
+
+export type AppTab = (typeof APP_TABS)[number]['id'];
 
 interface Props {
   activeTab: AppTab;
@@ -8,20 +15,13 @@ interface Props {
   disabledTabs?: readonly AppTab[];
 }
 
-const destinations = [
-  { id: 'calendar', label: 'Calendar', Icon: CalendarBlank },
-  { id: 'invoices', label: 'Invoices', Icon: FileText },
-  { id: 'income', label: 'Income', Icon: ChartBar },
-  { id: 'rates', label: 'Settings', Icon: Gear },
-] as const;
-
 export function MobileNavigation({ activeTab, onSelect, disabledTabs = [] }: Props) {
   return (
     <nav
       aria-label="Mobile navigation"
       className="grid grid-cols-4 border-t border-gray-200 bg-white"
     >
-      {destinations.map(({ id, label, Icon }) => {
+      {APP_TABS.map(({ id, mobileLabel, Icon }) => {
         const active = activeTab === id;
         const disabled = disabledTabs.includes(id);
         return (
@@ -41,7 +41,7 @@ export function MobileNavigation({ activeTab, onSelect, disabledTabs = [] }: Pro
           >
             <Icon size={22} aria-hidden="true" />
             {disabled && <LockSimple data-lock size={12} aria-hidden="true" />}
-            {label}
+            {mobileLabel}
           </button>
         );
       })}

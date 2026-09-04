@@ -10,6 +10,7 @@ import type { AppConfig } from '../../src/lib/types.js';
 
 const { MobileRateTiers, MobileSettings, StudioCard } =
   await import('../../src/components/RatesTab/MobileSettings.js');
+const { VersionBadge } = await import('../../src/components/VersionBadge.js');
 
 const config: AppConfig = {
   teacher: {
@@ -48,6 +49,17 @@ function mobileSettingsProps() {
     onAddStudio: vi.fn(),
   };
 }
+
+describe('VersionBadge', () => {
+  it('shows the shared version and development status', () => {
+    const html = renderToStaticMarkup(React.createElement(VersionBadge));
+    const document = new JSDOM(html).window.document;
+
+    expect(document.querySelector('[data-testid="version-badge"]')?.textContent).toContain('vtest');
+    expect(document.body.textContent).toContain('dev');
+    expect(document.body.textContent).not.toContain('dirty');
+  });
+});
 
 describe('MobileSettings', () => {
   it('keeps every existing section in one column with touch-safe controls and actions', () => {
